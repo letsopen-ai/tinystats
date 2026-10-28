@@ -1,6 +1,6 @@
 # Distribution and release checklist
 
-TinyStats is currently distributed as source. Building from source produces an ad-hoc signed app (see the [README](../README.md#install-build-from-source)). A signed, notarized binary release is a separate milestone tracked by the checklist below.
+TinyStats is currently distributed as source. Building from source produces an ad-hoc signed app (see the [README](../README.md#install)). A signed, notarized binary release is a separate milestone tracked by the checklist below.
 
 ## Reproducible build
 
