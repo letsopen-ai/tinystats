@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>TinyStats</string>
+	<key>CFBundleDisplayName</key>
+	<string>TinyStats</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.niechen.tinystats</string>
+	<key>CFBundleExecutable</key>
+	<string>TinyStats</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.35.5</string>
+	<key>CFBundleVersion</key>
+	<string>62</string>
+	<key>CFBundleIconFile</key>
+	<string>TinyStats</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Show events from your chosen calendars in the Date &amp; Time agenda. TinyStats reads events only and never changes them.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Use your Mac's current location for weather. TinyStats rounds coordinates and sends them to MET Norway (api.met.no) for forecasts. You can choose a saved Weather city instead.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Use your Mac's current location for weather. Coordinates are sent to MET Norway (api.met.no) for forecasts.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Send ICMP echo requests to the exact local IP address you enable in Internet Checks, to measure round-trip time. No local-network scan is performed.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Nie Chen. MIT License.</string>
+</dict>
+</plist>

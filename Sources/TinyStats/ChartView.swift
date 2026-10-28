@@ -1,0 +1,171 @@
+import AppKit
+import TinyStatsCore
+
+@MainActor final class ChartView: ChartHoverView {
+  struct Series {
+    var name: String
+    var color: NSColor
+    var values: [Double?]
+  }
+  var series: [Series] = [] {
+    didSet {
+      needsDisplay = true
+      refreshHover()
+    }
+  }
+  var fitsDataRange = false
+  var plotArea: NSRect {
+    fitsDataRange
+      ? .init(
+        x: bounds.minX + 70, y: bounds.minY + 36, width: max(1, bounds.width - 72),
+        height: max(1, bounds.height - 56))
+      : bounds.insetBy(dx: 1, dy: 19)
+  }
+  var plotDomain: GraphDomain {
+    GraphDomain(
+      values: series.flatMap(\.values), fixedUpper: fitsDataRange ? nil : upperBound,
+      fitToData: fitsDataRange)
+  }
+  var recordedSummary: String {
+    let values = series.flatMap(\.values).compactMap { $0 }.filter(\.isFinite)
+    let span = HistoryTimeline(times: times).span
+    return "Min " + valueFormat.string(values.min()) + " · Max " + valueFormat.string(values.max())
+      + " · " + span + " · " + String(values.count) + " readings"
+  }
+  var valueFormat: ChartValueFormat = .percent
+  var times: [Date] = [] {
+    didSet { refreshHover() }
+  }
+  var upperBound: Double? = 100
+  var emptyMessage = "No readings yet"
+  var newestValueLabel = "Latest"
+  var caption: String?
+  var inspectionDateLabel: ((Date) -> String)?
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    setAccessibilityElement(true)
+    setAccessibilityRole(.image)
+    setAccessibilityLabel("Metric history chart")
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  override func accessibilityValue() -> Any? {
+    let timeline = HistoryTimeline(times: times)
+    let summaries = series.map {
+      valueFormat.summary($0.values, indices: timeline.indices, newestLabel: newestValueLabel)
+    }
+    guard summaries.contains(where: { $0 != nil }) else { return emptyMessage }
+    let values = zip(series, summaries).map { line, summary in
+      line.name + ": " + (summary ?? "No recorded values in this window")
+    }.joined(separator: "; ")
+    return values + (timeline.duration > 0 ? "; window " + timeline.span : "")
+  }
+  override func hoverText(at point: NSPoint) -> String? {
+    let area = plotArea
+    guard area.contains(point), !times.isEmpty, !series.isEmpty else { return nil }
+    let timeline = HistoryTimeline(times: times)
+    let fraction = Double((point.x - area.minX) / max(1, area.width))
+    guard
+      let index = timeline.indices.min(by: {
+        abs((timeline.positions[$0] ?? 0) - fraction)
+          < abs((timeline.positions[$1] ?? 0) - fraction)
+      })
+    else { return "No recorded observations" }
+    let distance = abs((timeline.positions[index] ?? 0) - fraction)
+    let tolerance = max(
+      1 / max(1, Double(area.width)), 1 / Double(max(1, timeline.indices.count - 1)))
+    guard distance <= tolerance else { return "No recorded observations here" }
+    return
+      ([inspectionDateLabel?(times[index]) ?? Self.hoverDate(times[index])]
+      + series.map { line in
+        line.name + ": "
+          + valueFormat.string(line.values.indices.contains(index) ? line.values[index] : nil)
+      }).joined(separator: "\n")
+  }
+  override func draw(_ dirtyRect: NSRect) {
+    let area = plotArea
+    NSColor.quaternaryLabelColor.setStroke()
+    for fraction in [0.0, 0.5, 1.0] {
+      let y = area.minY + area.height * fraction
+      let path = NSBezierPath()
+      path.move(to: .init(x: area.minX, y: y))
+      path.line(to: .init(x: area.maxX, y: y))
+      path.lineWidth = 0.5
+      path.stroke()
+    }
+    let domain = plotDomain
+    if domain.lower < 0 && domain.upper >= 0, let zero = domain.fraction(0) {
+      let baseline = NSBezierPath()
+      let y = area.minY + area.height * zero
+      baseline.move(to: .init(x: area.minX, y: y))
+      baseline.line(to: .init(x: area.maxX, y: y))
+      NSColor.secondaryLabelColor.setStroke()
+      baseline.lineWidth = 0.8
+      baseline.stroke()
+    }
+    var hasData = false
+    let timeline = HistoryTimeline(times: times)
+    let duration = max(1, timeline.duration)
+    for line in series {
+      let path = NSBezierPath()
+      var previous = false
+      for i in timeline.indices {
+        guard line.values.indices.contains(i), let fraction = domain.fraction(line.values[i]),
+          let position = timeline.positions[i]
+        else {
+          previous = false
+          continue
+        }
+        let x = area.minX + area.width * position
+        let point = NSPoint(x: x, y: area.minY + area.height * fraction)
+        if previous { path.line(to: point) } else { path.move(to: point) }
+        previous = true
+        hasData = true
+      }
+      line.color.setStroke()
+      path.lineWidth = 1.6
+      path.lineJoinStyle = .round
+      path.stroke()
+    }
+    let font = NSFont.systemFont(ofSize: 10)
+    var x = 0.0
+    for line in series {
+      let label =
+        "● " + line.name
+        + (fitsDataRange ? " · " + valueFormat.string(line.values.last.flatMap { $0 }) : "")
+      let string = label as NSString
+      string.draw(
+        at: NSPoint(x: x, y: bounds.height - 13),
+        withAttributes: [.font: font, .foregroundColor: line.color])
+      x += string.size(withAttributes: [.font: font]).width + 14
+    }
+    if fitsDataRange {
+      let attrs: [NSAttributedString.Key: Any] = [
+        .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular),
+        .foregroundColor: NSColor.secondaryLabelColor,
+      ]
+      for (value, y) in [(domain.upper, area.maxY - 11), (domain.lower, area.minY)] {
+        (valueFormat.string(value) as NSString).draw(
+          in: .init(x: 0, y: y, width: 64, height: 13), withAttributes: attrs)
+      }
+      (recordedSummary as NSString).draw(
+        in: .init(x: 0, y: 15, width: bounds.width, height: 13),
+        withAttributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+    }
+    if !hasData {
+      (emptyMessage as NSString).draw(
+        at: NSPoint(x: 12, y: area.midY - 6),
+        withAttributes: [
+          .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+    }
+    var label =
+      caption
+      ?? (times.count > 1 ? "\(Int(duration))s history · newest →" : "Waiting for the next reading")
+    if !fitsDataRange && domain.lower < 0 {
+      label += String(format: " · %.2f to %.2f", domain.lower, domain.upper)
+    }
+    (label as NSString).draw(
+      at: .init(x: 0, y: 0),
+      withAttributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+  }
+}
