@@ -1,0 +1,50 @@
+name: Hardware report
+description: Share supported or unavailable readings from your Mac.
+title: "[Hardware]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports of both working and unavailable readings help. See [diagnostic guidance](https://github.com/niechen/tinystats/blob/main/CONTRIBUTING.md#hardware-diagnostics).
+        Review all output before sharing. Redact usernames, personal paths, addresses and precise locations; omit serial numbers and hardware UUIDs.
+        No administrator access, helper installation, online-feature enablement or fan changes are needed.
+  - type: input
+    id: model
+    attributes:
+      label: Mac model / model identifier
+      placeholder: "Mac model and identifier, without serial number"
+    validations:
+      required: true
+  - type: input
+    id: chip
+    attributes:
+      label: Chip or Intel CPU/GPU
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and build
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TinyStats version/build or source commit
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: TinyStats --diagnose --hardware output
+      description: Run build/TinyStats.app/Contents/MacOS/TinyStats --diagnose --hardware after building. Paste reviewed, redacted output; this local mode uploads nothing.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: observations
+    attributes:
+      label: Working, missing or unexpected readings
+      description: Include connected devices and relevant conditions (battery/AC, wake, hot-plug). State unavailable versus zero explicitly.
+    validations:
+      required: true

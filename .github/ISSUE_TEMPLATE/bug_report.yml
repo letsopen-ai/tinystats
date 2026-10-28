@@ -1,0 +1,51 @@
+name: Bug report
+description: Report an unexpected result or broken interaction.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve TinyStats. Search existing issues first.
+        Report vulnerabilities privately through [Security](https://github.com/niechen/tinystats/security/policy).
+        Review attachments for personal data; omit serial numbers, credentials, locations and account events.
+  - type: input
+    id: version
+    attributes:
+      label: TinyStats version or source commit
+      placeholder: "Version/build or git commit; note local modifications"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Mac model, chip and macOS version/build
+      placeholder: "Model identifier, Apple chip or Intel CPU/GPU, macOS version/build (no serial number)"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the selected page/settings and whether it follows wake, resume or a device change.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Distinguish unavailable readings from zero; include sanitized screenshots if useful.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Optional diagnostics or logs
+      description: Paste only reviewed, redacted output. No administrator access or helper installation is needed.
+      render: text

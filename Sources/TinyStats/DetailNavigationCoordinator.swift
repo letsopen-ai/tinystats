@@ -1,0 +1,164 @@
+import AppKit
+import TinyStatsCore
+
+/// Owns sidebar presentation and weak Settings hosting, never preference drafts or collection.
+@MainActor
+final class DetailNavigationCoordinator: NSObject {
+  static let mainModules: [Module] = [
+    .overview, .cpu, .gpu, .memory, .disks, .network, .battery, .clock, .weather,
+  ]
+  static let advancedModules: [Module] = [.sensors]
+  let sidebar = NSVisualEffectView()
+  private let advancedLabel = NSTextField(labelWithString: "ADVANCED")
+  var onSelectModule: ((Module) -> Void)?
+  var onSettingsPage: ((PreferencesController.Page) -> Void)?
+  private var moduleButtons: [Module: NSButton] = [:]
+  private var settingsButtons: [PreferencesController.Page: NSButton] = [:]
+  private weak var embeddedSettings: NSView?
+  private(set) var settingsPage: PreferencesController.Page?
+  var showsSettings: Bool { settingsPage != nil }
+
+  override init() {
+    super.init()
+    sidebar.material = .sidebar
+    sidebar.blendingMode = .withinWindow
+    sidebar.frame = .init(x: 0, y: 0, width: 132, height: 560)
+    let brand = NSTextField(labelWithString: "TinyStats")
+    brand.font = .systemFont(ofSize: 15, weight: .bold)
+    sidebar.addSubview(brand)
+    brand.frame = .init(x: 15, y: 520, width: 106, height: 23)
+    for module in Self.mainModules + Self.advancedModules {
+      guard let index = Module.allCases.firstIndex(of: module) else { continue }
+      if module == Self.advancedModules.first {
+        advancedLabel.font = .systemFont(ofSize: 9, weight: .semibold)
+        advancedLabel.textColor = .tertiaryLabelColor
+        advancedLabel.setAccessibilityLabel("ADVANCED")
+        sidebar.addSubview(advancedLabel)
+      }
+      let button = NavigationButton(
+        title: module.title, target: self, action: #selector(selectModule(_:)))
+      button.image = NSImage(systemSymbolName: module.symbol, accessibilityDescription: nil)
+      button.setAccessibilityLabel(module.title)
+      button.imagePosition = .imageLeading
+      button.alignment = .left
+      button.isBordered = false
+      button.setButtonType(.toggle)
+      button.tag = index
+      button.keyEquivalent = index == 9 ? "0" : "\(index+1)"
+      button.keyEquivalentModifierMask = [.command]
+      button.frame = .init(x: 10, y: 477 - index * 39, width: 112, height: 31)
+      sidebar.addSubview(button)
+      moduleButtons[module] = button
+    }
+    let group = NSTextField(labelWithString: "SETTINGS")
+    group.font = .systemFont(ofSize: 9, weight: .semibold)
+    group.textColor = .tertiaryLabelColor
+    group.frame = .init(x: 17, y: 99, width: 100, height: 15)
+    sidebar.addSubview(group)
+    for (page, title, symbol) in [
+      (PreferencesController.Page.general, "General", "gearshape"),
+      (.menuBar, "Menu Bar", "menubar.rectangle"),
+    ] {
+      let button = NavigationButton(
+        title: title, target: self, action: #selector(selectSettings(_:)))
+      button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+      button.imagePosition = .imageLeading
+      button.setAccessibilityLabel(title)
+      button.isBordered = false
+      button.setButtonType(.toggle)
+      button.tag = page.rawValue
+      button.frame = .init(x: 10, y: page == .general ? 59 : 22, width: 112, height: 31)
+      sidebar.addSubview(button)
+      settingsButtons[page] = button
+    }
+  }
+
+  @objc private func selectModule(_ sender: NSButton) {
+    onSelectModule?(Module.allCases[sender.tag])
+  }
+  @objc private func selectSettings(_ sender: NSButton) {
+    guard let page = PreferencesController.Page(rawValue: sender.tag) else { return }
+    onSettingsPage?(page)
+  }
+
+  func leaveSettings() {
+    settingsPage = nil
+    embeddedSettings?.isHidden = true
+  }
+
+  func selectSettingsPage(_ page: PreferencesController.Page) { settingsPage = page }
+
+  func embedSettings(_ content: NSView, in root: NSView) {
+    if embeddedSettings !== content {
+      embeddedSettings?.removeFromSuperview()
+      embeddedSettings = content
+      root.addSubview(content)
+    }
+    for child in root.subviews where child !== sidebar { child.isHidden = child !== content }
+    content.frame = .init(
+      x: 144, y: 0, width: min(740, max(0, root.bounds.width - 144)), height: root.bounds.height)
+    content.isHidden = false
+    for button in moduleButtons.values {
+      button.state = .off
+      button.contentTintColor = .secondaryLabelColor
+    }
+    for (key, button) in settingsButtons { button.state = key == settingsPage ? .on : .off }
+  }
+
+  func updateSelection(_ selected: Module) {
+    for button in settingsButtons.values { button.state = .off }
+    for (module, button) in moduleButtons {
+      button.state = selected == module ? .on : .off
+      button.contentTintColor = selected == module ? .controlAccentColor : .secondaryLabelColor
+    }
+  }
+
+  func layoutSettings(in bounds: NSRect) {
+    embeddedSettings?.frame = .init(
+      x: 144, y: 0, width: min(740, max(0, bounds.width - 144)), height: bounds.height)
+  }
+
+  func layout(in bounds: NSRect) {
+    sidebar.frame.size.height = bounds.height
+    if let brand = sidebar.subviews.first as? NSTextField {
+      brand.frame.origin.y = bounds.height - 40
+    }
+    for (index, module) in Self.mainModules.enumerated() {
+      moduleButtons[module]?.frame.origin.y = bounds.height - 83 - CGFloat(index * 35)
+    }
+    advancedLabel.frame = .init(x: 17, y: bounds.height - 382, width: 100, height: 15)
+    for (index, module) in Self.advancedModules.enumerated() {
+      moduleButtons[module]?.frame.origin.y = bounds.height - 418 - CGFloat(index * 35)
+    }
+  }
+}
+
+/// Fixed icon slot and text baseline keep every sidebar label aligned.
+@MainActor final class NavigationButton: NSButton {
+  override func draw(_ dirtyRect: NSRect) {
+    if state == .on {
+      NSColor.controlAccentColor.withAlphaComponent(0.14).setFill()
+      NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 1), xRadius: 6, yRadius: 6).fill()
+    }
+    let color: NSColor = state == .on ? .controlAccentColor : .secondaryLabelColor
+    if let image {
+      let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        .applying(.init(paletteColors: [color]))
+      let symbol = image.withSymbolConfiguration(configuration) ?? image
+      let size = symbol.size
+      let scale = min(18 / max(1, size.width), 18 / max(1, size.height))
+      let w = size.width * scale
+      let h = size.height * scale
+      symbol.draw(
+        in: .init(x: 15 - w / 2, y: (bounds.height - h) / 2, width: w, height: h),
+        from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
+        hints: nil)
+    }
+    let font = NSFont.systemFont(ofSize: 12, weight: state == .on ? .semibold : .regular)
+    let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+    let height = (title as NSString).size(withAttributes: attrs).height
+    (title as NSString).draw(
+      in: .init(x: 32, y: (bounds.height - height) / 2, width: bounds.width - 34, height: height),
+      withAttributes: attrs)
+  }
+}
