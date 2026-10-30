@@ -17,13 +17,13 @@ final class RulesController: NSWindowController, NSWindowDelegate,
   private let threshold = NSTextField(string: ""), stateThreshold = NSPopUpButton()
   private let hold = NSTextField(string: ""), cooldown = NSTextField(string: "")
   private let unit = NSTextField(labelWithString: "")
-  private let enabled = NSButton(checkboxWithTitle: "Enable this rule", target: nil, action: nil)
-  private let repeats = NSButton(
-    checkboxWithTitle: "Repeat while condition remains true", target: nil, action: nil)
-  private let sound = NSButton(
-    checkboxWithTitle: "Play notification sound", target: nil, action: nil)
-  private let draining = NSButton(
-    checkboxWithTitle: "Only while on battery power", target: nil, action: nil)
+  private let enabled = SystemSettingSwitch(title: "Enable this rule", target: nil, action: nil)
+  private let repeats = SystemSettingSwitch(
+    title: "Repeat while condition remains true", target: nil, action: nil)
+  private let sound = SystemSettingSwitch(
+    title: "Play notification sound", target: nil, action: nil)
+  private let draining = SystemSettingSwitch(
+    title: "Only while on battery power", target: nil, action: nil)
   private let note = NSTextField(wrappingLabelWithString: "")
   private let error = NSTextField(wrappingLabelWithString: "")
   private let remove = NSButton(title: "Remove", target: nil, action: nil)
@@ -49,6 +49,7 @@ final class RulesController: NSWindowController, NSWindowDelegate,
     window.center()
     super.init(window: window)
     window.delegate = self
+    window.contentView = SystemSettingsBackgroundView(frame: window.contentView?.bounds ?? .zero)
     guard let content = window.contentView else { return }
     func place(_ view: NSView, _ x: Int, _ y: Int, _ w: Int, _ h: Int, parent: NSView? = nil) {
       view.frame = .init(x: x, y: y, width: w, height: h)
@@ -145,6 +146,36 @@ final class RulesController: NSWindowController, NSWindowDelegate,
     source.setAccessibilityLabel("Rule source")
     comparison.setAccessibilityLabel("Rule comparison")
     stateThreshold.setAccessibilityLabel("Rule threshold state")
+    let layout = SystemSettingsForm.self
+    let thresholdControls = NSView()
+    thresholdControls.widthAnchor.constraint(equalToConstant: 260).isActive = true
+    thresholdControls.heightAnchor.constraint(equalToConstant: 28).isActive = true
+    for control in [threshold, stateThreshold, unit] {
+      control.removeFromSuperview()
+      thresholdControls.addSubview(control)
+      control.autoresizingMask = []
+    }
+    threshold.frame = .init(x: 0, y: 1, width: 100, height: 26)
+    unit.frame = .init(x: 108, y: 1, width: 152, height: 26)
+    stateThreshold.frame = .init(x: 0, y: 1, width: 260, height: 26)
+    _ = SystemSettingsForm(
+      in: form,
+      views: [
+        layout.text("Condition", heading: true),
+        layout.group([
+          layout.row(enabled.title, enabled), layout.row("Name", name, width: 260),
+          layout.row("Metric", metric, width: 260), layout.row("Source", source, width: 260),
+          layout.row("Condition", comparison, width: 260),
+          layout.row("Threshold", thresholdControls),
+          layout.row("For at least", hold, width: 100),
+          layout.row("Cooldown", cooldown, width: 100),
+        ]), layout.text("Duration and cooldown are in seconds."),
+        layout.text("Notification", heading: true),
+        layout.group([
+          layout.row(repeats.title, repeats), layout.row(sound.title, sound),
+          layout.row(draining.title, draining),
+        ]), note,
+      ])
     reloadList()
     select(rules.isEmpty ? nil : 0)
   }
@@ -202,7 +233,7 @@ final class RulesController: NSWindowController, NSWindowDelegate,
     repeats.state = rule.repeatWhileActive ? .on : .off
     sound.state = rule.sound ? .on : .off
     draining.state = rule.onlyOnBattery ? .on : .off
-    draining.isHidden = rule.metric != .batteryLevel
+    draining.superview?.isHidden = rule.metric != .batteryLevel
     configureSources(rule)
     configureThreshold(rule)
   }

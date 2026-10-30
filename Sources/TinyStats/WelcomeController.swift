@@ -47,8 +47,7 @@ enum WelcomePresentation {
 
 @MainActor private final class WelcomeCardView: NSStackView {
   override func draw(_ dirtyRect: NSRect) {
-    NSColor.quaternaryLabelColor.setFill()
-    NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+    SystemStyle.drawPlatter(bounds)
   }
 }
 

@@ -41,7 +41,7 @@ import TinyStatsCore
   #expect(NSApplication.shared.sendAction(action, to: save.target, from: save))
   #expect(saved.count == 1)
   let fahrenheit = try #require(
-    controls.compactMap { $0 as? NSButton }.first { $0.title == "Use Fahrenheit" })
+    controls.compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "Use Fahrenheit" })
   let unitAction = try #require(fahrenheit.action)
   fahrenheit.state = .on
   #expect(NSApplication.shared.sendAction(unitAction, to: fahrenheit.target, from: fahrenheit))

@@ -82,7 +82,9 @@ func weatherChildSettingsSurviveParentEditsAndForecastReadoutsRejectStaleOrWrong
   parent.onChange = { saved = $0 }
   let root = try #require(parent.window?.contentView)
   let fahrenheit = try #require(
-    weatherDescendants(root).compactMap { $0 as? NSButton }.first { $0.title == "Use Fahrenheit" })
+    weatherDescendants(root).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Use Fahrenheit"
+    })
   fahrenheit.state = .on
   try weatherActivate(fahrenheit)
   #expect(saved?.weather == settings.weather)

@@ -138,35 +138,41 @@ import Testing
   let internet = try #require(buttons.first { $0.accessibilityLabel() == "Internet checks" })
   let disclosure = try #require(
     buttons.first { $0.accessibilityLabel() == "Online & Time advanced" })
-  let formats = try #require(buttons.first { $0.title == "World clock format…" })
+  let storage = try #require(buttons.first { $0.title == "History & storage…" })
   for size in [NSSize(width: 884, height: 660), NSSize(width: 1200, height: 850)] {
     host.setContentSize(size)
-    host.contentView?.layoutSubtreeIfNeeded()
-    for _ in 0..<2 {
-      disclosure.performClick(nil)
-      #expect(internet.frame.maxX + 10 <= calendar.frame.minX)
-      #expect(calendar.frame.maxX <= (calendar.superview?.bounds.width ?? 0))
-      #expect(formats.frame.maxX <= (formats.superview?.bounds.width ?? 0))
-      let visible = descendants(root).compactMap { $0 as? NSControl }.filter {
-        !$0.isHiddenOrHasHiddenAncestor
-      }
-      for control in visible {
-        #expect(root.bounds.contains(root.convert(control.bounds, from: control)))
-      }
-      // History moves below the expanded options without colliding with them.
-      let storage = try #require(buttons.first { $0.title == "History & storage…" })
-      let historyFrame = root.convert(storage.bounds, from: storage)
-      let disclosureFrame = root.convert(disclosure.bounds, from: disclosure)
-      #expect(historyFrame.maxY <= disclosureFrame.minY)
-      if disclosure.isAccessibilityExpanded() {
-        let helper = try #require(
-          descendants(root).compactMap { $0 as? NSTextField }.first {
-            $0.stringValue == "Optional · off by default · no requests until you enable"
-          })
-        #expect(historyFrame.maxY + 8 <= root.convert(helper.bounds, from: helper).minY)
+    for page in [PreferencesController.Page.general, .menuBar] {
+      prefs.selectPage(page)
+      root.layoutSubtreeIfNeeded()
+      let form = try #require(descendants(root).compactMap { $0 as? SystemSettingsForm }.first)
+      let document = try #require(form.documentView)
+      #expect(form.bounds.width > 0 && document.bounds.width == form.contentSize.width)
+      for row in descendants(document).compactMap({ $0 as? SystemFormRow }) {
+        #expect(!row.hasAmbiguousLayout)
+        for control in row.subviews {
+          #expect(row.bounds.contains(control.frame))
+        }
       }
     }
+    prefs.selectPage(.general)
+    for _ in 0..<2 {
+      disclosure.performClick(nil)
+      root.layoutSubtreeIfNeeded()
+      if disclosure.isAccessibilityExpanded() {
+        let form = try #require(internet.enclosingScrollView)
+        let document = try #require(form.documentView)
+        let internetFrame = internet.convert(internet.bounds, to: document)
+        let calendarFrame = calendar.convert(calendar.bounds, to: document)
+        #expect(!internetFrame.intersects(calendarFrame))
+        #expect(document.bounds.contains(internetFrame) && document.bounds.contains(calendarFrame))
+      }
+      _ = storage.scrollToVisible(storage.bounds)
+      let form = try #require(storage.enclosingScrollView)
+      let document = try #require(form.documentView)
+      #expect(form.documentVisibleRect.intersects(storage.convert(storage.bounds, to: document)))
+    }
   }
+
 }
 
 @Test @MainActor func expandedSummaryScalesTypeAndShowsMoreAlreadyCollectedProcesses() throws {

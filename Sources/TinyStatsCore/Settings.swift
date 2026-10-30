@@ -58,7 +58,7 @@ public enum MenuBarSize: String, Codable, CaseIterable, Sendable {
   }
 }
 
-/// Semantic system colors adapt to the current appearance. Automatic uses a consistent color for each metric.
+/// Semantic system colors adapt to the current appearance. Rendering follows the system accent; legacy color choices remain decodable.
 public enum MenuBarColor: String, Codable, CaseIterable, Sendable {
   case automatic, blue, green, orange, pink, purple, red
   public var title: String { rawValue.capitalized }

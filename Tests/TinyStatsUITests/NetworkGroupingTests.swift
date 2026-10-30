@@ -93,7 +93,9 @@ import Testing
   func descendants(_ root: NSView) -> [NSView] { root.subviews.flatMap { [$0] + descendants($0) } }
   let root = try #require(preferences.window?.contentView)
   let control = try #require(
-    descendants(root).compactMap { $0 as? NSButton }.first { $0.title == "Use Fahrenheit" })
+    descendants(root).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Use Fahrenheit"
+    })
   control.state = .on
   #expect(
     NSApplication.shared.sendAction(try #require(control.action), to: control.target, from: control)

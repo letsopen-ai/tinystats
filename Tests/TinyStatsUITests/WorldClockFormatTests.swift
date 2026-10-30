@@ -135,7 +135,7 @@ import TinyStatsCore
   #expect(demand == true)
   try worldAction(save)
   let units = try #require(
-    controls.compactMap { $0 as? NSButton }.first { $0.title == "Use Fahrenheit" })
+    controls.compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "Use Fahrenheit" })
   units.state = .on
   try worldAction(units)
   #expect(saved?.worldClockFormat == field.stringValue && saved?.fahrenheit == true)

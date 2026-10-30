@@ -34,8 +34,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   var onHistoryPersistence: ((Bool) -> Void)?
   var onHistory: (() -> Void)?
   private var historyStorageBusy = false
-  private lazy var keepHistory = NSButton(
-    checkboxWithTitle: "Keep history between launches", target: nil, action: nil)
+  private lazy var keepHistory = SystemSettingSwitch(
+    title: "Keep history between launches", target: nil, action: nil)
   var onClose: (() -> Void)?
   var onChange: ((Settings) -> Void)?
   var onInternetSettings: (() -> Void)?
@@ -52,23 +52,24 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private var settings: Settings
   private lazy var sensor = NSPopUpButton()
   private var sensorKeys: [String] = []
-  private lazy var smart = NSButton(
-    checkboxWithTitle: "Poll SMART health (5 min)", target: nil, action: nil)
+  private lazy var smart = SystemSettingSwitch(
+    title: "Poll SMART health (5 min)", target: nil, action: nil)
   private lazy var interval = NSPopUpButton()
   private lazy var network = NSPopUpButton()
-  private lazy var units = NSButton(checkboxWithTitle: "Use Fahrenheit", target: nil, action: nil)
-  private lazy var alerts = NSButton(
-    checkboxWithTitle: "Enable notifications",
+  private lazy var units = SystemSettingSwitch(title: "Use Fahrenheit", target: nil, action: nil)
+  private lazy var alerts = SystemSettingSwitch(
+    title: "Enable notifications",
     target: nil, action: nil)
-  private lazy var login = NSButton(checkboxWithTitle: "Launch at login", target: nil, action: nil)
+  private lazy var login = SystemSettingSwitch(title: "Launch at login", target: nil, action: nil)
   private lazy var clocks = NSTextField(string: "")
   private lazy var message = NSTextField(wrappingLabelWithString: "")
   private static let menuHelperText =
     "Each readout opens its own page. ⌘-drag menu bar items to reorder. Scroll wide previews horizontally."
   private lazy var menuMessage = NSTextField(wrappingLabelWithString: Self.menuHelperText)
-  private var readouts: [Module: NSButton] = [:]
+  private var readouts: [Module: SystemSettingSwitch] = [:]
   private lazy var preview = MenuBarPreviewView(frame: .zero)
   private lazy var appearance = NSPopUpButton()
+  private let presetStatus = SystemSettingsForm.text("")
   private let tabs = NSTabView()
   private let tabSelector = NSSegmentedControl(
     labels: ["General", "Menu Bar"], trackingMode: .selectOne, target: nil, action: nil)
@@ -86,14 +87,22 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private var sizeMenus: [Module: NSPopUpButton] = [:]
   private lazy var previewScroll = NSScrollView()
   private var styleMenus: [Module: NSPopUpButton] = [:]
-  private let presetSelector = NSSegmentedControl(
-    labels: MenuBarPreset.allCases.map(\.rawValue), trackingMode: .selectOne,
-    target: nil, action: nil)
-  private let styleOptions = NSView()
+  private lazy var presetSelector: SystemPresetChoices = {
+    let examples = MenuBarPreset.allCases.map { preset in
+      var example = settings
+      for module in [Module.cpu, .memory] {
+        example.styles[module.rawValue] = preset.style(for: module, sensorKey: settings.sensorKey)
+        example.appearances[module.rawValue] = .init(size: preset.size, color: .automatic)
+      }
+      return example
+    }
+    return SystemPresetChoices(
+      titles: MenuBarPreset.allCases.map(\.rawValue), settings: examples, snapshot: latest)
+  }()
+  private let styleOptions = NSStackView()
   private lazy var styleDisclosure = NSButton(
     title: "Customize readouts & styles…", target: self, action: #selector(toggleStyleOptions))
-  private let onlineTimeOptions = NSView()
-  private let historyOptions = NSView()
+  private let onlineTimeOptions = NSStackView()
   private lazy var onlineTimeDisclosure = NSButton(
     title: "Online & Time advanced", target: self, action: #selector(toggleOnlineTimeOptions))
   init(
@@ -114,6 +123,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     super.init(window: window)
     window.delegate = self
     window.appearance = settings.theme.nativeAppearance
+    window.contentView = SystemSettingsBackgroundView(
+      frame: .init(x: 0, y: 0, width: 740, height: 660))
     guard let outer = window.contentView else { return }
     tabs.frame = .init(x: 12, y: 12, width: 716, height: 606)
     tabs.tabViewType = .noTabsBezelBorder
@@ -140,62 +151,22 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     selectPage(initialPage)
   }
 
-  private func add(_ child: NSView, _ parent: NSView, _ x: Int, _ y: Int, _ w: Int, _ h: Int) {
-    child.frame = .init(x: x, y: y, width: w, height: h)
-    child.autoresizingMask = y <= 32 ? [.maxYMargin] : [.minYMargin]
-    if x >= 346 {
-      child.autoresizingMask.insert(.minXMargin)
-    } else if w >= 300
-      || ((parent === menuBarPage || parent === styleOptions) && (x == 136 || x == 140))
-    {
-      child.autoresizingMask.insert(.width)
-    }
-    parent.addSubview(child)
-  }
-  private func label(_ text: String, _ parent: NSView, _ y: Int) {
-    let label = NSTextField(labelWithString: text)
-    label.font = .systemFont(ofSize: 12, weight: .semibold)
-    add(label, parent, 20, y, 150, 22)
-  }
-  private func intro(_ title: String, _ text: String, _ parent: NSView) {
-    let heading = NSTextField(labelWithString: title)
-    heading.font = .systemFont(ofSize: 20, weight: .semibold)
-    add(heading, parent, 20, 554, 640, 28)
-    let caption = NSTextField(labelWithString: text)
-    caption.font = .systemFont(ofSize: 12)
-    caption.textColor = .secondaryLabelColor
-    add(caption, parent, 20, 526, 640, 22)
-  }
-
   private func buildGeneralPage() {
     let general = generalPage
-    intro(
-      "General",
-      "No account. No analytics. Local only, unless you enable Weather or advanced internet checks.",
-      general
-    )
-    label("Appearance", general, 488)
     appearance.addItems(withTitles: AppTheme.allCases.map(\.title))
     appearance.selectItem(withTitle: settings.theme.title)
     appearance.setAccessibilityLabel("App appearance")
     appearance.target = self
     appearance.action = #selector(changed)
-    add(appearance, general, 180, 486, 210, 26)
-    label("Units", general, 456)
     units.state = settings.fahrenheit ? .on : .off
     units.target = self
     units.action = #selector(changed)
-    add(units, general, 180, 454, 355, 24)
-    label("Update interval", general, 424)
     interval.addItems(withTitles: ["1 second", "2 seconds · default", "5 seconds", "10 seconds"])
     interval.selectItem(at: [1.0, 2, 5, 10].firstIndex(of: settings.interval) ?? 1)
-    add(interval, general, 180, 422, 355, 26)
     let cadence = NSTextField(
       labelWithString: "Low Power Mode uses at least 5 seconds. Sensors update at ≥5s.")
     cadence.font = .systemFont(ofSize: 10)
     cadence.textColor = .secondaryLabelColor
-    add(cadence, general, 180, 400, 470, 18)
-    label("Network interface", general, 368)
     network.addItems(withTitles: ["Auto · IPv4 / IPv6 primary route"] + interfaces)
     if settings.networkInterface != "auto", !interfaces.contains(settings.networkInterface) {
       network.addItem(withTitle: settings.networkInterface)
@@ -203,93 +174,67 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     network.selectItem(
       withTitle: settings.networkInterface == "auto"
         ? "Auto · IPv4 / IPv6 primary route" : settings.networkInterface)
-    add(network, general, 180, 366, 300, 26)
     smart.state = settings.monitorStorageHealth ? .on : .off
-    label("Disks", general, 336)
     smart.target = self
     smart.action = #selector(changed)
     smart.toolTip =
       "Off: read drive health while disk details are open. On: also check every five minutes in the background."
-    add(smart, general, 180, 334, 300, 24)
     login.state = LoginItemPreference.enabled ? .on : .off
     login.target = self
     login.action = #selector(loginChanged)
-    label("Startup", general, 304)
-    add(login, general, 180, 302, 300, 24)
     alerts.state = settings.alerts ? .on : .off
     alerts.target = self
     alerts.action = #selector(alertsChanged)
-    label("Notifications", general, 272)
-    add(alerts, general, 180, 270, 300, 24)
     let editRules = NSButton(title: "Edit alert rules…", target: self, action: #selector(showRules))
     editRules.bezelStyle = .rounded
-    add(editRules, general, 496, 268, 170, 28)
-    label("World clock zones", general, 240)
     clocks.stringValue = settings.worldClockInput
     clocks.placeholderString = "UTC, London office=Europe/London"
-    add(clocks, general, 180, 238, 300, 26)
     let saveClocks = NSButton(title: "Save clocks", target: self, action: #selector(saveClocks))
     saveClocks.bezelStyle = .rounded
-    add(saveClocks, general, 496, 238, 170, 28)
     let hint = NSTextField(
       labelWithString: "Up to six zones · optional Name=Zone, e.g. Work=Europe/London")
     hint.font = .systemFont(ofSize: 10)
     hint.textColor = .secondaryLabelColor
-    add(hint, general, 180, 216, 486, 18)
-    label("Time", general, 184)
     let formats = NSButton(
       title: "World clock format…", target: self, action: #selector(showWorldClockFormat))
     formats.bezelStyle = .rounded
-    add(formats, general, 180, 182, 300, 28)
     message.font = .systemFont(ofSize: 11)
     message.textColor = .secondaryLabelColor
-    add(message, general, 20, 20, 646, 18)
     onlineTimeDisclosure.bezelStyle = .rounded
     onlineTimeDisclosure.setAccessibilityLabel("Online & Time advanced")
     onlineTimeDisclosure.setAccessibilityExpanded(false)
-    add(onlineTimeDisclosure, general, 20, 150, 330, 28)
-    add(onlineTimeOptions, general, 180, 98, 486, 50)
     onlineTimeOptions.isHidden = true
     let internet = NSButton(
       title: "Internet checks…", target: self, action: #selector(showInternetSettings))
     internet.bezelStyle = .rounded
     internet.setAccessibilityLabel("Internet checks")
-    add(internet, onlineTimeOptions, 0, 20, 220, 28)
     let calendar = NSButton(
       title: "Calendar…", target: self, action: #selector(showCalendarSettings))
     calendar.bezelStyle = .rounded
     calendar.setAccessibilityLabel("Calendar settings")
-    add(calendar, onlineTimeOptions, 240, 20, 246, 28)
     let advancedHint = NSTextField(
       labelWithString: "Optional · off by default · no requests until you enable")
     advancedHint.font = .systemFont(ofSize: 10)
     advancedHint.textColor = .secondaryLabelColor
-    add(advancedHint, onlineTimeOptions, 0, 0, 486, 18)
-    add(historyOptions, general, 0, 100, 686, 50)
-    label("History", historyOptions, 24)
     keepHistory.state = settings.persistHistory ? .on : .off
     keepHistory.isEnabled = !historyStorageBusy
     keepHistory.target = self
     keepHistory.action = #selector(historyChanged)
     keepHistory.toolTip =
       "On by default. Off pauses saving; it does not delete the saved checkpoint. Clear history in History & storage."
-    add(keepHistory, historyOptions, 180, 22, 310, 24)
     let storage = NSButton(
       title: "History & storage…", target: self, action: #selector(showHistoryStorage))
     storage.bezelStyle = .rounded
-    add(storage, historyOptions, 496, 20, 170, 28)
     let historyScope = NSTextField(
       labelWithString: "Local numeric readings · up to 28 days · checkpoint up to 8.2 MiB")
     historyScope.font = .systemFont(ofSize: 10)
     historyScope.textColor = .secondaryLabelColor
-    add(historyScope, historyOptions, 180, 0, 486, 18)
 
     let footer = NSTextField(
       labelWithString:
         "Most changes apply immediately · Clock zones use Save clocks · ⌘1–9 / ⌘0 switches pages")
     footer.font = .systemFont(ofSize: 10)
     footer.textColor = .secondaryLabelColor
-    add(footer, general, 20, 0, 646, 18)
     for popup in [interval, network] {
       popup.target = self
       popup.action = #selector(changed)
@@ -297,60 +242,88 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     interval.setAccessibilityLabel("Sampling interval")
     network.setAccessibilityLabel("Network interface")
     clocks.setAccessibilityLabel("World clock time zones")
+    let form = SystemSettingsForm.self
+    onlineTimeOptions.orientation = .vertical
+    onlineTimeOptions.alignment = .leading
+    onlineTimeOptions.spacing = 8
+    onlineTimeOptions.addArrangedSubview(
+      form.group([
+        form.row("Internet checks", internet), form.row("Calendar", calendar),
+      ]))
+    onlineTimeOptions.addArrangedSubview(advancedHint)
+    for child in onlineTimeOptions.arrangedSubviews {
+      child.translatesAutoresizingMaskIntoConstraints = false
+      child.widthAnchor.constraint(equalTo: onlineTimeOptions.widthAnchor).isActive = true
+    }
+    _ = SystemSettingsForm(
+      in: general,
+      views: [
+        form.text(
+          "No account. No analytics. Local only, unless you enable Weather or advanced internet checks."
+        ),
+        form.text("Appearance and updates", heading: true),
+        form.group([
+          form.row("Appearance", appearance, width: 210),
+          form.row(units.title, units),
+          form.row("Update interval", interval, width: 240),
+        ]), cadence,
+        form.text("Local monitoring", heading: true),
+        form.group([
+          form.row("Network interface", network, width: 300),
+          form.row(smart.title, smart), form.row(login.title, login),
+        ]),
+        form.text("Notifications", heading: true),
+        form.group([form.row(alerts.title, alerts), form.row("Alert rules", editRules)]),
+        form.text("World clocks", heading: true),
+        form.group([
+          form.row("Time zones", form.controls([clocks, saveClocks], widths: [260, 120])),
+          form.row("Display", formats),
+        ]), hint,
+        onlineTimeDisclosure, onlineTimeOptions,
+        form.text("History", heading: true),
+        form.group([form.row(keepHistory.title, keepHistory), form.row("Storage", storage)]),
+        historyScope,
+        message, footer,
+      ])
   }
 
   private func buildMenuBarPage() {
-    let menuBar = menuBarPage
-    intro(
-      "Menu Bar",
-      "Changes apply immediately. Adaptive text and graphic colors. CPU cores use E/P colors.",
-      menuBar)
-    let presetLabel = NSTextField(labelWithString: "Presets")
-    presetLabel.font = .systemFont(ofSize: 12, weight: .semibold)
-    add(presetLabel, menuBar, 20, 494, 100, 22)
-    presetSelector.segmentStyle = .rounded
+    let form = SystemSettingsForm.self
     presetSelector.target = self
     presetSelector.action = #selector(presetChanged)
-    presetSelector.setAccessibilityLabel("Menu bar presets")
     presetSelector.toolTip =
       "Apply styles to enabled readouts. Separate stacks label + value within each separate menu bar item."
-    add(presetSelector, menuBar, 136, 492, 440, 26)
-    updatePresetSelection()
-    let previewLabel = NSTextField(labelWithString: "LIVE MENU BAR PREVIEW")
-    previewLabel.font = .systemFont(ofSize: 10, weight: .semibold)
-    previewLabel.textColor = .secondaryLabelColor
-    add(previewLabel, menuBar, 20, 464, 640, 18)
     previewScroll.hasHorizontalScroller = true
     previewScroll.hasVerticalScroller = false
     previewScroll.scrollerStyle = .overlay
     previewScroll.autohidesScrollers = true
-    previewScroll.drawsBackground = true
-    previewScroll.backgroundColor = .windowBackgroundColor
-    previewScroll.borderType = .bezelBorder
+    previewScroll.drawsBackground = false
+    previewScroll.borderType = .noBorder
     previewScroll.documentView = preview
     previewScroll.setAccessibilityLabel("Live menu bar preview")
-    add(previewScroll, menuBar, 18, 408, 656, 50)
+    let wallpaper = SystemWallpaperStrip()
+    wallpaper.heightAnchor.constraint(equalToConstant: 62).isActive = true
+    previewScroll.translatesAutoresizingMaskIntoConstraints = false
+    wallpaper.addSubview(previewScroll)
+    NSLayoutConstraint.activate([
+      previewScroll.leadingAnchor.constraint(equalTo: wallpaper.leadingAnchor, constant: 8),
+      previewScroll.trailingAnchor.constraint(equalTo: wallpaper.trailingAnchor, constant: -8),
+      previewScroll.topAnchor.constraint(equalTo: wallpaper.topAnchor, constant: 6),
+      previewScroll.heightAnchor.constraint(equalToConstant: 42),
+    ])
     styleDisclosure.bezelStyle = .rounded
+    styleDisclosure.title = "Hide readout & style options"
     styleDisclosure.setAccessibilityLabel("Customize menu bar readouts and styles")
-    styleDisclosure.setAccessibilityExpanded(false)
-    add(styleDisclosure, menuBar, 20, 374, 280, 26)
-    add(styleOptions, menuBar, 0, 48, Int(designPageSize.width), 312)
-    styleOptions.isHidden = true
-    for (title, x, width) in [
-      ("Readout", 20, 112), ("Style", 140, 200), ("Font", 350, 90),
-    ] {
-      let titleLabel = NSTextField(labelWithString: title)
-      titleLabel.font = .systemFont(ofSize: 10, weight: .medium)
-      titleLabel.textColor = .secondaryLabelColor
-      add(titleLabel, styleOptions, x, 288, width, 18)
-    }
-    for (i, module) in Module.allCases.filter({ $0 != .overview }).enumerated() {
-      let y = 256 - i * 28
-      let check = NSButton(
-        checkboxWithTitle: module.title, target: self, action: #selector(changed))
-      check.state = settings.readouts.contains(module) ? .on : .off
-      readouts[module] = check
-      add(check, styleOptions, 20, y, 112, 25)
+    styleDisclosure.setAccessibilityExpanded(true)
+    styleOptions.orientation = .vertical
+    styleOptions.alignment = .leading
+    styleOptions.spacing = 10
+    var rows: [SystemFormRow] = []
+    for module in Module.allCases where module != .overview {
+      let toggle = SystemSettingSwitch(
+        title: module.title, target: self, action: #selector(changed))
+      toggle.state = settings.readouts.contains(module) ? .on : .off
+      readouts[module] = toggle
       let popup = NSPopUpButton()
       popup.font = .systemFont(ofSize: 12)
       popup.addItems(
@@ -360,41 +333,62 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       popup.action = #selector(changed)
       popup.setAccessibilityLabel("\(module.title) menu bar style")
       styleMenus[module] = popup
-      add(popup, styleOptions, 136, y, 202, 25)
-      let look = settings.appearance(for: module)
       let size = NSPopUpButton()
       size.font = .systemFont(ofSize: 11)
       size.addItems(withTitles: MenuBarSize.allCases.map(\.title))
-      size.selectItem(withTitle: look.size.title)
+      size.selectItem(withTitle: settings.appearance(for: module).size.title)
       size.target = self
       size.action = #selector(changed)
       size.setAccessibilityLabel("\(module.title) menu bar font size")
       sizeMenus[module] = size
-      add(size, styleOptions, 346, y, 96, 25)
-      if module == .battery {
-        let formats = NSButton(title: "…", target: self, action: #selector(showBatteryFormats))
-        formats.bezelStyle = .rounded
-        formats.setAccessibilityLabel("Battery menu bar formats")
-        formats.toolTip = "Choose battery values and per-state styles"
-        add(formats, styleOptions, 632, y, 38, 25)
-      }
-      if module == .clock {
-        let formats = NSButton(title: "…", target: self, action: #selector(showClockFormats))
-        formats.bezelStyle = .rounded
-        formats.setAccessibilityLabel("Clock menu bar formats")
-        formats.toolTip = "Edit clock formats and time zones"
-        add(formats, styleOptions, 632, y, 38, 25)
-      }
+      let icon = NSImageView(
+        image: NSImage(systemSymbolName: module.symbol, accessibilityDescription: nil) ?? NSImage())
+      icon.contentTintColor = .secondaryLabelColor
+      icon.widthAnchor.constraint(equalToConstant: 18).isActive = true
+      let name = NSTextField(labelWithString: module.title)
+      name.font = .systemFont(ofSize: 13)
+      let identity = form.controls([icon, name])
+      let controls = form.controls([popup, size, toggle], widths: [200, 96, 38])
+      let row = form.controls([identity, controls])
+      identity.setContentHuggingPriority(.defaultLow, for: .horizontal)
+      rows.append(form.row("", row, height: 38))
     }
-    label("Menu bar sensor", styleOptions, 2)
+    let headings = form.controls([
+      form.text("Readouts", heading: true), form.text("Style"), form.text("Font"),
+      form.text("Show"),
+    ])
+    // Match the trailing control columns while the leading identity column absorbs resizing.
+    headings.arrangedSubviews[1].widthAnchor.constraint(equalToConstant: 200).isActive = true
+    headings.arrangedSubviews[2].widthAnchor.constraint(equalToConstant: 96).isActive = true
+    headings.arrangedSubviews[3].widthAnchor.constraint(equalToConstant: 38).isActive = true
+    styleOptions.addArrangedSubview(headings)
+    styleOptions.addArrangedSubview(form.group(rows))
     sensor.target = self
     sensor.action = #selector(sensorChanged)
     sensor.setAccessibilityLabel("Menu bar sensor")
-    add(sensor, styleOptions, 180, 0, 470, 26)
-    menuMessage.font = .systemFont(ofSize: 10)
+    styleOptions.addArrangedSubview(form.group([form.row("Menu bar sensor", sensor, width: 390)]))
+    let battery = NSButton(
+      title: "Battery formats…", target: self, action: #selector(showBatteryFormats))
+    battery.setAccessibilityLabel("Battery menu bar formats")
+    let clock = NSButton(title: "Clock formats…", target: self, action: #selector(showClockFormats))
+    clock.setAccessibilityLabel("Clock menu bar formats")
+    styleOptions.addArrangedSubview(
+      form.group([
+        form.row("Battery", battery), form.row("Time", clock),
+      ]))
+    for child in styleOptions.arrangedSubviews {
+      child.translatesAutoresizingMaskIntoConstraints = false
+      child.widthAnchor.constraint(equalTo: styleOptions.widthAnchor).isActive = true
+    }
+    menuMessage.font = .systemFont(ofSize: 11)
     menuMessage.textColor = .secondaryLabelColor
-    add(menuMessage, menuBar, 20, 24, 646, 20)
-
+    _ = SystemSettingsForm(
+      in: menuBarPage,
+      views: [
+        form.group([form.row("", wallpaper, height: 78), form.row("", presetSelector, height: 86)]),
+        presetStatus, styleDisclosure, styleOptions, menuMessage,
+      ])
+    updatePresetSelection()
   }
 
   @objc private func toggleStyleOptions() {
@@ -435,6 +429,10 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private func updatePresetSelection() {
     presetSelector.selectedSegment =
       MenuBarPreset.allCases.firstIndex { $0.matches(settings) } ?? -1
+    presetStatus.stringValue =
+      presetSelector.selectedSegment < 0
+      ? "No preset selected: your readouts use individual styles"
+      : presetSelector.label(forSegment: presetSelector.selectedSegment) + " preset"
   }
 
   func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
@@ -626,6 +624,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     else { return }
     preview.appearance = menuBarAppearance
     previewScroll.appearance = menuBarAppearance
+    previewScroll.superview?.appearance = menuBarAppearance
     let actualOrder =
       settings.separateItems && individualOrder.count == settings.readouts.count
         && Set(individualOrder) == Set(settings.readouts) ? individualOrder : settings.readouts
@@ -646,9 +645,13 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
           for: latest.batteries.first, defaultStyle: settings.style(for: module)
         ).style
         : settings.style(for: module)
-      popup.isEnabled = style.usesFont
+      popup.isEnabled = style.usesFont && settings.readouts.contains(module)
     }
-    styleMenus[.battery]?.isEnabled = !settings.batteryMenu.customizeStates
+    for (module, popup) in styleMenus {
+      popup.isEnabled = settings.readouts.contains(module)
+    }
+    styleMenus[.battery]?.isEnabled =
+      settings.readouts.contains(.battery) && !settings.batteryMenu.customizeStates
     styleMenus[.battery]?.toolTip =
       settings.batteryMenu.customizeStates
       ? "Per-state styles are configured in Battery formats (…)" : nil
@@ -811,7 +814,6 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     onlineTimeDisclosure.title = expanded ? "Hide Online & Time advanced" : "Online & Time advanced"
     onlineTimeDisclosure.setAccessibilityExpanded(expanded)
     // Session-only disclosure: leave feature settings and authorization untouched.
-    historyOptions.frame.origin.y += expanded ? -60 : 60
   }
   @objc private func showInternetSettings() { onInternetSettings?() }
   @objc private func showCalendarSettings() { onCalendarSettings?() }
