@@ -15,6 +15,7 @@ enum SensorBrowserPresentation {
     var selection: SensorBrowserIdentity?
     var title: String
     var count: String
+    var countAccessibilityLabel: String
     var value: String
     var subtitle: String
     var rows: [DetailRow]
@@ -116,7 +117,9 @@ enum SensorBrowserPresentation {
         rows += group.filter { friendly($0) != nil || prominentKeys.contains($0.key) }.map(
           physicalRow)
         let unnamed = group.filter { friendly($0) == nil && !prominentKeys.contains($0.key) }
-        if !unnamed.isEmpty {
+        if unnamed.count == 1, let reading = unnamed.first {
+          rows.append(physicalRow(reading))
+        } else if !unnamed.isEmpty {
           let label = summaryLabel(unnamed, component: component, fahrenheit: settings.fahrenheit)
           let spoken = label.replacingOccurrences(of: "–", with: " to ")
             .replacingOccurrences(of: " · ", with: ", ")
@@ -149,7 +152,20 @@ enum SensorBrowserPresentation {
         ?? highlightKeys.first(where: { prominent in physical.contains { $0.key == prominent.key } }
         )
         .map { .reading($0.key) }
+        ?? rows.compactMap { row -> SensorBrowserIdentity? in
+          guard let identity = row.sensorIdentity else { return nil }
+          if !showsAll, query.isEmpty, case .reading(let key) = identity,
+            let reading = snapshot.sensor(for: key), friendly(reading) == nil,
+            !prominentKeys.contains(key)
+          {
+            // Revealing a singleton must not silently replace the existing initial
+            // focus with an unclassified reading when a named alternative exists.
+            return nil
+          }
+          return identity
+        }.first
         ?? rows.compactMap(\.sensorIdentity).first
+        ?? physical.first.map { .reading($0.key) }
     }
     let selected = selection ?? defaultSelection
     var chosen: SensorReading?
@@ -186,7 +202,12 @@ enum SensorBrowserPresentation {
     return Presentation(
       selection: selected,
       title: "SENSORS" + (paused ? " · PAUSED" : ""),
-      count: "\(physical.count)/\(snapshot.sensors.count)",
+      count: query.isEmpty
+        ? "\(snapshot.sensors.count) sensors"
+        : "\(physical.count) of \(snapshot.sensors.count) sensors",
+      countAccessibilityLabel: query.isEmpty
+        ? "\(snapshot.sensors.count) readable sensors"
+        : "\(physical.count) of \(snapshot.sensors.count) readable sensors match the search",
       value: chosen?.formatted(fahrenheit: settings.fahrenheit) ?? "Sensor unavailable",
       subtitle: subtitle, rows: rows,
       series: [

@@ -156,7 +156,7 @@ import Testing
     let card = try #require(view.cards.first { $0.groupsProcesses })
     #expect(view.displayedRows(in: card).count == 8)
     #expect(card.contentRect.height >= 8 * 25)
-    if module == .network { #expect(card.note == "Partial") }
+    if module == .network { #expect(card.note == "Partial coverage") }
   }
   snapshot.networkTraffic = .init()
   view.update(snapshot, history: [], settings: settings, module: .network)
@@ -213,13 +213,21 @@ import Testing
       #expect(pause.toolTip?.hasPrefix(pause.title + "\n") == true)
       #expect(pause.accessibilityHelp()?.contains("Privacy: " + privacyRow.value) == true)
       #expect(pause.accessibilityHelp()?.contains("Configured cadence: 5s") == true)
-      #expect(detail.view.accessibilityValue() as? String == pause.accessibilityHelp())
+      let information = try #require(
+        detail.view.accessibilityChildren()?.compactMap { $0 as? NSAccessibilityElement }.first {
+          $0.accessibilityLabel() == "About this sample"
+        })
+      #expect(
+        information.isAccessibilityElement() && information.accessibilityRole() == .staticText)
+      #expect(information.accessibilityValue() as? String == pause.accessibilityHelp())
     }
   }
   sample.sampleMilliseconds = .nan
   detail.update(sample, history: [])
   #expect(
-    (detail.view.accessibilityValue() as? String)?.contains("Last sample cost: Unavailable") == true
+    detail.view.accessibilityChildren()?.compactMap { $0 as? NSAccessibilityElement }.contains {
+      ($0.accessibilityValue() as? String)?.contains("Last sample cost: Unavailable") == true
+    } == true
   )
 }
 

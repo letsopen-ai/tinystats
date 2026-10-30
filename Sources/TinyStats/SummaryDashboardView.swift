@@ -102,7 +102,7 @@ import TinyStatsCore
   var popoverDocumentHeight: CGFloat {
     canonicalFrames.enumerated().reduce(0) { total, pair in
       total + popoverCardHeight(cards[pair.offset], canonical: pair.element)
-        + (pair.offset == 0 && popoverHeadline != nil ? 27 : 0) + 8
+        + (pair.offset == 0 && popoverHeadline != nil && !isOverview ? 27 : 0) + 8
     }
   }
   func popoverCardHeight(_ card: Card, canonical: NSRect) -> CGFloat {
@@ -153,7 +153,9 @@ import TinyStatsCore
     if usesPopoverLayout {
       guard rows.count > 12 else { return rows[...] }
       return
-        (Array(rows.prefix(11)) + [.init(label: "+\(rows.count - 11) more", value: "All readings")])[
+        (Array(rows.prefix(11)) + [
+          .init(label: "+\(rows.count - 11) more", value: isOverview ? "" : "All readings")
+        ])[
           ...]
     }
     guard isExpandable(card) else { return rows[...] }
@@ -187,7 +189,7 @@ import TinyStatsCore
     if usesPopoverLayout {
       var y: CGFloat = 0
       for index in cards.indices {
-        let header = index == 0 && popoverHeadline != nil
+        let header = index == 0 && popoverHeadline != nil && !isOverview
         cards[index].headerHeight = header ? 58 : 36
         let height =
           popoverCardHeight(cards[index], canonical: canonicalFrames[index]) + (header ? 27 : 0)
@@ -307,10 +309,10 @@ import TinyStatsCore
           label: app.label
             + (app.pid == nil
               ? "" : " · \(app.processCount) \(app.processCount == 1 ? "process" : "processes")"),
-          value: memory ? app.memory.map(Display.bytes) ?? "—" : Display.processPercent(app.cpu),
+          value: memory ? app.memory.map(Display.bytes) ?? "—" : app.cpuDisplayValue,
           fraction: fraction,
           accessibilityValue: !memory && app.cpuIncomplete > 0
-            ? "\(Display.processPercent(app.cpu)) · \(app.cpuIncomplete) unmeasured processes"
+            ? app.cpuDisplayValue + " · " + (app.cpuMeasurementHelp ?? "")
             : nil,
           bundlePath: app.bundlePath, processCount: app.processCount, displayName: app.name)
       }
@@ -749,7 +751,7 @@ import TinyStatsCore
           // Incomplete traffic coverage matters before interpreting any numeric row.
           cards[index].note =
             module == .network && cards[index].title.contains("TRAFFIC")
-            ? "Partial" : ""
+            ? "Partial coverage" : ""
           if cards[index].note.isEmpty {
             canonicalFrames[index].size.height = max(34, canonicalFrames[index].height - 17)
           }
@@ -1099,7 +1101,7 @@ import TinyStatsCore
           card.note,
           rect: .init(
             x: card.frame.minX + 12, y: card.frame.maxY - 20,
-            width: card.frame.width - 24, height: 14), color: .secondaryLabelColor, size: 9)
+            width: card.frame.width - 24, height: 14), color: .secondaryLabelColor, size: 11)
       }
     }
   }
@@ -1632,7 +1634,7 @@ import TinyStatsCore
           ? min(baseline - graph.minY, graph.maxY - baseline)
           : baseline - graph.minY) * scale) / scale
     NSColor.quaternaryLabelColor.withAlphaComponent(0.35).setStroke()
-    for fraction in [0.0, 0.5, 1.0] {
+    for fraction in [0.0, 0.5, 1.0] where layout.hasData {
       let grid = NSBezierPath()
       let y = graph.minY + graph.height * fraction
       grid.move(to: NSPoint(x: graph.minX, y: y))

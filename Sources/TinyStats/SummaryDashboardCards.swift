@@ -217,6 +217,25 @@ extension SummaryDashboardView {
       return
     }
     let height = min(25, area.height / CGFloat(rows.count))
+    let appRows = rows.filter { $0.displayName != nil && $0.second != nil }
+    let valueAttributes: [NSAttributedString.Key: Any] = [
+      .font: NSFont.systemFont(ofSize: height < 18 ? 10 : 11, weight: .medium)
+    ]
+    // Paired Apps values need only their measured ink width. Give the remaining
+    // space to the name, retaining the independent four-digit count gutter.
+    let firstWidth = min(
+      area.width * 0.27,
+      max(
+        36,
+        appRows.map { ceil(($0.value as NSString).size(withAttributes: valueAttributes).width) + 8 }
+          .max() ?? 0))
+    let secondWidth = min(
+      area.width * 0.27,
+      max(
+        36,
+        appRows.map {
+          ceil((($0.second ?? "") as NSString).size(withAttributes: valueAttributes).width) + 8
+        }.max() ?? 0))
     for (index, row) in rows.enumerated() {
       let y = area.minY + CGFloat(index) * height
       let paired = row.second != nil
@@ -232,9 +251,14 @@ extension SummaryDashboardView {
           xRadius: 3, yRadius: 3
         ).fill()
       }
-      let valueStart = area.minX + area.width * (paired ? 0.43 : 0.56)
+      let fitsApp = paired && row.displayName != nil
+      let valueStart =
+        fitsApp
+        ? area.maxX - firstWidth - secondWidth
+        : area.minX + area.width * (paired ? 0.43 : 0.56)
+      let secondStart = fitsApp ? area.maxX - secondWidth : area.minX + area.width * 0.73
       if paired {
-        let barWidth = area.width * 0.27
+        let barWidth = secondStart - valueStart
         meter(
           row.fraction,
           rect: NSRect(
@@ -243,8 +267,9 @@ extension SummaryDashboardView {
         meter(
           row.secondFraction,
           rect: NSRect(
-            x: area.minX + area.width * 0.73 + 2,
-            y: y + pairedLayout.meterY, width: barWidth - 4, height: 2), color: row.secondColor)
+            x: secondStart + 2,
+            y: y + pairedLayout.meterY, width: area.maxX - secondStart - 4, height: 2),
+          color: row.secondColor)
       }
       var label = row.displayName ?? row.label
       if let fallback = row.displayName {
@@ -260,14 +285,11 @@ extension SummaryDashboardView {
         icon.draw(
           in: iconRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
           hints: nil)
-        NSColor.separatorColor.setStroke()
-        let rim = NSBezierPath(
-          roundedRect: iconRect.insetBy(dx: 0.25, dy: 0.25), xRadius: 3, yRadius: 3)
-        rim.lineWidth = 0.5
-        rim.stroke()
         text(
           "\(row.processCount)",
-          rect: .init(x: valueStart - 22, y: textY, width: 19, height: 16),
+          rect: .init(
+            x: valueStart - ProcessAppLabelCell.countWidth - 3, y: textY,
+            width: ProcessAppLabelCell.countWidth, height: 16),
           color: .labelColor, size: 10, alignment: .right)
       }
       let textHeight = paired ? pairedLayout.textHeight : 16
@@ -275,22 +297,22 @@ extension SummaryDashboardView {
         label,
         rect: NSRect(
           x: area.minX + 3 + iconInset, y: textY,
-          width: area.width * (paired ? 0.42 : 0.55) - 3 - iconInset
-            - (row.displayName == nil ? 0 : 22), height: textHeight),
+          width: valueStart - area.minX - 6 - iconInset
+            - (row.displayName == nil ? 0 : ProcessAppLabelCell.countWidth + 3), height: textHeight),
         size: height < 18 ? 10 : 11)
       text(
         row.value,
         rect: NSRect(
           x: valueStart, y: textY,
-          width: area.width * (paired ? 0.27 : 0.44) - 3, height: textHeight),
+          width: (paired ? secondStart : area.maxX) - valueStart - 3, height: textHeight),
         color: .labelColor, size: height < 18 ? 10 : 11,
         weight: .medium, alignment: .right)
       if let second = row.second {
         text(
           second,
           rect: NSRect(
-            x: area.minX + area.width * 0.73, y: y,
-            width: area.width * 0.27 - 3, height: textHeight), color: .labelColor,
+            x: secondStart, y: y,
+            width: area.maxX - secondStart - 3, height: textHeight), color: .labelColor,
           size: height < 18 ? 10 : 11, weight: .medium, alignment: .right)
       }
     }

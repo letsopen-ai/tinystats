@@ -20,6 +20,11 @@ public struct MonitorSchedule: Sendable {
     previousClockStep = nil
   }
   public mutating func invalidateClock() { clockBucket = nil }
+  /// An explicit regroup uses the same timer but must leave a meaningful rate interval.
+  public mutating func requestCollection(noEarlierThan deadline: Double) {
+    guard deadline.isFinite, deadline >= 0 else { return }
+    sampleDeadline = deadline
+  }
   public mutating func collectionFinished(at now: Double, interval: Double) {
     guard now.isFinite, now >= 0, let sampleDeadline, now >= sampleDeadline else { return }
     self.sampleDeadline = now + (interval.isFinite ? min(60, max(1, interval)) : 2)

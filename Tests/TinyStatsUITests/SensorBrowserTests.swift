@@ -149,7 +149,16 @@ import Testing
   for size in [NSSize(width: 884, height: 660), NSSize(width: 1920, height: 928)] {
     window.setContentSize(size)
     detail.view.layoutSubtreeIfNeeded()
-    #expect(table.tableColumns.reduce(0) { $0 + $1.width } <= scroll.contentSize.width - 30)
+    let index = try #require(
+      (0..<table.numberOfRows).first {
+        table.view(atColumn: 1, row: $0, makeIfNecessary: true) is NSTextField
+      })
+    let field = try #require(
+      table.view(atColumn: 1, row: index, makeIfNecessary: true) as? NSTextField)
+    let cell = try #require(field.cell)
+    let text = scroll.contentView.convert(cell.drawingRect(forBounds: field.bounds), from: field)
+    // Sensors put the gutter inside the cell, so measure the text rather than unused column width.
+    #expect(abs(scroll.contentView.bounds.maxX - text.maxX - 12) <= 0.5)
   }
   window.close()
 }
@@ -232,4 +241,46 @@ import Testing
     labels().contains {
       $0.contains("SMC scan limit: 128") && !$0.contains("Paused")
     })
+}
+
+@Test @MainActor func selectingHottestGPUKeepsItsRowSelectionAndKeyboardAnchor() throws {
+  let table = NSTableView()
+  let detail = DetailController(table: table)
+  var snapshot = Snapshot()
+  snapshot.sensorsSampledAt = 10
+  snapshot.sensors = [
+    .init(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 45),
+    .init(key: "TCGC", name: "GPU temperature", kind: .temperature, value: 55),
+    .init(key: "F0Ac", name: "Fan", kind: .fan, value: 1200),
+  ]
+  detail.update(snapshot, history: [])
+  detail.selected = .sensors
+  detail.loadViewIfNeeded()
+  let window = NSWindow(
+    contentRect: detail.view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
+  window.contentView = detail.view
+  defer {
+    window.contentView = nil
+    window.close()
+  }
+  window.makeFirstResponder(table)
+  let gpu = try #require(
+    (0..<table.numberOfRows).first {
+      (detail.tableView(table, viewFor: table.tableColumns[0], row: $0) as? NSTextField)?
+        .stringValue == "Hottest GPU sensor"
+    })
+  let count = table.numberOfRows
+  table.selectRowIndexes(IndexSet(integer: gpu), byExtendingSelection: false)
+  detail.tableViewSelectionDidChange(
+    .init(name: NSTableView.selectionDidChangeNotification, object: table))
+  #expect(table.numberOfRows == count && table.selectedRow == gpu)
+  #expect(window.firstResponder === table)
+  #expect(
+    (detail.tableView(table, viewFor: table.tableColumns[0], row: gpu) as? NSTextField)?.stringValue
+      == "Hottest GPU sensor")
+  snapshot.sensorsSampledAt = 15
+  snapshot.sensors[1].value = 58
+  detail.update(snapshot, history: [])
+  #expect(table.numberOfRows == count && table.selectedRow == gpu)
 }

@@ -97,9 +97,10 @@ enum SystemStyle {
     let path = NSBezierPath(
       roundedRect: rect.insetBy(dx: 0.25, dy: 0.25),
       xRadius: Radius.platter, yRadius: Radius.platter)
-    platterFill.setFill()
+    let solid = GlassSurface.Environment.current.treatment == .solid
+    (solid ? NSColor.controlBackgroundColor : platterFill).setFill()
     path.fill()
-    NSColor.separatorColor.withAlphaComponent(0.35).setStroke()
+    NSColor.separatorColor.withAlphaComponent(solid ? 1 : 0.35).setStroke()
     path.lineWidth = 0.5
     path.stroke()
   }
@@ -127,9 +128,15 @@ enum SystemStyle {
     NotificationCenter.default.addObserver(
       self, selector: #selector(systemColorsChanged),
       name: NSColor.systemColorsDidChangeNotification, object: nil)
+    NSWorkspace.shared.notificationCenter.addObserver(
+      self, selector: #selector(systemColorsChanged),
+      name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  deinit { NotificationCenter.default.removeObserver(self) }
+  deinit {
+    NotificationCenter.default.removeObserver(self)
+    NSWorkspace.shared.notificationCenter.removeObserver(self)
+  }
   @objc private func systemColorsChanged() { systemStyleDidChange() }
   override func viewDidChangeEffectiveAppearance() {
     super.viewDidChangeEffectiveAppearance()
@@ -169,15 +176,18 @@ enum SystemStyle {
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override func draw(_ dirtyRect: NSRect) {
+    let solid = GlassSurface.Environment.current.treatment == .solid
     let fill =
-      SystemStyle.isDark(effectiveAppearance)
-      ? NSColor.white.withAlphaComponent(0.08) : NSColor.textBackgroundColor
+      solid
+      ? NSColor.controlBackgroundColor
+      : SystemStyle.isDark(effectiveAppearance)
+        ? NSColor.white.withAlphaComponent(0.08) : NSColor.textBackgroundColor
     fill.setFill()
     NSBezierPath(
       roundedRect: bounds.insetBy(dx: 0.25, dy: 0.25), xRadius: SystemStyle.Radius.group,
       yRadius: SystemStyle.Radius.group
     ).fill()
-    NSColor.separatorColor.withAlphaComponent(0.35).setStroke()
+    NSColor.separatorColor.withAlphaComponent(solid ? 1 : 0.35).setStroke()
     let outline = NSBezierPath(
       roundedRect: bounds.insetBy(dx: 0.25, dy: 0.25), xRadius: SystemStyle.Radius.group,
       yRadius: SystemStyle.Radius.group)
