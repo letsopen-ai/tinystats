@@ -24,10 +24,54 @@ enum DetailReadingsBuilder {
     var upperBound: Double? = 100
   }
 
+  struct Headline {
+    var value = "", subtitle = ""
+  }
+  /// Summary dropdowns need only the headline; never build the hidden diagnostic table.
+  static func headline(module: Module, snapshot s: Snapshot) -> Headline? {
+    var result = Headline()
+    switch module {
+    case .overview:
+      result.value = "Your Mac, at a glance."
+      result.subtitle =
+        "\(s.thermalState) thermal state · up \(Display.duration(s.uptime))"
+    case .cpu:
+      result.value = Display.percent(s.cpu?.usage)
+      result.subtitle = "Of total capacity · \(s.cpu?.cores.count ?? 0) logical cores"
+    case .gpu:
+      result.value = Display.percent(s.gpus.compactMap(\.usage).max())
+      result.subtitle = s.gpus.map(\.name).joined(separator: " · ")
+    case .memory:
+      result.value = s.memory.map { Display.bytes($0.used) } ?? "—"
+      result.subtitle =
+        s.memory.map {
+          "of \(Display.bytes($0.total)) · pressure \($0.pressureDescription.lowercased())"
+        } ?? "Memory telemetry unavailable"
+    case .disks:
+      result.value =
+        s.startupVolume.map { Display.bytes($0.available) + " free" }
+        ?? "Startup volume unavailable"
+      result.subtitle = "Startup volume headline · all local volumes below · 30s refresh"
+    case .network:
+      result.value = "↓ " + Display.rate(s.download)
+      result.subtitle =
+        "↑ \(Display.rate(s.upload)) · \(s.selectedInterface.isEmpty ? "No primary route" : s.selectedInterface)"
+    case .battery:
+      result.value = s.batteries.first.map { Display.percent($0.percent) } ?? "Plugged in"
+      result.subtitle =
+        s.batteries.first.map {
+          BatteryMenuState.state(for: $0).title
+        } ?? "This Mac has no internal battery"
+    case .sensors, .weather, .clock: return nil
+    }
+    return result
+  }
+
   static func build(
     module: Module, snapshot s: Snapshot, history: [HistoryPoint], settings: Settings, paused: Bool
   ) -> Presentation? {
-    var result = Presentation()
+    guard let headline = headline(module: module, snapshot: s) else { return nil }
+    var result = Presentation(value: headline.value, subtitle: headline.subtitle)
     func row(_ label: String, _ value: String) {
       result.rows.append(.init(label: label, value: value))
     }
@@ -81,13 +125,13 @@ enum DetailReadingsBuilder {
           let count = s.cpu?.cores.count ?? 0
           if count > 0 {
             utilization(
-              label, item.cpu.map { min(100, $0 / Double(count)) }, .systemBlue,
+              label, item.cpu.map { min(100, $0 / Double(count)) }, SystemStyle.accent,
               text: Display.processPercent(item.cpu) + " of one core")
           } else {
             row(label, Display.processPercent(item.cpu) + " of one core")
           }
         } else if type == .memory, let memory = s.memory {
-          memoryAmount(label, item.memory, memory.total, .systemPurple)
+          memoryAmount(label, item.memory, memory.total, SystemStyle.accent)
         } else {
           row(
             label,
@@ -101,15 +145,12 @@ enum DetailReadingsBuilder {
     }
     switch module {
     case .overview:
-      result.value = "Your Mac, at a glance."
-      result.subtitle =
-        "\(s.thermalState) thermal state · up \(Display.duration(s.uptime))"
-      series("CPU", \.cpu, .systemBlue)
-      series("Memory", \.memory, .systemPurple)
-      utilization("CPU", s.cpu?.usage, .systemBlue)
-      utilization("GPU", s.gpus.compactMap(\.usage).max(), .systemTeal)
+      series("CPU", \.cpu, SystemStyle.accent)
+      series("Memory", \.memory, SystemStyle.accent)
+      utilization("CPU", s.cpu?.usage, SystemStyle.accent)
+      utilization("GPU", s.gpus.compactMap(\.usage).max(), SystemStyle.secondaryAccent)
       utilization(
-        "Memory", s.memory?.percent, .systemPurple,
+        "Memory", s.memory?.percent, SystemStyle.accent,
         text: s.memory.map { "\(Display.bytes($0.used)) / \(Display.bytes($0.total))" })
       row(
         "Network · \(s.selectedInterface.isEmpty ? "disconnected" : s.selectedInterface)",
@@ -119,15 +160,13 @@ enum DetailReadingsBuilder {
         "CPU temperature",
         s.cpuTemperature.map { temperature($0, settings: settings) } ?? "Unavailable")
       if let battery = s.batteries.first {
-        utilization("Battery", battery.percent, .systemGreen)
+        utilization("Battery", battery.percent, SystemStyle.accent)
       } else {
         row("Battery", "No internal battery")
       }
       row("Energy mode", s.lowPower ? "Low Power Mode" : "Standard")
     case .cpu:
-      result.value = Display.percent(s.cpu?.usage)
-      result.subtitle = "Of total capacity · \(s.cpu?.cores.count ?? 0) logical cores"
-      series("CPU", \.cpu, .systemBlue)
+      series("CPU", \.cpu, SystemStyle.accent)
       row(
         "Load · 1 / 5 / 15 minutes",
         s.cpu?.load.map { String(format: "%.2f", $0) }.joined(separator: " / ") ?? "—")
@@ -153,17 +192,15 @@ enum DetailReadingsBuilder {
       }
       processes(.cpu)
     case .gpu:
-      result.value = Display.percent(s.gpus.compactMap(\.usage).max())
-      result.subtitle = s.gpus.map(\.name).joined(separator: " · ")
-      series("GPU", \.gpu, .systemTeal)
+      series("GPU", \.gpu, SystemStyle.secondaryAccent)
       if s.gpus.isEmpty { row("Driver does not expose GPU telemetry", "Unavailable") }
       for gpu in s.gpus {
         section(gpu.name)
-        utilization("Driver utilization", gpu.usage, .systemTeal)
+        utilization("Driver utilization", gpu.usage, SystemStyle.secondaryAccent)
         row("Shader core count", gpu.coreCount.map(String.init) ?? "Unavailable")
         row("Per-core utilization", "No verified per-core counter")
-        utilization("Renderer utilization", gpu.rendererUsage, .systemBlue)
-        utilization("Tiler utilization", gpu.tilerUsage, .systemPurple)
+        utilization("Renderer utilization", gpu.rendererUsage, SystemStyle.accent)
+        utilization("Tiler utilization", gpu.tilerUsage, SystemStyle.accent)
         row("Allocated GPU memory", gpu.memory.map(Display.bytes) ?? "Unavailable")
       }
       row("Counter source", "IOAccelerator driver")
@@ -187,34 +224,26 @@ enum DetailReadingsBuilder {
         row("Frequency / power source", "IOReport · model estimate")
       }
     case .memory:
-      result.value = s.memory.map { Display.bytes($0.used) } ?? "—"
-      result.subtitle =
-        s.memory.map {
-          "of \(Display.bytes($0.total)) · pressure \($0.pressureDescription.lowercased())"
-        } ?? "Memory telemetry unavailable"
-      series("Working set %", \.memory, .systemPurple)
+      series("Working set %", \.memory, SystemStyle.accent)
       if let m = s.memory {
-        memoryAmount("Active", m.active, m.total, .systemBlue)
-        memoryAmount("Wired", m.wired, m.total, .systemOrange)
-        memoryAmount("Compressed", m.compressed, m.total, .systemPurple)
-        memoryAmount("Inactive · reclaimable", m.inactive, m.total, .systemTeal)
+        memoryAmount("Active", m.active, m.total, SystemStyle.accent)
+        memoryAmount("Wired", m.wired, m.total, SystemStyle.secondaryAccent)
+        memoryAmount("Compressed", m.compressed, m.total, SystemStyle.accent)
+        memoryAmount("Inactive · reclaimable", m.inactive, m.total, SystemStyle.secondaryAccent)
         memoryAmount("Purgeable · reclaimable", m.purgeable, m.total, .systemGray)
-        memoryAmount("Free (includes speculative)", m.free, m.total, .systemGreen)
+        memoryAmount("Free (includes speculative)", m.free, m.total, SystemStyle.accent)
         row("Swap used / allocated", "\(Display.bytes(m.swapUsed)) / \(Display.bytes(m.swapTotal))")
       }
       componentSensors(.memory)
       processes(.memory)
     case .disks:
-      result.value =
-        s.startupVolume.map { Display.bytes($0.available) + " free" }
-        ?? "Startup volume unavailable"
-      result.subtitle = "Startup volume headline · all local volumes below · 30s refresh"
-      series("Read B/s", \.diskRead, .systemBlue)
-      series("Write B/s", \.diskWrite, .systemOrange)
+      series("Read B/s", \.diskRead, SystemStyle.accent)
+      series("Write B/s", \.diskWrite, SystemStyle.secondaryAccent)
       result.upperBound = nil
       for volume in s.volumes {
         section(volume.name)
-        utilization("\(volume.path) · used", volume.total > 0 ? volume.percent : nil, .systemBlue)
+        utilization(
+          "\(volume.path) · used", volume.total > 0 ? volume.percent : nil, SystemStyle.accent)
         row(
           "Available / total", "\(Display.bytes(volume.available)) / \(Display.bytes(volume.total))"
         )
@@ -260,11 +289,8 @@ enum DetailReadingsBuilder {
       componentSensors(.storage)
       processes(.disks)
     case .network:
-      result.value = "↓ " + Display.rate(s.download)
-      result.subtitle =
-        "↑ \(Display.rate(s.upload)) · \(s.selectedInterface.isEmpty ? "No primary route" : s.selectedInterface)"
-      series("Download B/s", \.download, .systemBlue)
-      series("Upload B/s", \.upload, .systemOrange)
+      series("Download B/s", \.download, SystemStyle.accent)
+      series("Upload B/s", \.upload, SystemStyle.secondaryAccent)
       result.upperBound = nil
       row("Counting", "One selected interface")
       if let checked = s.networkDetailsSampledAt {
@@ -432,25 +458,20 @@ enum DetailReadingsBuilder {
           "↓ \(Display.bytes(interface.received))  ↑ \(Display.bytes(interface.sent))")
       }
     case .battery:
-      result.value = s.batteries.first.map { Display.percent($0.percent) } ?? "Plugged in"
-      result.subtitle =
-        s.batteries.first.map {
-          BatteryMenuState.state(for: $0).title
-        } ?? "This Mac has no internal battery"
-      series("Battery %", \.battery, .systemGreen)
+      series("Battery %", \.battery, SystemStyle.accent)
       for battery in s.batteries {
         section(battery.name)
         row(
           "Time estimate",
           battery.minutesRemaining.map { "\($0/60)h \($0%60)m" } ?? "Calculating / unavailable")
-        utilization("Charge", battery.percent, .systemGreen)
-        utilization("Battery health", battery.health, .systemTeal)
+        utilization("Charge", battery.percent, SystemStyle.accent)
+        utilization("Battery health", battery.health, SystemStyle.secondaryAccent)
         row("Cycle count", battery.cycles.map(String.init) ?? "—")
         row("Battery power · signed", battery.watts.map { String(format: "%.1f W", $0) } ?? "—")
       }
       section("ACCESSORY BATTERIES")
       if s.peripherals.isEmpty { row("No HID battery readings available", "—") }
-      for device in s.peripherals { utilization(device.name, device.percent, .systemGreen) }
+      for device in s.peripherals { utilization(device.name, device.percent, SystemStyle.accent) }
       componentSensors(.battery)
       section("POWER / VOLTAGE / CURRENT · SCOPES MAY OVERLAP")
       row("Energy mode", s.lowPower ? "Low Power Mode" : "Standard")

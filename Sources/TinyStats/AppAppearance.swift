@@ -3,11 +3,7 @@ import TinyStatsCore
 
 extension CPUCoreKind {
   var chartColor: NSColor {
-    switch self {
-    case .efficiency: .systemPink
-    case .performance: .systemBlue
-    case .unknown: .systemTeal
-    }
+    SystemStyle.core(self)
   }
   var chartTitle: String { self == .unknown ? "Unclassified" : title }
 }

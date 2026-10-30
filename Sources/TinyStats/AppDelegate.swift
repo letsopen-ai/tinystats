@@ -130,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     if arguments.contains("--preview") {
       prepareDetails()
       detail?.selected = requestedModule
+      detail?.isPopoverPresentation = false
       let window = MainWindow()
       window.title = "TinyStats Preview"
       window.isReleasedWhenClosed = false
@@ -210,6 +211,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     guard detail == nil else { return }
     let detail = DetailController(snapshot: snapshot, history: history)
     detail.settings = settings
+    detail.isPopoverPresentation = true
+    detail.onOpenInWindow = { [weak self] in self?.openDetailsInWindow() }
     detail.view.appearance = settings.theme.nativeAppearance
     let popover = NSPopover()
     self.detail = detail
@@ -217,7 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     // Native transient dismissal can consume the click on another status item
     // before its action can switch pages. Own dismissal while this popover is open.
     popover.behavior = .applicationDefined
-    popover.contentSize = .init(width: 700, height: 640)
+    popover.contentSize = SystemStyle.popoverSize
     popover.contentViewController = detail
     popover.delegate = self
     popover.appearance = settings.theme.nativeAppearance
@@ -801,11 +804,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     if rebuild { self.rebuildItems() } else { self.updateTitles() }
     self.updateMenuBarPreviewContext()
   }
-  @objc private func showSettings() { presentSettings(initialPage: .general) }
-  private func presentSettings(initialPage: PreferencesController.Page) {
-    reportOtherBenchmarkWindow()
-    prepareDetails()
+  private func openDetailsInWindow() {
     guard let detail else { return }
+    promoteDetailsToWindow(detail)
+    previewWindow?.deminiaturize(nil)
+    previewWindow?.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+  private func promoteDetailsToWindow(_ detail: DetailController) {
+    detail.isPopoverPresentation = false
     // Stop transient-only event handling before promoting the same controller.
     popoverInteraction.stop()
     // Move the same controller out of the popover before closing it.
@@ -824,6 +831,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       window.makeKeyAndOrderFront(nil)
       popover?.performClose(nil)
     }
+  }
+  @objc private func showSettings() { presentSettings(initialPage: .general) }
+  private func presentSettings(initialPage: PreferencesController.Page) {
+    reportOtherBenchmarkWindow()
+    prepareDetails()
+    guard let detail else { return }
+    promoteDetailsToWindow(detail)
     previewWindow?.title = "TinyStats"
     if let preferences, let content = preferences.embeddedView(page: initialPage) {
       detail.showSettingsView(content, page: initialPage)

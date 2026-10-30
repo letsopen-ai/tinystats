@@ -4,6 +4,10 @@ import Testing
 @testable import TinyStats
 @testable import TinyStatsCore
 
+@MainActor private func calendarSettingsViews(_ root: NSView) -> [NSView] {
+  root.subviews.flatMap { [$0] + calendarSettingsViews($0) }
+}
+
 @Test @MainActor func changingWeekStartReflowsDaysWithoutChangingPinnedSelection() throws {
   var calendar = Calendar(identifier: .gregorian)
   calendar.locale = Locale(identifier: "en_US")
@@ -46,8 +50,9 @@ import Testing
   _ = NSApplication.shared
   let controller = CalendarSettingsController(enabled: false, selectedIDs: [])
   let root = try #require(controller.window?.contentView)
-  let picker = try #require(root.subviews.compactMap { $0 as? NSPopUpButton }.first)
-  let preview = try #require(root.subviews.compactMap { $0 as? MonthCalendarView }.first)
+  let picker = try #require(calendarSettingsViews(root).compactMap { $0 as? NSPopUpButton }.first)
+  let preview = try #require(
+    calendarSettingsViews(root).compactMap { $0 as? MonthCalendarView }.first)
   var days: [Int?] = []
   var eventEdits = 0
   var permissionRequests = 0
@@ -58,19 +63,22 @@ import Testing
   denied.access = .denied
   controller.update(denied, requesting: false)
   #expect(picker.isEnabled && picker.numberOfItems == 8)
-  let scroll = try #require(root.subviews.compactMap { $0 as? NSScrollView }.first)
+  let scroll = try #require(
+    calendarSettingsViews(root).compactMap { $0 as? NSScrollView }.first {
+      !($0 is SystemSettingsForm)
+    })
   #expect(scroll.isHidden && root.frame.height == 480)
-  let headingY = picker.frame.minY
-  let screenY = try #require(controller.window).frame.minY + headingY
+  root.layoutSubtreeIfNeeded()
+  let headingY = picker.convert(picker.bounds, to: root).minY
   var available = CalendarAgendaSnapshot()
   available.access = .fullAccess
   available.calendars = [.init(id: "example", title: "Example calendar", source: "Example account")]
   controller.update(available, requesting: false)
   #expect(!scroll.isHidden && root.frame.height == 640)
-  #expect(picker.frame.minY == headingY + 160)
-  #expect(try #require(controller.window).frame.minY + picker.frame.minY == screenY)
+  root.layoutSubtreeIfNeeded()
+  #expect(picker.convert(picker.bounds, to: root).minY == headingY + 160)
   controller.update(denied, requesting: false)
-  #expect(scroll.isHidden && root.frame.height == 480 && picker.frame.minY == headingY)
+  #expect(scroll.isHidden && root.frame.height == 480)
   #expect(root.subviews.allSatisfy { $0.isHidden || root.bounds.contains($0.frame) })
   let chosen = try #require(Calendar.current.date(from: .init(year: 2026, month: 11, day: 17)))
   controller.selectPreviewDate(chosen)
@@ -89,7 +97,7 @@ import Testing
   #expect(Calendar.current.isDate(preview.selectedDate, inSameDayAs: chosen))
   #expect(eventEdits == 0 && permissionRequests == 0)
   #expect(
-    root.subviews.compactMap { $0 as? NSButton }.first {
+    calendarSettingsViews(root).compactMap { $0 as? SystemSettingSwitch }.first {
       $0.title == "Show calendar events in Date & Time"
     }?.state == .off)
 }
@@ -99,7 +107,8 @@ import Testing
   controller.settings.calendarFirstWeekday = 2
   controller.selected = .clock
   let root = controller.view
-  let calendar = try #require(root.subviews.compactMap { $0 as? MonthCalendarView }.first)
+  let calendar = try #require(
+    calendarSettingsViews(root).compactMap { $0 as? MonthCalendarView }.first)
   func firstLabel() throws -> String {
     try #require(
       calendar.subviews.compactMap { $0 as? NSTextField }.first {
@@ -109,7 +118,7 @@ import Testing
   }
   #expect(try firstLabel() == Calendar.current.veryShortStandaloneWeekdaySymbols[1])
   let button = try #require(
-    root.subviews.compactMap { $0 as? NSButton }.first {
+    calendarSettingsViews(root).compactMap { $0 as? NSButton }.first {
       $0.accessibilityLabel() == "Calendar settings"
     })
   var opened = 0

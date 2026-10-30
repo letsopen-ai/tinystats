@@ -8,8 +8,8 @@ import TinyStatsCore
   private var latest: Snapshot
   private var history: [HistoryPoint]
   private let format = NSPopUpButton()
-  private let customize = NSButton(
-    checkboxWithTitle: "Use different displays for each power state", target: nil, action: nil)
+  private let customize = SystemSettingSwitch(
+    title: "Use different displays for each power state", target: nil, action: nil)
   private let example = NSPopUpButton()
   private let preview = MenuBarPreviewView(frame: .zero)
   private let scroll = NSScrollView()
@@ -31,6 +31,7 @@ import TinyStatsCore
     window.center()
     super.init(window: window)
     window.appearance = settings.theme.nativeAppearance
+    window.contentView = SystemSettingsBackgroundView(frame: window.contentView?.bounds ?? .zero)
     guard let root = window.contentView else { return }
     func add(_ view: NSView, _ x: Int, _ y: Int, _ width: Int, _ height: Int = 26) {
       view.frame = .init(x: x, y: y, width: width, height: height)
@@ -98,6 +99,29 @@ import TinyStatsCore
     hint.font = .systemFont(ofSize: 10)
     hint.textColor = .secondaryLabelColor
     add(hint, 24, 16, 612, 42)
+    let form = SystemSettingsForm.self
+    scroll.heightAnchor.constraint(equalToConstant: 50).isActive = true
+    var stateRows: [SystemFormRow] = []
+    for state in BatteryMenuState.allCases {
+      if let value = formatMenus[state], let style = styleMenus[state] {
+        stateRows.append(
+          form.row(
+            state == .externalPower ? "On AC" : state.title,
+            form.controls([value, style], widths: [180, 230])))
+      }
+    }
+    _ = SystemSettingsForm(
+      in: root,
+      views: [
+        form.text("Preview", heading: true),
+        form.group([
+          form.row("Source", example, width: 330), form.row("", scroll, height: 64),
+        ]), context,
+        form.text("Battery display", heading: true),
+        form.group([
+          form.row("Default format", format, width: 330), form.row(customize.title, customize),
+        ]), form.text("Power state · format and style", heading: true), form.group(stateRows), hint,
+      ])
     synchronizeControls()
     updatePreview()
   }

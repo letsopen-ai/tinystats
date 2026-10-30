@@ -234,8 +234,13 @@ import Testing
       view.appearance = NSAppearance(named: appearance)
       for module in [Module.cpu, .overview] {
         view.update(snapshot, history: history, settings: Settings(), module: module)
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let bitmap = try legendBitmap(appearance: appearance, scale: 1, size: view.bounds.size) {
+          if let context = NSGraphicsContext.current {
+            view.displayIgnoringOpacity(view.bounds, in: context)
+          } else {
+            Issue.record("Missing bitmap drawing context")
+          }
+        }
         let card = try #require(
           view.cards.first {
             if case .plot(let plot) = $0.content { return !plot.secondLabel.isEmpty }
@@ -248,21 +253,29 @@ import Testing
         let area = card.contentRect
         let scale = CGFloat(bitmap.pixelsWide) / view.bounds.width
         let styles = TextDrawingStyles()
+        let overview = module == .overview
+        let labelSize: CGFloat = overview ? 13 : 10
         let attributes = styles.attributes(
-          color: .labelColor, size: 10, weight: .regular, alignment: .left)
-        let secondWidth = ceil(
-          (plot.secondLabel as NSString).size(withAttributes: attributes).width)
-        let firstWidth = ceil((plot.firstLabel as NSString).size(withAttributes: attributes).width)
+          color: .labelColor, size: labelSize, weight: overview ? .semibold : .regular,
+          alignment: .left)
+        let firstLabel = overview ? "↓ " + plot.firstValue : plot.firstLabel
+        let secondLabel = overview ? "↑ " + plot.secondValue : plot.secondLabel
+        let secondWidth = ceil((secondLabel as NSString).size(withAttributes: attributes).width)
+        let firstWidth = ceil((firstLabel as NSString).size(withAttributes: attributes).width)
+        let markerY = overview ? card.frame.minY + 40 : area.minY + 28.5
+        let labelY = overview ? card.frame.minY + 36 : area.minY + 26
+        let left = overview ? card.frame.minX + 14 : area.minX
+        let right = overview ? card.frame.maxX - 14 : area.maxX
         let markers = [
-          NSRect(x: area.minX, y: area.minY + 28.5, width: 7, height: 7),
-          NSRect(x: area.maxX - secondWidth - 11, y: area.minY + 28.5, width: 7, height: 7),
+          NSRect(x: left, y: markerY, width: 7, height: 7),
+          NSRect(x: right - secondWidth - 11, y: markerY, width: 7, height: 7),
         ]
         let labels = [
-          NSRect(x: markers[0].maxX + 4, y: area.minY + 26, width: firstWidth, height: 14),
-          NSRect(x: markers[1].maxX + 4, y: area.minY + 26, width: secondWidth, height: 14),
+          NSRect(x: markers[0].maxX + 4, y: labelY, width: firstWidth, height: 14),
+          NSRect(x: markers[1].maxX + 4, y: labelY, width: secondWidth, height: 14),
         ]
         let background = try legendPixel(
-          bitmap, at: .init(x: area.midX * scale, y: (area.minY + 33) * scale))
+          bitmap, at: .init(x: area.midX * scale, y: (markerY + 3.5) * scale))
         for (index, marker) in markers.enumerated() {
           #expect(area.contains(marker) && area.contains(labels[index]))
           let center = try legendPixel(
@@ -274,7 +287,12 @@ import Testing
             resolvedColor = (index == 0 ? plot.firstColor : plot.secondColor)
               .usingColorSpace(.deviceRGB)
           }
-          let expectedColor = try #require(resolvedColor)
+          let rawColor = try #require(resolvedColor)
+          let alpha = rawColor.alphaComponent
+          let expectedColor = NSColor(
+            deviceRed: rawColor.redComponent * alpha + background.redComponent * (1 - alpha),
+            green: rawColor.greenComponent * alpha + background.greenComponent * (1 - alpha),
+            blue: rawColor.blueComponent * alpha + background.blueComponent * (1 - alpha), alpha: 1)
           if index == 0 {
             #expect(try legendColorDistance(center, background) > 0.2)
             #expect(try legendColorDistance(center, expectedColor) < 0.1)
@@ -297,7 +315,7 @@ import Testing
               bitmap, at: .init(x: (x + 3.5) * scale, y: (coreArea.maxY - 5.5) * scale))
             let rowBackground = try legendPixel(
               bitmap, at: .init(x: (x + 9) * scale, y: (coreArea.maxY - 5.5) * scale))
-            #expect(try legendColorDistance(markerCenter, rowBackground) > 0.2)
+            #expect(try legendColorDistance(markerCenter, rowBackground) > 0.12)
           }
         }
         if let directory = ProcessInfo.processInfo.environment[

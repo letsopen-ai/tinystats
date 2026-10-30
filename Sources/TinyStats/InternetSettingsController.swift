@@ -7,18 +7,19 @@ final class InternetSettingsController: NSWindowController, NSWindowDelegate,
 {
   var onChange: ((Bool, Bool, HTTPSCheckConfiguration, ICMPCheckConfiguration) -> Void)?
   var onClose: (() -> Void)?
-  private let connectivity = NSButton(
-    checkboxWithTitle: "Enable HTTPS response check", target: nil, action: nil)
-  private let publicIP = NSButton(
-    checkboxWithTitle: "Discover public IPv4 and IPv6 with ipify", target: nil, action: nil)
+  private let connectivity = SystemSettingSwitch(
+    title: "Enable HTTPS response check", target: nil, action: nil)
+  private let publicIP = SystemSettingSwitch(
+    title: "Discover public IPv4 and IPv6 with ipify", target: nil, action: nil)
   private let preset = NSPopUpButton()
   private let endpoint = NSTextField(string: "")
   private let status = NSTextField(string: "200")
   private let preview = NSTextField(labelWithString: "")
   private let expectedPreview = NSTextField(labelWithString: "")
   private let issue = NSTextField(wrappingLabelWithString: "")
-  private let ping = NSButton(checkboxWithTitle: "Enable ICMP ping", target: nil, action: nil)
+  private let ping = SystemSettingSwitch(title: "Enable ICMP ping", target: nil, action: nil)
   private let pingAddress = NSTextField(string: "")
+  private weak var pingDisclosure: NSTextField?
   private let pingPreview = NSTextField(wrappingLabelWithString: "")
   private let save = NSButton(title: "Save", target: nil, action: nil)
   init(
@@ -34,6 +35,7 @@ final class InternetSettingsController: NSWindowController, NSWindowDelegate,
     window.center()
     super.init(window: window)
     window.delegate = self
+    window.contentView = SystemSettingsBackgroundView(frame: window.contentView?.bounds ?? .zero)
     guard let content = window.contentView else { return }
     let scroll = NSScrollView(frame: .init(x: 0, y: 70, width: 600, height: 670))
     scroll.hasVerticalScroller = true
@@ -52,11 +54,13 @@ final class InternetSettingsController: NSWindowController, NSWindowDelegate,
       view.autoresizingMask = x > 365 ? [.minXMargin] : [.width]
       content.addSubview(view)
     }
+    var footnotes: [NSTextField] = []
     func label(_ text: String, _ y: Int, _ height: Int = 40) {
       let field = NSTextField(wrappingLabelWithString: text)
       field.font = .systemFont(ofSize: 11)
       field.textColor = .secondaryLabelColor
       add(field, 24, y, 552, height)
+      footnotes.append(field)
     }
     let heading = NSTextField(labelWithString: "Optional advanced internet checks")
     heading.font = .systemFont(ofSize: 19, weight: .semibold)
@@ -137,6 +141,30 @@ final class InternetSettingsController: NSWindowController, NSWindowDelegate,
     scroll.contentView.scroll(
       to: .init(x: 0, y: max(0, body.bounds.height - scroll.contentView.bounds.height)))
     scroll.reflectScrolledClipView(scroll.contentView)
+    pingDisclosure = footnotes[5]
+    let form = SystemSettingsForm.self
+    let host = NSView(frame: scroll.frame)
+    host.autoresizingMask = [.width, .height]
+    scroll.removeFromSuperview()
+    content.addSubview(host)
+    _ = SystemSettingsForm(
+      in: host,
+      views: [
+        footnotes[0], form.text("HTTPS response", heading: true),
+        form.group([
+          form.row(self.connectivity.title, self.connectivity),
+          form.row("Destination", preset, width: 330),
+          form.row("Endpoint", endpoint, width: 330),
+          form.row("Expected status", status, width: 90),
+        ]), preview, expectedPreview, footnotes[1],
+        form.text("Public IP", heading: true),
+        form.group([form.row(self.publicIP.title, self.publicIP)]),
+        footnotes[2], footnotes[3],
+        form.text("ICMP ping", heading: true),
+        form.group([
+          form.row(ping.title, ping), form.row("Destination", pingAddress, width: 330),
+        ]), pingPreview, footnotes[4], footnotes[5],
+      ])
     refresh()
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -187,7 +215,12 @@ final class InternetSettingsController: NSWindowController, NSWindowDelegate,
     refresh()
     if sender === ping, ping.state == .on {
       // Bring the chosen destination and complete ICMP/privacy disclosure into view together.
-      _ = pingAddress.superview?.scrollToVisible(.init(x: 0, y: 0, width: 500, height: 255))
+      window?.contentView?.layoutSubtreeIfNeeded()
+      if let document = pingAddress.enclosingScrollView?.documentView, let pingDisclosure {
+        let section = pingAddress.convert(pingAddress.bounds, to: document).union(
+          pingDisclosure.convert(pingDisclosure.bounds, to: document))
+        _ = document.scrollToVisible(section)
+      }
     }
   }
   @objc private func saved() {

@@ -147,7 +147,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     prefs.selectMenuBarTab()
     let root = try #require(prefs.window?.contentView)
     let controls = welcomeViews(root)
-    let buttons = controls.compactMap { $0 as? NSButton }
+    let buttons = controls.compactMap { $0 as? SystemSettingSwitch }
     let cpu = try #require(buttons.first { $0.title == "CPU" })
     #expect(cpu.state == .on)
     #expect(buttons.first { $0.title == "Weather" }?.state == .on)
@@ -164,7 +164,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     #expect(!saved.persistHistory && saved.fahrenheit && !saved.weather.enabled)
     prefs.selectPage(.general)
     let login = try #require(
-      welcomeViews(root).compactMap { $0 as? NSButton }.first {
+      welcomeViews(root).compactMap { $0 as? SystemSettingSwitch }.first {
         $0.title == "Launch at login"
       })
     login.state = LoginItemPreference.enabled ? .off : .on

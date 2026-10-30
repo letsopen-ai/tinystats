@@ -80,7 +80,10 @@ func generalAdvancedOptionsStartCollapsedAndOnlyRouteExplicitClicks(theme: AppTh
   // A primary local edit still carries the original disabled opt-ins after setup routing.
   var saved: Settings?
   controller.onChange = { saved = $0 }
-  let units = try #require(buttons.first { $0.title == "Use Fahrenheit" })
+  let units = try #require(
+    descendants(root).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Use Fahrenheit"
+    })
   units.performClick(nil)
   let updated = try #require(saved)
   #expect(!updated.connectivityChecks && !updated.publicIPChecks && !updated.calendarEvents)
@@ -259,7 +262,9 @@ func generalAdvancedOptionsStartCollapsedAndOnlyRouteExplicitClicks(theme: AppTh
   var saved: Settings?
   controller.onChange = { saved = $0 }
   let fahrenheit = try #require(
-    descendants(root).compactMap { $0 as? NSButton }.first { $0.title == "Use Fahrenheit" })
+    descendants(root).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Use Fahrenheit"
+    })
   fahrenheit.state = .on
   try activate(fahrenheit)
   let result = try #require(saved)

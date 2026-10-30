@@ -133,7 +133,9 @@ import Testing
   for module in Module.allCases where SummaryDashboardView.supports(module) {
     view.update(s, history: [], settings: Settings(), module: module)
     #expect(view.cards.allSatisfy { view.bounds.contains($0.frame) })
-    #expect(view.subviews.isEmpty && view.cards.count <= 6)
+    #expect(
+      view.subviews.isEmpty
+        && (module == .overview ? view.cards.count == 11 : view.cards.count <= 6))
     #expect(view.accessibilityChildren()?.count == view.cards.count)
   }
   for appearance in [NSAppearance.Name.aqua, .darkAqua] {
@@ -279,13 +281,15 @@ import Testing
   #expect(c.app + c.wired + c.compressed + c.available == memory.total)
   #expect(physical.spoken.contains("App estimate") && physical.spoken.contains("including cache"))
   view.update(s, history: history, settings: Settings(), module: .overview)
-  guard case .tiles(let tiles, _) = try #require(view.cards.first).content else {
-    Issue.record("Expected overview charts")
-    return
+  let tiles = view.cards.compactMap { card -> SummaryDashboardView.OverviewTile? in
+    if case .overviewTile(let tile) = card.content { return tile }
+    return nil
   }
-  #expect(tiles.count == 4)
-  #expect(tiles.allSatisfy { $0.trend?.first.count == 90 && $0.trend?.times.count == 90 })
-  #expect(tiles.first?.trend?.times.first == history[110].time)
+  #expect(tiles.count == 9)
+  let trends = tiles.compactMap { $0.value.trend }
+  #expect(trends.count == 4)
+  #expect(trends.allSatisfy { $0.first.count == 90 && $0.times.count == 90 })
+  #expect(trends.first?.times.first == history[110].time)
   #expect(view.subviews.isEmpty)
   for appearance in [NSAppearance.Name.aqua, .darkAqua] {
     view.appearance = NSAppearance(named: appearance)
@@ -326,7 +330,7 @@ import Testing
     point.download = Double(index % 47)
     return point
   }
-  for module in [Module.overview, .cpu, .gpu, .disks, .network] {
+  for module in [Module.cpu, .gpu, .disks, .network] {
     view.update(Snapshot(), history: history, settings: Settings(), module: module)
     let plots = view.cards.compactMap { card -> SummaryDashboardView.Plot? in
       if case .plot(let plot) = card.content { return plot }

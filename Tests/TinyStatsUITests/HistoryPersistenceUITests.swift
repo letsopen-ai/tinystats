@@ -13,9 +13,10 @@ import Testing
   let controller = HistoryController(module: .network, settings: Settings())
   defer { controller.window?.close() }
   let root = try #require(controller.window?.contentView)
-  let buttons = persistenceControls(NSButton.self, in: root)
+  let buttons = persistenceControls(SystemSettingSwitch.self, in: root)
   let keep = try #require(buttons.first { $0.title == "Keep history between launches" })
-  let clear = try #require(buttons.first { $0.title == "Clear history…" })
+  let clear = try #require(
+    persistenceControls(NSButton.self, in: root).first { $0.title == "Clear history…" })
   #expect(keep.state == .on && keep.isEnabled && clear.isEnabled)
   #expect(keep.toolTip?.contains("pauses saving") == true)
   var changes: [Bool] = []
@@ -50,7 +51,7 @@ import Testing
   defer { controller.window?.close() }
   let root = try #require(controller.window?.contentView)
   let keep = try #require(
-    persistenceControls(NSButton.self, in: root).first {
+    persistenceControls(SystemSettingSwitch.self, in: root).first {
       $0.title == "Keep history between launches"
     })
   #expect(!keep.isEnabled)
@@ -67,7 +68,7 @@ import Testing
   controller.onChange = { saved = $0 }
   let root = try #require(controller.window?.contentView)
   let fahrenheit = try #require(
-    persistenceControls(NSButton.self, in: root).first { $0.title == "Use Fahrenheit" })
+    persistenceControls(SystemSettingSwitch.self, in: root).first { $0.title == "Use Fahrenheit" })
   controller.updateHistoryPersistence(true)
   fahrenheit.state = .on
   #expect(

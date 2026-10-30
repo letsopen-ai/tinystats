@@ -45,7 +45,9 @@ import TinyStatsCore
   }
   let content = try #require(preferences.window?.contentView)
   let fahrenheit = try #require(
-    descendants(content).compactMap { $0 as? NSButton }.first { $0.title == "Use Fahrenheit" })
+    descendants(content).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Use Fahrenheit"
+    })
   let action = try #require(fahrenheit.action)
   fahrenheit.state = .on
   #expect(NSApplication.shared.sendAction(action, to: fahrenheit.target, from: fahrenheit))
@@ -126,7 +128,7 @@ import TinyStatsCore
   }
   controller.settings.calendarEvents = false
   picker.selectDate(day.end)
-  #expect(texts().contains { $0.hasPrefix("AGENDA") && $0.contains("23") })
+  #expect(texts().contains { $0.hasPrefix("Agenda") && $0.contains("23") })
   #expect(!texts().contains("Engineering review"))
 }
 

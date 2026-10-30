@@ -49,12 +49,12 @@ import Testing
       settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
     defer { controller.close() }
     let root = try #require(controller.window?.contentView)
-    let presets: NSSegmentedControl = try presetControl(root, "Menu bar presets")
+    let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
     let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
     let preview = try #require(
       presetDescendants(root).compactMap { $0 as? MenuBarPreviewView }.first)
     let cpuStyle: NSPopUpButton = try presetControl(root, "CPU menu bar style")
-    #expect(presets.selectedSegment == -1 && cpuStyle.isHiddenOrHasHiddenAncestor)
+    #expect(presets.selectedSegment == -1 && !cpuStyle.isHiddenOrHasHiddenAncestor)
     #expect(
       (0..<presets.segmentCount).map { presets.label(forSegment: $0) } == [
         "Simple text", "Compact bars", "Separate",
@@ -95,8 +95,8 @@ import Testing
         #expect(reading.progress == nil)
       }
       // A preset leaves disclosure alone; the next two choices update an already expanded matrix.
-      #expect(cpuStyle.isHiddenOrHasHiddenAncestor == (index == 0))
-      if index == 0 { disclosure.performClick(nil) }
+      #expect(!cpuStyle.isHiddenOrHasHiddenAncestor)
+      #expect(disclosure.isAccessibilityExpanded())
     }
   }
 }
@@ -110,36 +110,24 @@ import Testing
     settings: defaults, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
-  let presets: NSSegmentedControl = try presetControl(root, "Menu bar presets")
+  let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
   let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
   let cpu: NSPopUpButton = try presetControl(root, "CPU menu bar style")
-  let matrix = try #require(cpu.superview)
-  let checkboxes = matrix.subviews.compactMap { $0 as? NSButton }.filter {
-    Module.allCases.map(\.title).contains($0.title)
-  }
-  #expect(checkboxes.filter { $0.state == .on }.map(\.title) == ["CPU", "Memory", "Network"])
-  for name in ["Readout", "Style", "Font"] {
-    #expect(matrix.subviews.compactMap { $0 as? NSTextField }.contains { $0.stringValue == name })
-  }
-  for name in ["Battery menu bar formats", "Clock menu bar formats", "Menu bar sensor"] {
-    let control: NSView = try presetControl(root, name)
-    #expect(control.superview === matrix)
-  }
-  #expect(matrix.isHidden && presets.selectedSegment == 2)
-  #expect(!disclosure.isAccessibilityExpanded())
+  let toggles = presetDescendants(root).compactMap { $0 as? SystemSettingSwitch }
+  #expect(toggles.filter { $0.state == .on }.map(\.title) == ["CPU", "Memory", "Network"])
+  #expect(!cpu.isHiddenOrHasHiddenAncestor && presets.selectedSegment == 2)
+  #expect(disclosure.isAccessibilityExpanded())
   var changes = 0
   controller.onChange = { _ in changes += 1 }
   disclosure.performClick(nil)
-  #expect(!matrix.isHidden && !cpu.isHiddenOrHasHiddenAncestor)
-  #expect(disclosure.title == "Hide readout & style options")
-  #expect(disclosure.isAccessibilityExpanded())
+  #expect(cpu.isHiddenOrHasHiddenAncestor && !disclosure.isAccessibilityExpanded())
   controller.selectPage(.general)
   controller.selectMenuBarTab()
-  #expect(!matrix.isHidden)
+  #expect(cpu.isHiddenOrHasHiddenAncestor)
   disclosure.performClick(nil)
-  #expect(matrix.isHidden && cpu.isHiddenOrHasHiddenAncestor)
-  #expect(disclosure.title == "Customize readouts & styles…" && changes == 0)
-  #expect(!disclosure.isAccessibilityExpanded())
+  #expect(!cpu.isHiddenOrHasHiddenAncestor && disclosure.isAccessibilityExpanded())
+  #expect(changes == 0)
+
 }
 
 @Test @MainActor func manualMenuBarEditsClearAndRestoreOnlyMatchingPresetHighlights() throws {
@@ -148,7 +136,7 @@ import Testing
     settings: Settings(), interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
-  let presets: NSSegmentedControl = try presetControl(root, "Menu bar presets")
+  let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
   let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
   disclosure.performClick(nil)
   presets.selectedSegment = 0
@@ -168,7 +156,7 @@ import Testing
   try presetActivate(font)
   #expect(presets.selectedSegment == 0)
   let gpu = try #require(
-    presetDescendants(root).compactMap { $0 as? NSButton }.first { $0.title == "GPU" })
+    presetDescendants(root).compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "GPU" })
   gpu.state = .on
   try presetActivate(gpu)
   #expect(presets.selectedSegment == -1)
@@ -223,7 +211,7 @@ import Testing
   }
   let previews = try editors.map { try #require($0) }
   #expect(previews.allSatisfy { $0.renderers.first?.readouts.first?.style == .value })
-  let activeChecks = presetDescendants(root).compactMap { $0 as? NSButton }.filter {
+  let activeChecks = presetDescendants(root).compactMap { $0 as? SystemSettingSwitch }.filter {
     [Module.battery.title, Module.clock.title].contains($0.title)
   }
   for check in activeChecks { check.state = .off }
@@ -232,7 +220,7 @@ import Testing
     presetDescendants(root).compactMap { $0 as? NSTextField }.first {
       $0.stringValue.hasPrefix("Keep at least one readout")
     })
-  let presets: NSSegmentedControl = try presetControl(root, "Menu bar presets")
+  let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
   var result: Settings?
   controller.onChange = { result = $0 }
   for (index, style, size) in [
