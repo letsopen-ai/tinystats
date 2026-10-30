@@ -8,6 +8,32 @@ import Testing
   view.subviews.flatMap { [$0] + systemDescendants($0) }
 }
 
+/// Composite material/document gaps on the native background for standalone PNG review.
+@MainActor private func systemGalleryImage(_ view: NSView, to url: URL) throws {
+  let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+  view.effectiveAppearance.performAsCurrentDrawingAppearance {
+    view.cacheDisplay(in: view.bounds, to: bitmap)
+  }
+  let output = try #require(
+    NSBitmapImageRep(
+      bitmapDataPlanes: nil, pixelsWide: bitmap.pixelsWide, pixelsHigh: bitmap.pixelsHigh,
+      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+      colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+  let context = try #require(NSGraphicsContext(bitmapImageRep: output))
+  NSGraphicsContext.saveGraphicsState()
+  NSGraphicsContext.current = context
+  view.effectiveAppearance.performAsCurrentDrawingAppearance {
+    NSColor.windowBackgroundColor.setFill()
+    let rect = NSRect(x: 0, y: 0, width: output.pixelsWide, height: output.pixelsHigh)
+    rect.fill()
+    let image = NSImage(size: rect.size)
+    image.addRepresentation(bitmap)
+    image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+  }
+  NSGraphicsContext.restoreGraphicsState()
+  try #require(output.representation(using: .png, properties: [:])).write(to: url)
+}
+
 @Test @MainActor func systemAccentPairResolvesInBothAppearancesAndKeepsCoreClassification() throws {
   for name in [NSAppearance.Name.aqua, .darkAqua] {
     let appearance = try #require(NSAppearance(named: name))
@@ -100,7 +126,7 @@ import Testing
         #expect(action.frame.minY == 13)
         #expect(action.image != nil && action.imagePosition == .imageOnly)
         #expect(!action.isBordered && action.usesIconPresentation)
-        #expect(action.toolTip == action.accessibilityLabel())
+        #expect(action.toolTip?.hasPrefix(action.accessibilityLabel() ?? "") == true)
         #expect(action.accessibilityLabel()?.isEmpty == false)
         #expect(action.acceptsFirstResponder && action.focusRingType == .exterior)
         #expect(action.keyEquivalent.isEmpty)
@@ -137,7 +163,8 @@ import Testing
       #expect(pause.accessibilityLabel() == "Pause")
       pause.performClick(nil)
       #expect(controller.paused && pause.title == "Resume")
-      #expect(pause.accessibilityLabel() == "Resume" && pause.toolTip == "Resume")
+      #expect(
+        pause.accessibilityLabel() == "Resume" && pause.toolTip?.hasPrefix("Resume\n") == true)
       #expect(pause.image !== pauseIcon)
       pause.performClick(nil)
       #expect(!controller.paused && pause.accessibilityLabel() == "Pause")
@@ -150,7 +177,7 @@ import Testing
       if let summary = views.compactMap({ $0 as? SummaryDashboardView }).first, !summary.isHidden {
         #expect(summary.usesPopoverLayout)
         #expect(summary.enclosingScrollView != nil)
-        #expect(summary.enclosingScrollView?.frame.minY == 76)
+        #expect(summary.enclosingScrollView?.frame.minY == 48)
         for card in summary.cards {
           #expect(card.frame.width == summary.bounds.width)
           #expect(summary.bounds.contains(card.frame))
@@ -366,8 +393,14 @@ import Testing
   snapshot.download = 1_200_000
   snapshot.upload = 48_000
   snapshot.sampleMilliseconds = 3
+  snapshot.gpuTime.status = .ready
+  snapshot.gpuTime.rows = [
+    .init(pid: 42, name: "Xcode", millisecondsPerSecond: 125),
+    .init(pid: 43, name: "WindowServer", millisecondsPerSecond: 4.5),
+  ]
+  snapshot.peripherals = [.init(name: "Keyboard", percent: 75)]
   snapshot.processes = [
-    .init(pid: 42, name: "Xcode", cpu: 38.2, memory: 0, read: nil, written: nil)
+    .init(pid: 42, name: "Xcode", cpu: 38.2, memory: 0, read: 22_000, written: 12_000)
   ]
   let history = (0..<150).map { index in
     var point = snapshot.historyPoint
@@ -411,6 +444,28 @@ import Testing
           let state = alternate ? "-readings-paused" : ""
           try #require(bitmap.representation(using: .png, properties: [:])).write(
             to: url.appendingPathComponent("\(module.rawValue)\(state)-\(name.rawValue).png"))
+          let views = systemDescendants(controller.view)
+          if alternate, module != .overview,
+            let table = views.compactMap({ $0 as? NSTableView }).first
+          {
+            table.scrollRowToVisible(table.numberOfRows - 1)
+            controller.view.layoutSubtreeIfNeeded()
+            try systemGalleryImage(
+              controller.view,
+              to: url.appendingPathComponent(
+                "\(module.rawValue)-sample-\(name.rawValue).png"))
+            table.scrollRowToVisible(0)
+          } else if !alternate {
+            for document in views.filter({
+              ($0 is SummaryDashboardView || $0 is WeatherDashboardView)
+                && !$0.isHiddenOrHasHiddenAncestor
+            }) {
+              try systemGalleryImage(
+                document,
+                to: url.appendingPathComponent(
+                  "\(module.rawValue)-document-\(name.rawValue).png"))
+            }
+          }
         }
       }
     }
@@ -766,7 +821,7 @@ import Testing
   let mask = try #require(scroll.layer?.mask as? CAGradientLayer)
   #expect(scroll.layer?.isGeometryFlipped == true)
   #expect(mask.startPoint.y == 1 && mask.endPoint.y == 0)
-  #expect(scroll.contentInsets.bottom == 36)
+  #expect(scroll.contentInsets.bottom == 16)
   // Reserve nonzero cell spacing too, without changing proportions or horizontal extent.
   table.intercellSpacing.width = 3
   controller.view.needsLayout = true
@@ -814,7 +869,7 @@ import Testing
   let bottom = try #require(
     bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh - 3)?.usingColorSpace(.sRGB))
   let transition = try #require(
-    bitmap.colorAt(x: bitmap.pixelsWide / 2, y: Int(Double(bitmap.pixelsHigh) * 0.76))?
+    bitmap.colorAt(x: bitmap.pixelsWide / 2, y: Int(Double(bitmap.pixelsHigh) * 0.92))?
       .usingColorSpace(.sRGB))
   #expect(transition.redComponent > 0.20 && transition.redComponent < 0.80)
   #expect(top.redComponent > 0.95)
@@ -893,7 +948,7 @@ import Testing
       view.cards.first {
         $0.title == "TOP PROCESSES" || $0.title == "PROCESS TRAFFIC · PARTIAL"
       })
-    #expect(card.frame.height == (module == .network ? 96 : 56))
+    #expect(card.frame.height == 56)
     #expect(!card.note.isEmpty)
   }
 }

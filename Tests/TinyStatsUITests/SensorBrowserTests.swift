@@ -23,7 +23,7 @@ import Testing
   let chart = try #require(root.subviews.compactMap { $0 as? ChartView }.first)
   let table = try #require(
     root.subviews.compactMap { $0 as? NSScrollView }.first?.documentView as? NSTableView)
-  #expect(!search.isHidden && !chart.isHidden && table.numberOfRows == 10)
+  #expect(!search.isHidden && !chart.isHidden && table.numberOfRows == 9)
   let readingButtons = root.subviews.compactMap { $0 as? NSButton }.filter {
     $0.title == "All readings" || $0.title == "Summary"
   }
@@ -44,7 +44,7 @@ import Testing
       Notification(name: NSControl.textDidChangeNotification, object: search))
   }
   filter("f0ac")
-  #expect(table.numberOfRows == 4)
+  #expect(table.numberOfRows == 2)
   #expect(
     chart.series.first?.name == SensorCatalog.hottestGPULabel && chart.series.first?.values == [60])
   #expect(detail.tableView(table, shouldSelectRow: 1))
@@ -74,11 +74,11 @@ import Testing
   filter("not a sensor")
   #expect(table.numberOfRows == 1)
   filter("")
-  #expect(table.numberOfRows == 10)
+  #expect(table.numberOfRows == 9)
   detail.selected = .cpu
   #expect(search.isHidden)
   detail.selected = .sensors
-  #expect(!search.isHidden && table.numberOfRows == 10)
+  #expect(!search.isHidden && table.numberOfRows == 9)
 }
 
 @Test @MainActor func sensorDisappearancePreservesHistoricalTemperatureUnitsAndMissingSample()
@@ -215,7 +215,9 @@ import Testing
   let detail = DetailController(snapshot: snapshot, history: [])
   detail.selected = .sensors
   let root = detail.view
-  func labels() -> [String] { root.subviews.compactMap { ($0 as? NSTextField)?.stringValue } }
+  func labels() -> [String] {
+    root.subviews.compactMap { ($0 as? MenuActionRow)?.accessibilityHelp() }
+  }
   #expect(!labels().contains { $0.contains("SMC scan limit: 128") })
   snapshot.sensors.append(.init(key: "T127", name: "CPU", kind: .temperature, value: 40))
   snapshot.uptime = 6

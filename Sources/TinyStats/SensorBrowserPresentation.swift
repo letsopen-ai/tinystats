@@ -90,8 +90,9 @@ enum SensorBrowserPresentation {
       snapshot.sensors.filter { $0.kind == .fan }.sorted { $0.key < $1.key }
       + ["TB0T", "PSTR", "ioreport:cpu", "ioreport:gpu", "ioreport:ane", "ioreport:dram"]
       .compactMap { key in snapshot.sensors.first { $0.key == key } }
-    highlights += highlightKeys.filter { reading in physical.contains { $0.key == reading.key } }
-      .map(physicalRow)
+    // Prominent physical readings belong once in their component group; Highlights
+    // contains only the distinct hottest-temperature projections.
+    let prominentKeys = Set(highlightKeys.map(\.key))
     var rows: [DetailRow] = []
     if !highlights.isEmpty {
       rows.append(.init(label: "HIGHLIGHTS", value: "", heading: true))
@@ -104,8 +105,9 @@ enum SensorBrowserPresentation {
       if showsAll || !query.isEmpty {
         rows += group.map(physicalRow)
       } else {
-        rows += group.filter { friendly($0) != nil }.map(physicalRow)
-        let unnamed = group.filter { friendly($0) == nil }
+        rows += group.filter { friendly($0) != nil || prominentKeys.contains($0.key) }.map(
+          physicalRow)
+        let unnamed = group.filter { friendly($0) == nil && !prominentKeys.contains($0.key) }
         if !unnamed.isEmpty {
           let label = summaryLabel(unnamed, component: component, fahrenheit: settings.fahrenheit)
           let spoken = label.replacingOccurrences(of: "–", with: " to ")
@@ -135,6 +137,9 @@ enum SensorBrowserPresentation {
     } else {
       defaultSelection =
         highlights.compactMap(\.sensorIdentity).first
+        ?? highlightKeys.first(where: { prominent in physical.contains { $0.key == prominent.key } }
+        )
+        .map { .reading($0.key) }
         ?? rows.compactMap(\.sensorIdentity).first
     }
     let selected = selection ?? defaultSelection

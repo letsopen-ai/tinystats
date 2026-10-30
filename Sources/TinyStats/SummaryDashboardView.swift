@@ -107,13 +107,13 @@ import TinyStatsCore
   private func popoverCardHeight(_ card: Card, canonical: NSRect) -> CGFloat {
     switch card.content {
     case .rows(let rows):
-      return max(
-        canonical.height, 38 + CGFloat(min(7, rows.count)) * 25 + (card.note.isEmpty ? 0 : 17))
+      return 38 + CGFloat(min(12, rows.count)) * 25 + (card.note.isEmpty ? 0 : 17)
     case .none where card.title == "TOP PROCESSES" || card.title == "TOP APPS": return 56
     case .none
     where card.title.contains("TRAFFIC · PARTIAL"):
-      return 96
-    case .memory: return 204
+      return 56
+    case .message: return card.note.isEmpty ? 64 : 81
+    case .memory: return card.note.isEmpty ? 187 : 204
     case .tiles(_, let columns): return max(canonical.height, columns > 2 ? 150 : 134)
     default: return canonical.height
     }
@@ -144,6 +144,7 @@ import TinyStatsCore
   }
   func displayedRows(in card: Card) -> ArraySlice<Reading> {
     guard case .rows(let rows) = card.content else { return [] }
+    if usesPopoverLayout { return rows.prefix(12) }
     guard isExpandable(card) else { return rows[...] }
     let available = max(0, card.frame.height / contentScale - 54)
     let height: CGFloat = rows.contains { $0.second != nil } ? 20 : 14
@@ -438,7 +439,8 @@ import TinyStatsCore
           percent: true),
         trailing: s.gpus.count > 1 ? "\(s.gpus.count) devices" : selectedGPU?.name ?? "Unavailable")
       card(
-        "DRIVER ENGINES", 164, 134, .gauges(gpuGauges()),
+        "DRIVER ENGINES", 164, 134,
+        .gauges(gpuGauges().filter { !usesPopoverLayout || $0.label != "Device" }),
         note: "Usage per GPU core is not available", width: 252)
       let hardware: [Tile] = [
         tile(
@@ -709,6 +711,41 @@ import TinyStatsCore
     default:
       cards = Self.overviewCards(s, history: recent, settings: settings)
       canonicalFrames = Self.overviewFrames(in: .init(x: 0, y: 0, width: 520, height: 554))
+    }
+    if usesPopoverLayout {
+      for index in cards.indices {
+        let hasReadings: Bool
+        switch cards[index].content {
+        case .none: hasReadings = false
+        case .tiles(let tiles, _): hasReadings = !tiles.isEmpty
+        default: hasReadings = true
+        }
+        if hasReadings || cards[index].title == "DRIVE HEALTH", !cards[index].note.isEmpty {
+          cards[index].help = cards[index].note
+          // Incomplete traffic coverage matters before interpreting any numeric row.
+          cards[index].note =
+            module == .network && cards[index].title.contains("TRAFFIC")
+            ? "Partial · TCP/UDP" : ""
+          if cards[index].note.isEmpty {
+            canonicalFrames[index].size.height = max(34, canonicalFrames[index].height - 17)
+          }
+        }
+        if module == .network, cards[index].title.contains("TRAFFIC"), !hasReadings {
+          cards[index].help = cards[index].note
+          cards[index].note =
+            s.networkTraffic.availability == .ready
+            ? "Partial · No active TCP/UDP owners"
+            : s.networkTraffic.availability == .inactive
+              ? "Partial · Collecting process traffic…" : "Partial · " + s.networkTraffic.message
+        }
+        if cards[index].title == "METAL GPU TIME" {
+          cards[index].help = [cards[index].help, cards[index].trailing]
+            .filter { !$0.isEmpty }.joined(separator: ". ")
+          cards[index].trailing =
+            s.gpuTime.status == .incomplete
+            ? "Partial" : s.gpuTime.status == .collecting ? "First interval" : ""
+        }
+      }
     }
     if [.cpu, .memory, .network].contains(module),
       let index = cards.firstIndex(where: {
@@ -1341,6 +1378,12 @@ import TinyStatsCore
     return result
   }
   override func hoverText(at point: NSPoint) -> String? {
+    let reading = hoverReading(at: point)
+    let help = cards.first { $0.frame.contains(point) }?.help ?? ""
+    let text = [reading, help.isEmpty ? nil : help].compactMap { $0 }.joined(separator: "\n")
+    return text.isEmpty ? nil : text
+  }
+  private func hoverReading(at point: NSPoint) -> String? {
     guard let card = cards.first(where: { $0.frame.contains(point) }) else { return nil }
     let zoom = contentScale
     let point = NSPoint(x: point.x / zoom, y: point.y / zoom)
