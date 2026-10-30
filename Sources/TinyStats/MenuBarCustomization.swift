@@ -59,7 +59,10 @@ import TinyStatsCore
       return
     }
     let focused = window?.firstResponder as? MenuBarChip
-    let oldFrames = chips.mapValues { ($0.superview, $0.frame) }
+    // Capture in the common ancestor before reparenting or resizing either area.
+    let oldFrames = chips.compactMapValues { chip -> NSRect? in
+      chip.superview.map { $0.convert(chip.frame, to: self) }
+    }
     self.order = order
     strip.setChips(order.compactMap { chips[$0] })
     palette.setChips(
@@ -72,7 +75,17 @@ import TinyStatsCore
     layoutSubtreeIfNeeded()
     if animated {
       for (module, chip) in chips {
-        if let old = oldFrames[module], old.0 === chip.superview { chip.frame = old.1 }
+        if let old = oldFrames[module], let area = chip.superview {
+          chip.frame = area.convert(old, from: self)
+        }
+      }
+      for area in [strip, palette] {
+        area.glass.setChipFrames(
+          Dictionary(
+            uniqueKeysWithValues: area.chips.compactMap { chip in
+              guard let old = oldFrames[chip.module] else { return nil }
+              return (chip.module, area.glass.convert(old, from: self))
+            }))
       }
     }
     strip.positionChips(animated: animated)
@@ -117,16 +130,18 @@ import TinyStatsCore
 
 @MainActor final class MenuBarDropArea: SystemStyledView {
   weak var owner: MenuBarCustomization?
+  let glass = GlassSurface(role: .chips)
   let inMenuBar: Bool
   private(set) var chips: [MenuBarChip] = []
   private(set) var insertion: Int?
+  let insertionOverlay = MenuBarInsertionOverlay()
   private var targetFrames: [Module: NSRect] = [:]
   /// One shared geometry calculation keeps height, drawing and drop boundaries in sync.
   private func chipFrames(for width: CGFloat) -> [NSRect] {
     var x: CGFloat = 12
     var y: CGFloat = 12
     return chips.map { chip in
-      let chipWidth = chip.chipWidth
+      let chipWidth = ceil(chip.chipWidth)
       if x > 12 && x + chipWidth > width - 12 {
         x = 12
         y += 36
@@ -153,6 +168,13 @@ import TinyStatsCore
   init(inMenuBar: Bool) {
     self.inMenuBar = inMenuBar
     super.init(frame: .zero)
+    addSubview(glass)
+    insertionOverlay.area = self
+    addSubview(insertionOverlay)
+    glass.onTreatmentChange = { [weak self] in
+      self?.needsDisplay = true
+      for chip in self?.chips ?? [] { chip.needsDisplay = true }
+    }
     registerForDraggedTypes([MenuBarCustomization.pasteboardType])
     setAccessibilityElement(true)
     setAccessibilityRole(.group)
@@ -166,10 +188,13 @@ import TinyStatsCore
       chip.removeFromSuperview()
       addSubview(chip)
     }
+    addSubview(insertionOverlay, positioned: .above, relativeTo: nil)
     needsDisplay = true
   }
   override func layout() {
     super.layout()
+    glass.frame = bounds
+    insertionOverlay.frame = bounds
     positionChips(animated: false)
   }
   func positionChips(animated: Bool) {
@@ -186,6 +211,11 @@ import TinyStatsCore
           }
         }
       }
+      glass.setChipFrames(
+        Dictionary(
+          uniqueKeysWithValues:
+            zip(chips.map(\.module), chipFrames(for: bounds.width))), animated: context.duration > 0
+      )
     }
   }
   func insertionIndex(at point: NSPoint) -> Int {
@@ -204,16 +234,6 @@ import TinyStatsCore
     NSColor.separatorColor.setStroke()
     path.lineWidth = 0.5
     path.stroke()
-    if insertion != nil {
-      NSColor.controlAccentColor.setFill()
-      if let marker = insertionFrame {
-        NSBezierPath(roundedRect: marker, xRadius: 1, yRadius: 1).fill()
-      } else {
-        NSColor.controlAccentColor.setStroke()
-        path.lineWidth = 2
-        path.stroke()
-      }
-    }
     if chips.isEmpty {
       let text = inMenuBar ? "Drop readouts here" : "Drag items here to hide them"
       let attributes: [NSAttributedString.Key: Any] = [
@@ -235,14 +255,14 @@ import TinyStatsCore
       return []
     }
     insertion = inMenuBar ? insertionIndex(at: convert(sender.draggingLocation, from: nil)) : 0
-    needsDisplay = true
+    insertionOverlay.needsDisplay = true
     return .move
   }
   override func draggingExited(_ sender: NSDraggingInfo?) { clearInsertion() }
   override func draggingEnded(_ sender: NSDraggingInfo) { clearInsertion() }
   private func clearInsertion() {
     insertion = nil
-    needsDisplay = true
+    insertionOverlay.needsDisplay = true
   }
   override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
     draggingUpdated(sender) == .move
@@ -255,6 +275,26 @@ import TinyStatsCore
     let action: MenuBarLayoutAction = inMenuBar ? .add(at: insertion ?? chips.count) : .remove
     // A drop at the current position is still a valid, harmless drop.
     return owner.perform(action, for: module) || inMenuBar
+  }
+}
+
+/// The existing drop marker is decoration above all material and chip layers.
+@MainActor final class MenuBarInsertionOverlay: NSView {
+  weak var area: MenuBarDropArea?
+  override var isFlipped: Bool { true }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+  override func isAccessibilityElement() -> Bool { false }
+  override func draw(_ dirtyRect: NSRect) {
+    guard let area, area.insertion != nil else { return }
+    if let marker = area.insertionFrame {
+      NSColor.controlAccentColor.setFill()
+      NSBezierPath(roundedRect: marker, xRadius: 1, yRadius: 1).fill()
+    } else {
+      NSColor.controlAccentColor.setStroke()
+      let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+      path.lineWidth = 2
+      path.stroke()
+    }
   }
 }
 
@@ -366,9 +406,14 @@ import TinyStatsCore
   }
   override func draw(_ dirtyRect: NSRect) {
     let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
-    (SystemStyle.isDark(effectiveAppearance)
-      ? NSColor.white.withAlphaComponent(0.10) : NSColor.controlBackgroundColor).setFill()
-    path.fill()
+    let treatment = (superview as? MenuBarDropArea)?.glass.treatment ?? .legacy
+    if treatment != .glass {
+      (treatment == .solid
+        ? NSColor.controlBackgroundColor
+        : SystemStyle.isDark(effectiveAppearance)
+          ? NSColor.white.withAlphaComponent(0.10) : NSColor.controlBackgroundColor).setFill()
+      path.fill()
+    }
     NSColor.separatorColor.setStroke()
     path.lineWidth = 0.5
     path.stroke()

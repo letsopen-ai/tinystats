@@ -60,7 +60,7 @@ private let browserFan = SensorReading(key: "F0Ac", name: "Fan 1", kind: .fan, v
   let intel = SensorReading(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 40)
   let readings = [browserGPU, browserHotCPU, intel, browserCPU]
   let summary = browser(readings)
-  #expect(summary.title == "SENSORS" && summary.count == "4/4")
+  #expect(summary.title == "SENSORS" && summary.count == "4 sensors")
   #expect(
     summary.rows.contains { $0.label == "CPU proximity" && $0.sensorIdentity == .reading("TC0P") })
   #expect(!summary.rows.contains { $0.sensorIdentity == .reading("Te04") })
@@ -75,7 +75,7 @@ private let browserFan = SensorReading(key: "F0Ac", name: "Fan 1", kind: .fan, v
   #expect(all.subtitle.contains("· now Te0I"))
   for mode in [false, true] {
     let search = browser(readings, query: "te04", all: mode)
-    #expect(search.title == "SENSORS" && search.count == "1/4")
+    #expect(search.title == "SENSORS" && search.count == "1 of 4 sensors")
     #expect(search.rows.map(\.label) == ["CPU", "CPU · Te04"])
     #expect(!search.rows.contains { $0.value == "All readings" })
     for query in ["proximity", "CPU", "°C", "temperature"] {
@@ -96,7 +96,7 @@ private let browserFan = SensorReading(key: "F0Ac", name: "Fan 1", kind: .fan, v
 @Test @MainActor func browserUnavailableAndValidZeroSignedAndMixedKindSummaries() {
   let unknown = SensorReading(key: "TX00", name: "TX00", kind: .temperature, value: 25)
   let unavailable = browser([unknown])
-  #expect(unavailable.value == "Sensor unavailable")
+  #expect(unavailable.value == "25.0°C" && unavailable.selection == .reading("TX00"))
   #expect(
     unavailable.rows.contains {
       $0.value == "Unavailable" && $0.help == "No recognized CPU sensors · see All readings"

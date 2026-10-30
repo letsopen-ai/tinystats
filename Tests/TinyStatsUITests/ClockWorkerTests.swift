@@ -247,3 +247,84 @@ func groupingChangesResetOnlyTheVisibleNetworkStream() async throws {
     #expect(sampler.networkStopCount == before + (module == .network ? 1 : 0))
   }
 }
+
+@Test(.timeLimit(.minutes(1)), arguments: [Module.cpu, .memory]) @MainActor
+func groupingDefersCloseSharedSampleAndPreservesPauseAndBaselines(module: Module) async throws {
+  let time = ManualWorkerClock()
+  let sampler = ClockSamplerFixture(uptime: { time.uptime }, date: { time.date })
+  let worker = MonitorWorker(
+    makeSampler: { _ in sampler }, powerState: { false },
+    uptime: { time.uptime }, date: { time.date },
+    makeTimer: { time.makeTimer(queue: $0, tick: $1) }, receive: { _, _, _ in })
+  var settings = Settings()
+  settings.interval = 60
+  worker.start(settings)
+  var ticks = time.ticks.makeAsyncIterator()
+  let first = try #require(await ticks.next())
+  worker.setDetails(true, module: module)
+  await first(0)
+  let baselines = sampler.processClearCount
+  let networkStops = sampler.networkStopCount
+  settings.processGrouping = .bundles
+  worker.update(settings)
+  let immediate = try #require(await ticks.next())
+  await immediate(0.1)
+  #expect(sampler.samples == 1)
+  await immediate(0.999)
+  #expect(sampler.samples == 1)
+  await immediate(1)
+  #expect(sampler.timestamps == [100, 101])
+  #expect(sampler.processDemands.last?.0 == module && sampler.processDemands.last?.1 == true)
+  #expect(sampler.processClearCount == baselines && sampler.networkStopCount == networkStops)
+  worker.setPaused(true)
+  settings.processGrouping = .processes
+  worker.update(settings)
+  await immediate(1.1)
+  #expect(sampler.samples == 2)
+  worker.setPaused(false)
+  let resumed = try #require(await ticks.next())
+  await resumed(2)
+  #expect(sampler.samples == 3)
+  worker.setSleeping(true)
+  settings.processGrouping = .bundles
+  worker.update(settings)
+  await resumed(2.1)
+  #expect(sampler.samples == 3)
+}
+
+@Test(.timeLimit(.minutes(1))) @MainActor
+func groupingCollectsImmediatelyWhenPreviousCollectionIsAtLeastASecondOld() async throws {
+  let time = ManualWorkerClock()
+  let sampler = ClockSamplerFixture(uptime: { time.uptime }, date: { time.date })
+  let worker = MonitorWorker(
+    makeSampler: { _ in sampler }, powerState: { false },
+    uptime: { time.uptime }, date: { time.date },
+    makeTimer: { time.makeTimer(queue: $0, tick: $1) }, receive: { _, _, _ in })
+  var settings = Settings()
+  settings.interval = 60
+  worker.start(settings)
+  var ticks = time.ticks.makeAsyncIterator()
+  let first = try #require(await ticks.next())
+  defer { worker.setPaused(true) }
+  worker.setDetails(true, module: .cpu)
+  await first(0)
+  await first(2)
+  #expect(sampler.samples == 1)
+  settings.processGrouping = .bundles
+  worker.update(settings)
+  let regrouped = try #require(await ticks.next())
+  await regrouped(2)
+  #expect(sampler.timestamps == [100, 102])
+  // Repeated user choices within the next second coalesce at the same deadline.
+  settings.processGrouping = .processes
+  worker.update(settings)
+  let repeated = try #require(await ticks.next())
+  await repeated(2.01)
+  settings.processGrouping = .bundles
+  worker.update(settings)
+  let final = try #require(await ticks.next())
+  await final(2.99)
+  #expect(sampler.samples == 2)
+  await final(3)
+  #expect(sampler.timestamps == [100, 102, 103])
+}

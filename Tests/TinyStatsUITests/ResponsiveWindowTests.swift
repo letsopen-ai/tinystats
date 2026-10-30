@@ -40,7 +40,7 @@ import Testing
       #expect(card.frame.width > original[index].width)
       if module == .overview {
         if index == 0 {
-          #expect(card.frame.height == 74 && original[index].height == 86)
+          #expect(card.frame.height == 74 && original[index].height == 108)
         } else {
           #expect(card.frame.height >= original[index].height)
         }

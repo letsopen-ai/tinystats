@@ -5,6 +5,12 @@ enum ChartValueFormat: Equatable {
   case number, percent, rate
   case unit(String)
   case temperature(fahrenheit: Bool)
+  func axisString(_ value: Double) -> String {
+    if case .unit(let unit) = self, unit == "°C" || unit == "°F" {
+      return String(format: "%.1f %@", value, unit)
+    }
+    return string(value)
+  }
   func string(_ value: Double?) -> String {
     guard let value, value.isFinite else { return "Unavailable" }
     switch self {
