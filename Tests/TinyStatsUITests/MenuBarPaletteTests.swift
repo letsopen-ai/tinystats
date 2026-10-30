@@ -14,7 +14,7 @@ import Testing
     + 0.0722 * linear(rgb.blueComponent)
 }
 
-@Test @MainActor func menuBarPaletteUsesOneAccentAndPreservesLabelContrast() throws {
+@Test @MainActor func menuBarPaletteUsesSharedAccentPairAndPreservesLabelContrast() throws {
   for name in [
     NSAppearance.Name.aqua, .darkAqua, .vibrantLight, .vibrantDark,
     .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
@@ -31,11 +31,13 @@ import Testing
       #expect(shadow.shadowBlurRadius == 1)
       #expect(shadow.shadowOffset == NSSize(width: 0, height: -0.5))
     }
-    let accent = SystemStyle.menuBarAccent(SystemStyle.resolvedAccent(in: appearance), dark: dark)
+    let accent = SystemStyle.menuBarAccent(
+      SystemStyle.resolvedPalette(in: appearance).primary, dark: dark)
     for module in Module.allCases { #expect(palette.graphic(module) == accent) }
     #expect(palette.graphic(nil) == accent)
     #expect(palette.core(.performance) == accent)
-    #expect(palette.core(.efficiency) == accent.withAlphaComponent(dark ? 0.5 : 0.45))
+    #expect(palette.core(.efficiency) == SystemStyle.resolvedPalette(in: appearance).secondary)
+    #expect(palette.secondary == palette.core(.efficiency))
     #expect(palette.core(.unknown) == expectedText.withAlphaComponent(0.65))
     let background = try luminance(dark ? .black : .white)
     let foreground = try luminance(palette.text)

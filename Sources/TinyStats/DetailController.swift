@@ -908,7 +908,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
           "Next 48h forecast · \(weatherZone.identifier) · time → · \(settings.fahrenheit ? "°F" : "°C")"
         lines = [
           .init(
-            name: "Forecast temperature", color: SystemStyle.secondaryAccent,
+            name: "Forecast temperature", color: SystemStyle.accent,
             values: upcoming.map { point in
               point.celsius.map { settings.fahrenheit ? $0 * 1.8 + 32 : $0 }
             })

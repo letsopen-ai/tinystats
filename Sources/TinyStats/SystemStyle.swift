@@ -23,14 +23,12 @@ enum SystemStyle {
   }
   static let popoverSize = NSSize(width: 344, height: 640)
   static let accent = NSColor(name: nil) { appearance in
-    resolvedAccent(in: appearance)
+    resolvedPalette(in: appearance).primary
   }
   static let secondaryAccent = NSColor(name: nil) { appearance in
-    resolvedAccent(in: appearance).withAlphaComponent(isDark(appearance) ? 0.5 : 0.45)
+    resolvedPalette(in: appearance).secondary
   }
-  static let tertiaryAccent = NSColor(name: nil) { appearance in
-    resolvedAccent(in: appearance).withAlphaComponent(0.3)
-  }
+  static let tertiaryAccent = NSColor.secondaryLabelColor
   static let platterFill = NSColor(name: nil) { appearance in
     isDark(appearance)
       ? NSColor.white.withAlphaComponent(0.08)
@@ -50,6 +48,17 @@ enum SystemStyle {
       result = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .controlAccentColor
     }
     return result
+  }
+  static func resolvedPalette(in appearance: NSAppearance) -> (primary: NSColor, secondary: NSColor)
+  {
+    let raw = resolvedAccent(in: appearance)
+    let pair = AccentPalette.derive(
+      from: .init(Double(raw.redComponent), Double(raw.greenComponent), Double(raw.blueComponent)),
+      dark: isDark(appearance))
+    func color(_ rgb: AccentPalette.RGB) -> NSColor {
+      NSColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+    }
+    return (color(pair.primary), color(pair.secondary))
   }
   /// Preserve the user's hue; lift dark-bar graphics slightly like the approved board.
   static func menuBarAccent(_ accent: NSColor, dark: Bool) -> NSColor {
