@@ -9,6 +9,8 @@ private final class ClockSamplerFixture: MonitorSampling, @unchecked Sendable {
   private var times: [Double] = []
   private var demands: [(Module?, Bool)] = []
   private var clears = 0
+  private var networkStops = 0
+  var networkStopCount: Int { lock.withLock { networkStops } }
   private let uptime: @Sendable () -> Double
   private let date: @Sendable () -> Date
   init(
@@ -44,7 +46,7 @@ private final class ClockSamplerFixture: MonitorSampling, @unchecked Sendable {
     clears += 1
     lock.unlock()
   }
-  func stopNetworkDetails() {}
+  func stopNetworkDetails() { lock.withLock { networkStops += 1 } }
   func sample(settings: Settings, includeProcesses: Bool, detailModule: Module?) -> Snapshot {
     lock.lock()
     let now = uptime()
@@ -220,4 +222,28 @@ func sharedClockSecondsPreserveLowPowerSamplingAndSampleHistory(worldClocks: Boo
   }
   #expect(sampler.samples > samples && projections.count == count)
   #expect(sampler.processDemands.allSatisfy { $0.0 == nil && !$0.1 })
+}
+
+@Test(.timeLimit(.minutes(1))) @MainActor
+func groupingChangesResetOnlyTheVisibleNetworkStream() async throws {
+  let time = ManualWorkerClock()
+  let sampler = ClockSamplerFixture(uptime: { time.uptime }, date: { time.date })
+  let worker = MonitorWorker(
+    makeSampler: { _ in sampler }, powerState: { false },
+    uptime: { time.uptime }, date: { time.date },
+    makeTimer: { time.makeTimer(queue: $0, tick: $1) }, receive: { _, _, _ in })
+  var settings = Settings()
+  worker.start(settings)
+  var ticks = time.ticks.makeAsyncIterator()
+  let tick = try #require(await ticks.next())
+  defer { worker.setPaused(true) }
+  for (index, module) in [Module.cpu, .memory, .network].enumerated() {
+    worker.setDetails(true, module: module)
+    await tick(Double(index * 4))
+    let before = sampler.networkStopCount
+    settings.processGrouping = settings.processGrouping == .bundles ? .processes : .bundles
+    worker.update(settings)
+    await tick(Double(index * 4 + 2))
+    #expect(sampler.networkStopCount == before + (module == .network ? 1 : 0))
+  }
 }

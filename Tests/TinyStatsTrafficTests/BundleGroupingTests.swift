@@ -14,6 +14,8 @@ private func owner(_ pid: Int32, _ rate: Double = 10, unique: UInt64? = nil)
 }
 @Test func bundlePathsRequireAnExactConventionalComponentAndUseTheOutermostApp() {
   let valid = [
+    "/X.app/Contents/x": ("/X.app", "X"),
+    "/Foo.app/Contents/Frameworks/H.app/Contents/MacOS/H": ("/Foo.app", "Foo"),
     "/Applications/Browser.app/Contents/MacOS/Browser": ("/Applications/Browser.app", "Browser"),
     "/Applications/Browser.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper": (
       "/Applications/Browser.app", "Browser"

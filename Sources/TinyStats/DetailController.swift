@@ -29,7 +29,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let headlinePlatter = PlatterView()
   private let readingsPlatter = PlatterView()
   private let tracePlatter = PlatterView()
-  private let popoverMaterial = NSVisualEffectView()
+  private let popoverMaterial = GlassSurface()
   private let summaryScroll = PopoverScrollView()
   private let weatherScroll = PopoverScrollView()
   private let openWindowRow = MenuActionRow()
@@ -72,8 +72,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   var weatherCitiesStatus = "Saved Weather cities unavailable" {
     didSet { if isViewLoaded && selected == .weather { refresh() } }
   }
-  var onNetworkGrouping: ((TrafficGrouping) -> Void)?
-  private var networkGrouping: NSSegmentedControl?
+  var onProcessGrouping: ((TrafficGrouping) -> Void)?
+  private var processGroupingControl: ProcessGroupingControl?
+  private let processGroupingHeader = NSView()
+  private let sensorCountLabel = NSTextField(labelWithString: "")
+  private let appDisplayCache = ProcessAppDisplayCache()
   var onWeatherCity: ((WeatherLocation?) -> Void)?
   var onWeatherEnabled: ((Bool) -> Void)?
   var onWeatherLocationRequest: (() -> Void)?
@@ -104,7 +107,6 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let titleLabel = NSTextField(labelWithString: "Overview")
   private let valueLabel = NSTextField(labelWithString: "Starting…")
   private let subtitleLabel = NSTextField(labelWithString: "")
-  private let footnoteLabel = NSTextField(labelWithString: "")
   private let chart = ChartView(frame: .zero)
   private var table = NSTableView()
   private var calendar: MonthCalendarView?
@@ -127,9 +129,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let readingsButton = MenuActionRow()
   override func loadView() {
     view = MainContentView(frame: NSRect(x: 0, y: 0, width: 700, height: 560))
-    popoverMaterial.material = .popover
-    popoverMaterial.blendingMode = .behindWindow
-    popoverMaterial.state = .active
+    view.setAccessibilityElement(true)
+    view.setAccessibilityRole(.group)
     view.addSubview(popoverMaterial)
     for platter in [headlinePlatter, readingsPlatter, tracePlatter] { view.addSubview(platter) }
     summaryScroll.drawsBackground = false
@@ -200,9 +201,6 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     historyButton.bezelStyle = .rounded
     historyButton.controlSize = .small
     add(historyButton, x: 473, y: 516, w: 90, h: 26)
-    footnoteLabel.font = .systemFont(ofSize: 10)
-    footnoteLabel.textColor = .secondaryLabelColor
-    add(footnoteLabel, x: 156, y: 27, w: 355, h: 18)
     pauseButton.target = self
     pauseButton.action = #selector(togglePause)
     pauseButton.bezelStyle = .rounded
@@ -214,6 +212,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     sensorSearch.delegate = self
     add(sensorSearch, x: 300, y: 516, w: 376, h: 26)
     sensorSearch.isHidden = true
+    sensorCountLabel.font = .systemFont(ofSize: 11)
+    sensorCountLabel.textColor = .secondaryLabelColor
+    sensorCountLabel.alignment = .right
+    view.addSubview(sensorCountLabel)
+    sensorCountLabel.isHidden = true
     navigation.layout(in: view.bounds)
     configurePresentation()
     refresh()
@@ -286,6 +289,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private func layoutContent() {
     let w = view.bounds.width
     let h = view.bounds.height
+    sensorCountLabel.frame = .init(x: 250, y: h - 42, width: 44, height: 20)
     guard w > 0, h > 0 else { return }
     navigation?.layout(in: view.bounds)
     if isPopoverPresentation && !showsSettings {
@@ -303,7 +307,6 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       x: w - (selected == .overview ? 120 : 227), y: h - 44, width: selected == .overview ? 92 : 90,
       height: selected == .overview ? 28 : 26)
     sensorSearch.frame = .init(x: 300, y: h - 44, width: max(0, w - 442), height: 26)
-    networkGrouping?.frame.origin.y = h - 44
     weatherCityPicker?.frame = .init(x: 250, y: h - 44, width: max(0, w - 395), height: 26)
     weatherDashboard?.frame = .init(x: 154, y: 56, width: width, height: max(0, h - 186))
     weatherControls?.frame = .init(x: 154, y: h - 118, width: width, height: 70)
@@ -324,9 +327,6 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let labelWidth: CGFloat = (selected == .network ? 240 : 280) + max(0, w - 700) * 0.55
     sizeColumn(table.tableColumns.first, to: min(columnsWidth, labelWidth))
     sizeColumn(table.tableColumns.last, to: max(0, columnsWidth - labelWidth))
-    footnoteLabel.frame = .init(
-      x: 156, y: selected == .overview ? 12 : 27,
-      width: selected == .overview ? width : max(0, w - 345), height: 18)
     pauseButton.frame = .init(
       x: w - (selected == .overview ? 216 : 100), y: selected == .overview ? h - 44 : 18,
       width: selected == .overview ? 90 : 72, height: 28)
@@ -366,10 +366,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     pauseButton.frame = .init(
       x: w - inset - 4 - actionSize, y: inset + 3, width: actionSize, height: actionSize)
-    let bottom = barTop + 32
+    let bottom = barTop + 4
     footerSeparator.frame = .init(x: inset + 4, y: barTop, width: width - 8, height: 0.5)
-    footnoteLabel.frame = .init(x: x, y: barTop + 7, width: width - 24, height: 18)
-    footnoteLabel.toolTip = footnoteLabel.stringValue
     titleLabel.frame = .init(x: x, y: h - 39, width: width - 24, height: 20)
     valueLabel.frame = .init(x: x, y: h - 80, width: width - 24, height: 38)
     subtitleLabel.frame = .init(x: x, y: h - 101, width: width - 24, height: 18)
@@ -385,10 +383,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     if selected == .weather && !showsAllReadings { titleLabel.isHidden = true }
     var top = h - (compact ? 10 : 118)
-    if selected == .sensors || selected == .network {
+    if selected == .sensors {
+      sensorCountLabel.frame = .init(x: w - x - 82, y: h - 39, width: 82, height: 20)
       top -= 32
       sensorSearch.frame = .init(x: inset, y: top + 4, width: width, height: 26)
-      networkGrouping?.frame = .init(x: inset, y: top + 4, width: width, height: 26)
     }
     if selected == .weather {
       weatherCityPicker?.frame = .init(x: inset, y: h - 40, width: width, height: 26)
@@ -464,13 +462,15 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   @objc private func enableWeather(_ sender: NSButton) { onWeatherEnabled?(sender.state == .on) }
   @objc private func requestWeatherLocation() { onWeatherLocationRequest?() }
   @objc private func editWeatherLocations() { onWeatherLocations?() }
-  @objc private func selectNetworkGrouping(_ sender: NSSegmentedControl) {
+  @objc private func selectProcessGrouping(_ sender: NSSegmentedControl) {
     let mode: TrafficGrouping = sender.selectedSegment == 1 ? .bundles : .processes
-    settings.networkTrafficGrouping = mode
-    snapshot.networkTraffic = .init()
-    snapshot.networkTraffic.grouping = mode
-    snapshot.networkTraffic.message = "Collecting a new complete traffic interval."
-    onNetworkGrouping?(mode)
+    settings.processGrouping = mode
+    if selected == .network {
+      snapshot.networkTraffic = .init()
+      snapshot.networkTraffic.grouping = mode
+      snapshot.networkTraffic.message = "Collecting a new complete traffic interval."
+    }
+    onProcessGrouping?(mode)
     refresh()
   }
   private func prepareWeatherControls() {
@@ -548,7 +548,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       if selected == .sensors, !showsSettings, let sample = snapshot.sensorsSampledAt,
         sample == renderedSensorSample, renderedSensorFahrenheit == settings.fahrenheit
       {
-        updateFootnote()
+        updateSampleRows()
+        updateSampleHelp()
       } else {
         refresh()
       }
@@ -583,8 +584,33 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private func reloadRows() {
     reloadingRows = true
     defer { reloadingRows = false }
-    if selected != .sensors || rows != displayedRows {
-      table.reloadData()
+    if rows != displayedRows {
+      let header = rows.firstIndex(where: \.processGroupingHeader)
+      let sameHeader =
+        header != nil && header == displayedRows.firstIndex(where: \.processGroupingHeader)
+      let focused =
+        view.window?.firstResponder === processGroupingControl && processGroupingControl != nil
+      if rows.count == displayedRows.count, sameHeader {
+        let changed = IndexSet(
+          rows.indices.filter { $0 != header && rows[$0] != displayedRows[$0] })
+        table.reloadData(
+          forRowIndexes: changed, columnIndexes: IndexSet(integersIn: 0..<table.numberOfColumns))
+        if let header, rows[header] != displayedRows[header],
+          let label = table.view(atColumn: 0, row: header, makeIfNecessary: false) as? NSTextField
+        {
+          // Even a single-column header reload can resign its sibling's first responder.
+          // Unrealized headings read the current row when the table asks for them later.
+          label.stringValue = SystemStyle.sectionTitle(rows[header].label)
+          label.toolTip = rows[header].help ?? label.stringValue
+          label.setAccessibilityLabel(rows[header].accessibilityLabel ?? rows[header].label)
+        }
+      } else {
+        table.reloadData()
+        if focused, let header, let control = processGroupingControl {
+          _ = table.view(atColumn: 1, row: header, makeIfNecessary: true)
+          view.window?.makeFirstResponder(control)
+        }
+      }
       displayedRows = rows
     }
     if selected == .sensors, let key = selectedSensorIdentity,
@@ -600,6 +626,35 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   {
     let id = NSUserInterfaceItemIdentifier(tableColumn?.identifier.rawValue ?? "label")
     let row = rows[index]
+    if id.rawValue == "value", row.processGroupingHeader, let control = processGroupingControl {
+      let header = processGroupingHeader
+      header.frame = .init(x: 0, y: 0, width: tableColumn?.width ?? 135, height: table.rowHeight)
+      if control.superview !== header { header.addSubview(control) }
+      control.isHidden = false
+      control.frame = .init(
+        x: max(0, header.bounds.width - ProcessGroupingControl.width), y: 3,
+        width: ProcessGroupingControl.width, height: 22)
+      control.autoresizingMask = [.minXMargin]
+      return header
+    }
+    if id.rawValue == "label", let fallback = row.appName {
+      let cellID = NSUserInterfaceItemIdentifier("process-app-label")
+      let cell =
+        table.makeView(withIdentifier: cellID, owner: self) as? ProcessAppLabelCell
+        ?? ProcessAppLabelCell(frame: .zero)
+      cell.identifier = cellID
+      let entry =
+        row.bundlePath.map { appDisplayCache.entry(path: $0, fallback: fallback) }
+        ?? .init(name: fallback, icon: ProcessAppDisplayCache.placeholder)
+      cell.update(entry, count: row.processCount, path: row.bundlePath, provenance: row.label)
+      if let help = row.help {
+        cell.toolTip = (cell.toolTip ?? "") + " · " + help
+        cell.setAccessibilityHelp(help)
+      } else {
+        cell.setAccessibilityHelp(nil)
+      }
+      return cell
+    }
     if id.rawValue == "value", let reading = row.meter {
       let meterID = NSUserInterfaceItemIdentifier("utilization-meter")
       let cell =
@@ -607,6 +662,12 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         ?? UtilizationMeterCell(frame: .zero)
       cell.identifier = meterID
       cell.update(label: row.label, reading: reading.value, color: reading.color, text: row.value)
+      if let help = row.help {
+        cell.toolTip = row.value + " · " + help
+        cell.setAccessibilityHelp(help)
+      } else {
+        cell.setAccessibilityHelp(nil)
+      }
       return cell
     }
     let cell =
@@ -615,7 +676,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     cell.identifier = id
     let isValue = id.rawValue == "value"
     cell.stringValue =
-      isValue ? row.value : row.heading ? SystemStyle.sectionTitle(row.label) : row.label
+      isValue
+      ? row.compactValue ?? row.value
+      : row.heading ? SystemStyle.sectionTitle(row.label) : row.label
     cell.font =
       isValue
       ? .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
@@ -623,9 +686,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     cell.textColor = row.heading ? .secondaryLabelColor : .labelColor
     cell.alignment = isValue ? .right : .left
     cell.lineBreakMode = .byTruncatingTail
-    cell.toolTip = cell.stringValue
+    cell.toolTip = row.help ?? (isValue ? row.value : cell.stringValue)
     if !isValue, let spoken = row.accessibilityLabel {
       cell.setAccessibilityLabel(spoken)
+      cell.toolTip = row.help ?? cell.stringValue
     } else {
       cell.setAccessibilityLabel(isValue ? row.value : row.label)
     }
@@ -658,31 +722,25 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     guard isViewLoaded, !showsSettings else { return }
     chart.inspectionDateLabel = nil
     defer { layoutContent() }
-    if selected == .network {
-      if networkGrouping == nil {
-        let control = NSSegmentedControl(
-          labels: ["Processes", "App bundles"], trackingMode: .selectOne,
-          target: self, action: #selector(selectNetworkGrouping(_:)))
-        control.controlSize = .small
-        control.setAccessibilityLabel("Network traffic grouping")
-        control.toolTip =
-          "Group current executable bundle paths. Shared services and unresolved paths stay separate."
-        add(control, x: 284, y: 516, w: 184, h: 26)
-        networkGrouping = control
+    let groupsProcesses = [.cpu, .memory, .network].contains(selected)
+    if groupsProcesses {
+      if processGroupingControl == nil {
+        processGroupingControl = ProcessGroupingControl(
+          target: self, action: #selector(selectProcessGrouping(_:)))
       }
-      networkGrouping?.selectedSegment = settings.networkTrafficGrouping == .bundles ? 1 : 0
-      if snapshot.networkTraffic.grouping != settings.networkTrafficGrouping
-        || snapshot.networkTraffic.revision != settings.networkTrafficRevision
-      {
-        snapshot.networkTraffic = .init()
-        snapshot.networkTraffic.grouping = settings.networkTrafficGrouping
-        snapshot.networkTraffic.revision = settings.networkTrafficRevision
-        snapshot.networkTraffic.message = "Collecting a new complete traffic interval."
-      }
+      processGroupingControl?.selectedSegment = settings.processGrouping == .bundles ? 1 : 0
     }
-    networkGrouping?.isHidden = selected != .network
+    processGroupingControl?.isHidden = !groupsProcesses
+    if selected == .network,
+      snapshot.networkTraffic.grouping != settings.processGrouping
+        || snapshot.networkTraffic.revision != settings.networkTrafficRevision
+    {
+      snapshot.networkTraffic = .init()
+      snapshot.networkTraffic.grouping = settings.processGrouping
+      snapshot.networkTraffic.revision = settings.networkTrafficRevision
+      snapshot.networkTraffic.message = "Collecting a new complete traffic interval."
+    }
     titleLabel.isHidden = false
-    footnoteLabel.isHidden = false
     pauseButton.isHidden = false
     let s = snapshot
     navigation?.updateSelection(selected)
@@ -709,6 +767,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     weatherControls?.isHidden = selected != .weather
     historyButton.isHidden = !HistoryController.modules.contains(selected) && selected != .overview
     sensorSearch.isHidden = selected != .sensors
+    sensorCountLabel.isHidden = selected != .sensors
     if selected == .sensors { historyButton.isHidden = true }
     readingsButton.isHidden = selected == .overview
     readingsButton.title =
@@ -764,13 +823,14 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       }
       if !chart.series.isEmpty { chart.series = [] }
       if !chart.times.isEmpty { chart.times = [] }
-      updateFootnote()
+      updateSampleHelp()
       return
     }
     if compact {
       if summary == nil {
         let dashboard = SummaryDashboardView(frame: .zero)
         add(dashboard, x: 154, y: 56, w: 520, h: 454)
+        dashboard.appDisplayCache = appDisplayCache
         summary = dashboard
         dashboard.usesPopoverLayout = isPopoverPresentation
         if isPopoverPresentation { summaryScroll.documentView = dashboard }
@@ -780,8 +840,19 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       {
         valueLabel.stringValue = headline.value
         subtitleLabel.stringValue = headline.subtitle
-        summary?.popoverHeadline = (selected.title, headline.value, headline.subtitle)
+        // These pages already show the headline value in their first card's content.
+        summary?.popoverHeadline =
+          [.gpu, .network, .disks, .battery].contains(selected)
+          ? nil
+          : (
+            titleLabel.stringValue, headline.value,
+            selected == .memory
+              ? snapshot.memory.map { "of " + Display.bytes($0.total) } ?? headline.subtitle
+              : headline.subtitle
+          )
       }
+      summary?.paused = paused
+      summary?.groupingControl = groupsProcesses ? processGroupingControl : nil
       summary?.update(s, history: history, settings: settings, module: selected)
       if !rows.isEmpty {
         rows = []
@@ -791,14 +862,19 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         chart.series = []
         chart.times = []
       }
-      updateFootnote()
+      updateSampleHelp()
       return
+    }
+    if groupsProcesses, processGroupingControl?.superview === summary {
+      processGroupingControl?.removeFromSuperview()
     }
     chart.fitsDataRange = selected == .sensors
     chart.times = history.map(\.time)
     chart.upperBound = 100
     chart.valueFormat = selected == .network || selected == .disks ? .rate : .percent
     chart.caption = nil
+    chart.toolTip = nil
+    chart.setAccessibilityHelp(nil)
     chart.newestValueLabel = "Latest"
     chart.emptyMessage = "No readings yet"
     chart.setAccessibilityLabel(
@@ -843,9 +919,13 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       chart.valueFormat = .unit(presentation.unit)
       chart.emptyMessage =
         presentation.available ? "No readings yet" : "No sensor readings to chart"
-      chart.caption = "Read-only · history while this window is open · hover for values"
+      chart.caption = ""
+      chart.toolTip = "Read-only · history while this window is open · hover for values"
+      chart.setAccessibilityHelp(chart.toolTip)
       titleLabel.stringValue = SystemStyle.sectionTitle(presentation.title)
       titleLabel.setAccessibilityLabel(presentation.title)
+      sensorCountLabel.stringValue = presentation.count
+      sensorCountLabel.toolTip = "Matching sensors / readable sensors"
       rows = presentation.rows
     case .weather:
       let weather = s.weather.filtered(settings: settings.weather, suspended: paused)
@@ -1042,7 +1122,6 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       for clock in ClockMenuRenderer.worldClockRows(settings: settings, at: date) {
         row(clock.label, clock.value)
       }
-      row("Time zones", "Edit in Settings")
     }
     if selected != .overview {
       valueLabel.font = .monospacedDigitSystemFont(
@@ -1050,18 +1129,22 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     subtitleLabel.toolTip = subtitleLabel.stringValue
     subtitleLabel.setAccessibilityLabel(subtitleLabel.stringValue)
+    if selected != .sensors || showsAllReadings {
+      rows += DetailReadingsBuilder.sampleRows(snapshot: s, settings: settings, paused: paused)
+    }
     chart.series = lines
     table.setAccessibilityLabel("\(selected.title) details")
     reloadRows()
-    updateFootnote()
+    updateSampleHelp()
   }
   private func updateActionPresentation() {
     openWindowRow.title = "Open \(selected.title) in TinyStats"
     for button in [historyButton, openWindowRow, pauseButton] {
       button.setAccessibilityLabel(button.title)
-      button.toolTip = button.title
+      if button !== pauseButton { button.toolTip = button.title }
     }
     readingsButton.toolTip = readingsButton.accessibilityLabel()
+    updateSampleHelp()
     guard isPopoverPresentation else { return }
     historyButton.setIcon("clock.arrow.circlepath", fallback: "clock")
     openWindowRow.setIcon("arrow.up.forward.app", fallback: "macwindow")
@@ -1075,20 +1158,34 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     pauseButton.showsAccent = paused
     pauseButton.setIcon(paused ? "play.fill" : "pause", fallback: paused ? "play" : "pause")
   }
-  private func updateFootnote() {
-    if selected == .sensors
-      && snapshot.sensors.filter({ !$0.key.hasPrefix("ioreport:") }).count >= 128
-    {
-      footnoteLabel.stringValue =
-        paused
-        ? "Paused · some sensors may be missing · SMC scan limit: 128"
-        : "Some sensors may be missing · SMC scan limit: 128"
-      return
+  private func updateSampleRows() {
+    guard let start = rows.firstIndex(where: \.sampleSection) else { return }
+    let sample = DetailReadingsBuilder.sampleRows(
+      snapshot: snapshot, settings: settings, paused: paused)
+    let previous = Array(rows[start...])
+    guard previous != sample else { return }
+    rows.replaceSubrange(start..., with: sample)
+    if previous.count == sample.count {
+      let changed = IndexSet(
+        sample.indices.filter { sample[$0] != previous[$0] }.map { start + $0 })
+      table.reloadData(
+        forRowIndexes: changed, columnIndexes: IndexSet(integersIn: 0..<table.numberOfColumns))
+      displayedRows = rows
+    } else {
+      reloadRows()
     }
-    footnoteLabel.stringValue =
-      paused
-      ? "Paused · readings are frozen"
-      : "\(settings.connectivityChecks || settings.publicIPChecks || settings.weather.enabled ? "Internet requests enabled" : settings.pingCheck.enabled ? "Network checks enabled" : "Local only") · \(Int(settings.interval))s cadence · sample \(String(format:"%.1f",snapshot.sampleMilliseconds)) ms"
+  }
+  private func updateSampleHelp() {
+    let information = DetailReadingsBuilder.sampleRows(
+      snapshot: snapshot, settings: settings, paused: paused
+    )
+    .filter { !$0.heading }.map { "\($0.label): \($0.value)" }.joined(separator: "\n")
+    // Keep the action's established AX label; supplemental help is reachable on every
+    // module, including Overview, which intentionally has no All readings action.
+    pauseButton.toolTip = pauseButton.title + "\n" + information
+    pauseButton.setAccessibilityHelp(information)
+    view.setAccessibilityLabel(selected.title + " details")
+    view.setAccessibilityValue(information)
   }
 }
 
@@ -1110,7 +1207,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     didSet {
       guard oldValue != fadesBottom else { return }
       automaticallyAdjustsContentInsets = false
-      contentInsets = .init(top: 0, left: 0, bottom: fadesBottom ? 36 : 0, right: 0)
+      contentInsets = .init(top: 0, left: 0, bottom: fadesBottom ? 22 : 0, right: 0)
       wantsLayer = fadesBottom
       layer?.mask = fadesBottom ? fade : nil
       needsLayout = true
@@ -1122,13 +1219,13 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     fade.frame = bounds
-    // A 12pt clear footer buffer removes clipped card rims; the preceding 24pt fades content.
+    // Six clear points hide cut card rims before the sixteen-point ramp.
     fade.colors = [
       NSColor.clear.cgColor, NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor,
     ]
     fade.locations = [
-      0, NSNumber(value: min(1, 12 / max(1, bounds.height))),
-      NSNumber(value: min(1, 36 / max(1, bounds.height))), 1,
+      0, NSNumber(value: min(1, 6 / max(1, bounds.height))),
+      NSNumber(value: min(1, 22 / max(1, bounds.height))), 1,
     ]
     // NSScrollView has a flipped backing layer: normalized y=1 is the footer edge.
     fade.startPoint = .init(x: 0.5, y: 1)

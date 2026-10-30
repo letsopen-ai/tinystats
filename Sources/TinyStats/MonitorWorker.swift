@@ -83,8 +83,9 @@ final class MonitorWorker: @unchecked Sendable {
       var settings = settings
       settings.persistHistory = self.persistence.state.enabled
       let cadenceChanged = self.settings.interval != settings.interval
-      if self.settings.networkTrafficGrouping != settings.networkTrafficGrouping
-        || self.settings.networkTrafficRevision != settings.networkTrafficRevision
+      if self.details && self.detailModule == .network,
+        self.settings.processGrouping != settings.processGrouping
+          || self.settings.networkTrafficRevision != settings.networkTrafficRevision
       {
         self.sampler?.stopNetworkDetails()
       }

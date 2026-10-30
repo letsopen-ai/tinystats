@@ -14,6 +14,7 @@ enum SensorBrowserPresentation {
   struct Presentation {
     var selection: SensorBrowserIdentity?
     var title: String
+    var count: String
     var value: String
     var subtitle: String
     var rows: [DetailRow]
@@ -81,17 +82,25 @@ enum SensorBrowserPresentation {
       }
       highlights.append(
         .init(
-          label: hottestLabel(type)
-            + (current == nil ? " · No recognized CPU sensors · see All readings" : ""),
+          label: type == .cpu ? "Hottest CPU sensor" : "Hottest GPU sensor",
           value: current?.formatted(fahrenheit: settings.fahrenheit) ?? "Unavailable",
-          sensorIdentity: current == nil ? nil : .hottest(type)))
+          sensorIdentity: current == nil ? nil : .hottest(type),
+          help: current == nil ? "No recognized CPU sensors · see All readings" : hottestLabel(type)
+        ))
+    }
+    if snapshot.sensors.filter({ !$0.key.hasPrefix("ioreport:") }).count >= 128 {
+      highlights.append(
+        .init(
+          label: "Sensors may be missing", value: "",
+          help: "SMC scan limit: 128. See All readings for details."))
     }
     let highlightKeys =
       snapshot.sensors.filter { $0.kind == .fan }.sorted { $0.key < $1.key }
       + ["TB0T", "PSTR", "ioreport:cpu", "ioreport:gpu", "ioreport:ane", "ioreport:dram"]
       .compactMap { key in snapshot.sensors.first { $0.key == key } }
-    highlights += highlightKeys.filter { reading in physical.contains { $0.key == reading.key } }
-      .map(physicalRow)
+    // Prominent physical readings belong once in their component group; Highlights
+    // contains only the distinct hottest-temperature projections.
+    let prominentKeys = Set(highlightKeys.map(\.key))
     var rows: [DetailRow] = []
     if !highlights.isEmpty {
       rows.append(.init(label: "HIGHLIGHTS", value: "", heading: true))
@@ -104,8 +113,9 @@ enum SensorBrowserPresentation {
       if showsAll || !query.isEmpty {
         rows += group.map(physicalRow)
       } else {
-        rows += group.filter { friendly($0) != nil }.map(physicalRow)
-        let unnamed = group.filter { friendly($0) == nil }
+        rows += group.filter { friendly($0) != nil || prominentKeys.contains($0.key) }.map(
+          physicalRow)
+        let unnamed = group.filter { friendly($0) == nil && !prominentKeys.contains($0.key) }
         if !unnamed.isEmpty {
           let label = summaryLabel(unnamed, component: component, fahrenheit: settings.fahrenheit)
           let spoken = label.replacingOccurrences(of: "–", with: " to ")
@@ -114,8 +124,9 @@ enum SensorBrowserPresentation {
             .replacingOccurrences(of: "°F", with: "degrees Fahrenheit")
           rows.append(
             .init(
-              label: label, value: "All readings",
-              accessibilityLabel: spoken + ", available in All readings"))
+              label: "\(unnamed.count) more \(unnamed.count == 1 ? "sensor" : "sensors")",
+              value: "All readings",
+              accessibilityLabel: spoken + ", available in All readings", help: label))
         }
       }
     }
@@ -135,45 +146,52 @@ enum SensorBrowserPresentation {
     } else {
       defaultSelection =
         highlights.compactMap(\.sensorIdentity).first
+        ?? highlightKeys.first(where: { prominent in physical.contains { $0.key == prominent.key } }
+        )
+        .map { .reading($0.key) }
         ?? rows.compactMap(\.sensorIdentity).first
     }
     let selected = selection ?? defaultSelection
     var chosen: SensorReading?
     var subtitle = "Select a sensor below"
     var name = "Selected sensor"
+    var chartName: String?
     var kind: SensorReading.Kind?
     var values = [Double?](repeating: nil, count: timeline.count)
     switch selected {
     case .reading(let key):
       chosen = snapshot.sensor(for: key)
       name = chosen?.name ?? key
+      chartName = chosen.flatMap(friendly)
       subtitle =
         chosen.map {
-          (showsAll ? rawLabel($0) : friendly($0) ?? $0.name) + " · read-only"
-        } ?? key + " · currently unavailable · read-only"
+          (showsAll ? rawLabel($0) : friendly($0) ?? $0.name)
+        } ?? key + " · currently unavailable"
       kind = chosen?.kind ?? timeline.kind(for: key)
       values = timeline.values(for: key, fahrenheit: settings.fahrenheit, kind: kind)
     case .hottest(let type):
       chosen = hottest(type)
       name = hottestLabel(type)
+      chartName = type == .cpu ? "Hottest CPU sensor" : "Hottest GPU sensor"
       kind = .temperature
       let component = type == .cpu ? "CPU" : "GPU"
       subtitle =
         chosen.map { reading in
-          "Hottest of \(temperatures(type).count) recognized \(component) sensors · read-only"
-            + (showsAll ? " · now \(reading.key)" : "")
-            + " · currently readable sensors only"
-        } ?? name + " · currently unavailable · read-only"
+          "Hottest \(component) sensor" + (showsAll ? " · now \(reading.key)" : "")
+        } ?? name + " · currently unavailable"
       values = timeline.maximumValues(
         for: temperatures(type).map(\.key), fahrenheit: settings.fahrenheit)
     case nil: break
     }
     return Presentation(
       selection: selected,
-      title: "SENSORS · \(physical.count)/\(snapshot.sensors.count)" + (paused ? " · PAUSED" : ""),
+      title: "SENSORS" + (paused ? " · PAUSED" : ""),
+      count: "\(physical.count)/\(snapshot.sensors.count)",
       value: chosen?.formatted(fahrenheit: settings.fahrenheit) ?? "Sensor unavailable",
       subtitle: subtitle, rows: rows,
-      series: [.init(name: name, color: SystemStyle.accent, values: values)],
+      series: [
+        .init(name: name, color: SystemStyle.accent, values: values, displayName: chartName)
+      ],
       unit: kind == .temperature && settings.fahrenheit ? "°F" : kind?.unit ?? "",
       available: chosen != nil)
   }

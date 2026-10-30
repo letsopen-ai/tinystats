@@ -23,8 +23,13 @@ public struct TrafficBundleReading: Sendable {
   /// Only owners with bytes in this interval are counted. nil pid means a bundle group.
   public var processCount: Int
   public var pid: Int32?
+  public var bundlePath: String?
   public var download: Double, upload: Double
-  public init(name: String, processCount: Int, pid: Int32?, download: Double, upload: Double) {
+  public init(
+    name: String, processCount: Int, pid: Int32?, download: Double, upload: Double,
+    bundlePath: String? = nil
+  ) {
+    self.bundlePath = bundlePath
     self.name = name
     self.processCount = processCount
     self.pid = pid
@@ -33,7 +38,7 @@ public struct TrafficBundleReading: Sendable {
   }
   public var label: String {
     if let pid { return pid > 0 ? "\(name) · \(pid)" : name }
-    return "\(name) · \(processCount) active"
+    return "\(name) · \(processCount) \(processCount == 1 ? "process" : "processes")"
   }
 }
 public struct ProcessTrafficSnapshot: Sendable {

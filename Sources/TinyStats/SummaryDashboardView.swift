@@ -3,7 +3,7 @@ import TinyStatsCore
 
 /// Owns module assembly, layout, accessibility lifetime, and history charts.
 /// Card presentation lives in SummaryDashboardCards.swift and draws in this same view.
-/// No layers, per-card controls or timers. Overview draws the existing app icon.
+/// Immediate-mode cards share one native process-header control; no view timers.
 @MainActor final class SummaryDashboardView: ChartHoverView {
   /// Availability of a statistic among valid readings, not coverage of elapsed time.
   struct ObservationCoverage {
@@ -82,8 +82,20 @@ import TinyStatsCore
     }
   }
 
+  var appDisplayCache = ProcessAppDisplayCache()
+  weak var groupingControl: ProcessGroupingControl?
+  func layoutGroupingControl() {
+    guard let control = groupingControl, let card = cards.first(where: \.groupsProcesses) else {
+      return
+    }
+    if control.superview !== self { addSubview(control) }
+    control.frame = .init(
+      x: card.frame.maxX - ProcessGroupingControl.width - 12, y: card.frame.minY + 9,
+      width: ProcessGroupingControl.width, height: 22)
+  }
   private(set) var cards: [Card] = []
   var usesPopoverLayout = false
+  var paused = false
   private(set) var isOverview = false
   var usesOverviewLayout: Bool { isOverview && !usesPopoverLayout }
   var popoverHeadline: (title: String, value: String, subtitle: String)?
@@ -93,17 +105,22 @@ import TinyStatsCore
         + (pair.offset == 0 && popoverHeadline != nil ? 27 : 0) + 8
     }
   }
-  private func popoverCardHeight(_ card: Card, canonical: NSRect) -> CGFloat {
+  func popoverCardHeight(_ card: Card, canonical: NSRect) -> CGFloat {
     switch card.content {
     case .rows(let rows):
-      return max(
-        canonical.height, 38 + CGFloat(min(7, rows.count)) * 25 + (card.note.isEmpty ? 0 : 17))
-    case .none where card.title == "TOP PROCESSES": return 56
+      return max(64, 43 + CGFloat(min(12, rows.count)) * 25 + (card.note.isEmpty ? 0 : 17))
+    case .none where card.title == "TOP PROCESSES" || card.title == "TOP APPS": return 56
     case .none
-    where card.title.contains("TRAFFIC · PARTIAL") || card.title == "APP BUNDLES · PARTIAL":
-      return 96
-    case .memory: return 204
-    case .tiles(_, let columns): return max(canonical.height, columns > 2 ? 150 : 134)
+    where card.title.contains("TRAFFIC · PARTIAL"):
+      return 56
+    case .message: return card.note.isEmpty ? 64 : 81
+    case .memory: return card.note.isEmpty ? 187 : 204
+    case .tiles(let tiles, let columns):
+      let rows = (tiles.count + max(1, columns) - 1) / max(1, columns)
+      if !tiles.isEmpty, tiles.allSatisfy({ $0.trend == nil && $0.fraction == nil }) {
+        return 43 + CGFloat(rows) * 76 + (card.note.isEmpty ? 0 : 17)
+      }
+      return max(canonical.height, columns > 2 ? 150 : 134)
     default: return canonical.height
     }
   }
@@ -128,12 +145,17 @@ import TinyStatsCore
   }
   private func isExpandable(_ card: Card) -> Bool {
     if case .plot = card.content { return true }
-    return card.title == "TOP PROCESSES" || card.title == "METAL GPU TIME"
+    return card.groupsProcesses || card.title == "TOP PROCESSES" || card.title == "METAL GPU TIME"
       || card.title.contains("TRAFFIC · PARTIAL")
-      || card.title == "APP BUNDLES · PARTIAL"
   }
   func displayedRows(in card: Card) -> ArraySlice<Reading> {
     guard case .rows(let rows) = card.content else { return [] }
+    if usesPopoverLayout {
+      guard rows.count > 12 else { return rows[...] }
+      return
+        (Array(rows.prefix(11)) + [.init(label: "+\(rows.count - 11) more", value: "All readings")])[
+          ...]
+    }
     guard isExpandable(card) else { return rows[...] }
     let available = max(0, card.frame.height / contentScale - 54)
     let height: CGFloat = rows.contains { $0.second != nil } ? 20 : 14
@@ -153,6 +175,7 @@ import TinyStatsCore
     }
   }
   private func layoutSummaryCards() {
+    defer { layoutGroupingControl() }
     guard canonicalFrames.count == cards.count else { return }
     if usesOverviewLayout {
       for (index, frame) in Self.overviewFrames(in: bounds).enumerated()
@@ -165,7 +188,7 @@ import TinyStatsCore
       var y: CGFloat = 0
       for index in cards.indices {
         let header = index == 0 && popoverHeadline != nil
-        cards[index].headerHeight = header ? 58 : 31
+        cards[index].headerHeight = header ? 58 : 36
         let height =
           popoverCardHeight(cards[index], canonical: canonicalFrames[index]) + (header ? 27 : 0)
         cards[index].frame = .init(x: 0, y: y, width: bounds.width, height: height)
@@ -216,7 +239,8 @@ import TinyStatsCore
       child.setAccessibilityFrame(
         window.map { $0.convertToScreen(convert(card.frame, to: nil)) } ?? card.frame)
     }
-    return accessibleCards + (hoverAccessibilityElement.map { [$0] } ?? [])
+    return accessibleCards + (groupingControl.map { [$0] } ?? [])
+      + (hoverAccessibilityElement.map { [$0] } ?? [])
   }
   func update(_ s: Snapshot, history: [HistoryPoint], settings: Settings, module: Module) {
     prepareTextStyles(for: module)
@@ -275,10 +299,26 @@ import TinyStatsCore
     func processName(_ process: ProcessReading) -> String {
       duplicateNames.contains(process.name) ? "\(process.name) (\(process.pid))" : process.name
     }
+    func appRows(_ apps: [ProcessAppReading], memory: Bool) -> [Reading] {
+      let fractions = Self.relativeFractions(
+        apps.map { memory ? $0.memory.map(Double.init) : $0.cpu })
+      return zip(apps, fractions).map { app, fraction in
+        Reading(
+          label: app.label
+            + (app.pid == nil
+              ? "" : " · \(app.processCount) \(app.processCount == 1 ? "process" : "processes")"),
+          value: memory ? app.memory.map(Display.bytes) ?? "—" : Display.processPercent(app.cpu),
+          fraction: fraction,
+          accessibilityValue: !memory && app.cpuIncomplete > 0
+            ? "\(Display.processPercent(app.cpu)) · \(app.cpuIncomplete) unmeasured processes"
+            : nil,
+          bundlePath: app.bundlePath, processCount: app.processCount, displayName: app.name)
+      }
+    }
     func cpuProcesses() -> [Reading] {
+      if settings.processGrouping == .bundles { return appRows(s.cpuApps, memory: false) }
       let processes = Array(
-        s.processes.filter { $0.cpu != nil }.sorted { ($0.cpu ?? -1) > ($1.cpu ?? -1) }.prefix(12)
-      )
+        s.processes.filter { $0.cpu != nil }.sorted { ($0.cpu ?? -1) > ($1.cpu ?? -1) }.prefix(12))
       let fractions = Self.relativeFractions(processes.map(\.cpu))
       return zip(processes, fractions).map { process, fraction in
         Reading(
@@ -331,12 +371,22 @@ import TinyStatsCore
       ]
     }
     func trafficRows() -> [Reading] {
-      guard s.networkTraffic.grouping == settings.networkTrafficGrouping,
+      guard s.networkTraffic.grouping == settings.processGrouping,
         s.networkTraffic.revision == settings.networkTrafficRevision
       else { return [] }
-      if settings.networkTrafficGrouping == .bundles {
+      if settings.processGrouping == .bundles {
         let bundles = Array(s.networkTraffic.bundles.prefix(12))
-        return rateRows(bundles.map(\.label), bundles.map(\.upload), bundles.map(\.download))
+        var rows = rateRows(bundles.map(\.label), bundles.map(\.upload), bundles.map(\.download))
+        for index in rows.indices {
+          rows[index].bundlePath = bundles[index].bundlePath
+          rows[index].processCount = bundles[index].processCount
+          rows[index].displayName = bundles[index].name
+          if bundles[index].pid != nil {
+            let count = bundles[index].processCount
+            rows[index].label += " · \(count) \(count == 1 ? "process" : "processes")"
+          }
+        }
+        return rows
       }
       let processes = Array(s.networkTraffic.processes.prefix(12))
       return rateRows(processes.map(\.name), processes.map(\.upload), processes.map(\.download))
@@ -386,7 +436,8 @@ import TinyStatsCore
       }
       let cpuRows = cpuProcesses()
       card(
-        "TOP PROCESSES", 284, 108, cpuRows.isEmpty ? .none : .rows(cpuRows),
+        settings.processGrouping == .bundles ? "TOP APPS" : "TOP PROCESSES", 284, 108,
+        cpuRows.isEmpty ? .none : .rows(cpuRows),
         note: cpuRows.isEmpty
           ? "No process readings yet" : "Bars relative to largest · % of one core", width: 252
       )
@@ -410,7 +461,8 @@ import TinyStatsCore
           percent: true),
         trailing: s.gpus.count > 1 ? "\(s.gpus.count) devices" : selectedGPU?.name ?? "Unavailable")
       card(
-        "DRIVER ENGINES", 164, 134, .gauges(gpuGauges()),
+        "DRIVER ENGINES", 164, 134,
+        .gauges(gpuGauges().filter { !usesPopoverLayout || $0.label != "Device" }),
         note: "Usage per GPU core is not available", width: 252)
       let hardware: [Tile] = [
         tile(
@@ -465,15 +517,23 @@ import TinyStatsCore
       let processes = Array(
         s.processes.sorted { $0.memory > $1.memory }.prefix(12))
       let fractions = Self.relativeFractions(processes.map { Double($0.memory) })
-      let rows = zip(processes, fractions).map { process, fraction in
-        Reading(
-          label: processName(process), value: Display.bytes(process.memory),
-          fraction: fraction, color: SystemStyle.accent)
-      }
+      let rows =
+        settings.processGrouping == .bundles
+        ? appRows(s.memoryApps, memory: true)
+        : zip(processes, fractions).map { process, fraction in
+          Reading(
+            label: processName(process), value: Display.bytes(process.memory),
+            fraction: fraction, color: SystemStyle.accent)
+        }
       card(
-        "TOP PROCESSES", 288, 124, rows.isEmpty ? .none : .rows(rows),
+        settings.processGrouping == .bundles ? "TOP APPS" : "TOP PROCESSES", 288, 124,
+        rows.isEmpty ? .none : .rows(rows),
         trailing: rows.isEmpty ? "No readings" : "Memory",
-        note: rows.isEmpty ? "No process readings yet" : "Bars relative to largest footprint")
+        note: rows.isEmpty
+          ? "No process readings yet"
+          : settings.processGrouping == .bundles
+            ? "Sum of footprints · shared pages may be counted twice"
+            : "Bars relative to largest footprint")
       card(
         "SWAP", 420, 34, .none,
         trailing: s.memory.map { Display.bytes($0.swapUsed) + " / " + Display.bytes($0.swapTotal) }
@@ -569,20 +629,21 @@ import TinyStatsCore
       card("CONNECTION", 188, 104 + pingHeight, .rows(connectionRows))
       let networkRows = trafficRows()
       card(
-        settings.networkTrafficGrouping == .bundles
-          ? "APP BUNDLES · PARTIAL" : "PROCESS TRAFFIC · PARTIAL",
+        settings.processGrouping == .bundles
+          ? "APP TRAFFIC · PARTIAL" : "PROCESS TRAFFIC · PARTIAL",
         300 + pingHeight, 154 - pingHeight, networkRows.isEmpty ? .none : .rows(networkRows),
         trailing: "↑ / ↓",
-        note: settings.networkTrafficGrouping == .bundles
-          ? (s.networkTraffic.availability == .ready
-            ? (s.networkTraffic.bundles.isEmpty ? "No active TCP/UDP · " : "TCP/UDP · ")
-              + "bundle paths; shared / unresolved separate · all interfaces + loopback"
-            : trafficMessage)
-          : s.networkTraffic.availability == .ready
-            ? (networkRows.isEmpty
-              ? "No active accessible TCP/UDP owners in this interval"
-              : "Bars relative to largest · TCP/UDP · all interfaces + loopback")
-            : trafficMessage)
+        note: "↑ / ↓ · "
+          + (settings.processGrouping == .bundles
+            ? (s.networkTraffic.availability == .ready
+              ? (s.networkTraffic.bundles.isEmpty ? "No active TCP/UDP · " : "TCP/UDP · ")
+                + "bundle paths; shared / unresolved separate · all interfaces + loopback"
+              : trafficMessage)
+            : s.networkTraffic.availability == .ready
+              ? (networkRows.isEmpty
+                ? "No active accessible TCP/UDP owners in this interval"
+                : "Bars relative to largest · TCP/UDP · all interfaces + loopback")
+              : trafficMessage))
     case .sensors: break
     case .battery:
       if let battery = s.batteries.first {
@@ -651,7 +712,9 @@ import TinyStatsCore
       }
       card(
         "POWER CONSUMPTION", powerTop, powerHeight, powerContent,
-        trailing: s.lowPower ? "Low Power Mode" : "Standard energy mode",
+        trailing: usesPopoverLayout
+          ? (s.lowPower ? "Low Power" : "Standard")
+          : s.lowPower ? "Low Power Mode" : "Standard energy mode",
         note: shownPower.isEmpty
           ? "No known power readings · see All readings for raw sensors"
           : "Showing \(shownPower.count) of \(powerReadings.count) power sensors · totals may overlap · All readings for more"
@@ -673,8 +736,57 @@ import TinyStatsCore
       cards = Self.overviewCards(s, history: recent, settings: settings)
       canonicalFrames = Self.overviewFrames(in: .init(x: 0, y: 0, width: 520, height: 554))
     }
+    if usesPopoverLayout {
+      for index in cards.indices {
+        let hasReadings: Bool
+        switch cards[index].content {
+        case .none: hasReadings = false
+        case .tiles(let tiles, _): hasReadings = !tiles.isEmpty
+        default: hasReadings = true
+        }
+        if hasReadings || cards[index].title == "DRIVE HEALTH", !cards[index].note.isEmpty {
+          cards[index].help = cards[index].note
+          // Incomplete traffic coverage matters before interpreting any numeric row.
+          cards[index].note =
+            module == .network && cards[index].title.contains("TRAFFIC")
+            ? "Partial" : ""
+          if cards[index].note.isEmpty {
+            canonicalFrames[index].size.height = max(34, canonicalFrames[index].height - 17)
+          }
+        }
+        if module == .network, cards[index].title.contains("TRAFFIC"), !hasReadings {
+          cards[index].help = cards[index].note
+          cards[index].note =
+            s.networkTraffic.availability == .ready
+            ? "Partial · No active TCP/UDP owners"
+            : s.networkTraffic.availability == .inactive
+              ? "Partial · Collecting process traffic…" : "Partial · " + s.networkTraffic.message
+        }
+        if cards[index].title == "METAL GPU TIME" {
+          cards[index].help = [cards[index].help, cards[index].trailing]
+            .filter { !$0.isEmpty }.joined(separator: ". ")
+          cards[index].trailing =
+            s.gpuTime.status == .incomplete
+            ? "Partial" : s.gpuTime.status == .collecting ? "First interval" : ""
+        }
+      }
+    }
+    if [.cpu, .memory, .network].contains(module),
+      let index = cards.firstIndex(where: {
+        $0.title == "TOP PROCESSES" || $0.title == "TOP APPS"
+          || $0.title.contains("TRAFFIC · PARTIAL")
+      })
+    {
+      cards[index].groupsProcesses = true
+    }
+    for index in cards.indices {
+      if case .plot = cards[index].content, module != .overview {
+        cards[index].help = [cards[index].help, "Gaps mark missing readings"].filter { !$0.isEmpty }
+          .joined(separator: ". ")
+      }
+    }
     layoutSummaryCards()
-    setAccessibilityLabel(module.title + " summary")
+    setAccessibilityLabel(module.title + (paused ? " · Paused" : "") + " summary")
     refreshAccessibility()
   }
   private func refreshAccessibility() {
@@ -946,17 +1058,22 @@ import TinyStatsCore
             height: 16), color: .secondaryLabelColor, size: 11)
       } else {
         text(
-          SystemStyle.sectionTitle(card.title),
+          SystemStyle.sectionTitle(
+            card.groupsProcesses && card.title.contains("TRAFFIC")
+              ? (card.title.hasPrefix("APP") ? "APP TRAFFIC" : "PROCESS TRAFFIC") : card.title)
+            + (paused && original.frame.minY == 0 ? " · Paused" : ""),
           rect: .init(
-            x: card.frame.minX + 12, y: card.frame.minY + 9,
-            width: card.frame.width * (usesPopoverLayout ? 0.62 : 0.55) - 12, height: 16),
+            x: card.frame.minX + 12, y: card.frame.minY + 12,
+            width: card.groupsProcesses
+              ? card.frame.width - ProcessGroupingControl.width / zoom - 28
+              : card.frame.width * (usesPopoverLayout ? 0.62 : 0.55) - 12, height: 16),
           color: .secondaryLabelColor, size: 12,
           weight: .semibold)
         text(
-          card.trailing,
+          card.groupsProcesses ? "" : card.trailing,
           rect: .init(
             x: card.frame.minX + card.frame.width * (usesPopoverLayout ? 0.62 : 0.5),
-            y: card.frame.minY + 9,
+            y: card.frame.minY + 12,
             width: card.frame.width * (usesPopoverLayout ? 0.38 : 0.5) - 12, height: 16), size: 11,
           weight: .medium,
           alignment: .right)
@@ -1292,6 +1409,12 @@ import TinyStatsCore
     return result
   }
   override func hoverText(at point: NSPoint) -> String? {
+    let reading = hoverReading(at: point)
+    let help = cards.first { $0.frame.contains(point) }?.help ?? ""
+    let text = [reading, help.isEmpty ? nil : help].compactMap { $0 }.joined(separator: "\n")
+    return text.isEmpty ? nil : text
+  }
+  private func hoverReading(at point: NSPoint) -> String? {
     guard let card = cards.first(where: { $0.frame.contains(point) }) else { return nil }
     let zoom = contentScale
     let point = NSPoint(x: point.x / zoom, y: point.y / zoom)
@@ -1392,8 +1515,10 @@ import TinyStatsCore
       guard height > 0 else { return nil }
       let index = Int((point.y - area.minY) / height)
       guard rows.indices.contains(index) else { return nil }
-      return rows[index].label + ": " + rows[index].value
-        + (rows[index].second.map { " / " + $0 } ?? "")
+      let row = rows[index]
+      return row.label + (row.bundlePath.map { " · " + $0 } ?? "")
+        + ": " + (row.displayName == nil ? row.value : row.accessibilityValue ?? row.value)
+        + (row.second.map { " / " + $0 } ?? "")
     case .memory(let memory):
       let composition = memory.composition
       return "Physical memory\nApp: " + Display.bytes(composition.app, precise: true) + "\nWired: "
@@ -1649,6 +1774,7 @@ import TinyStatsCore
       captions.scale,
       rect: NSRect(x: area.midX, y: area.maxY - 25, width: area.width / 2, height: 13),
       color: .secondaryLabelColor, size: 9, alignment: .right)
+    guard plot.bucketSeconds != nil else { return }
     let reset = layout.timeline.reset ? " · timeline reset" : ""
     text(
       (plot.bucketSeconds == nil
