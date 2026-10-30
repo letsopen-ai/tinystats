@@ -222,3 +222,54 @@ import Testing
       .overview, .cpu, .gpu, .memory, .disks, .network, .sensors, .battery, .clock, .weather,
     ])
 }
+
+@Test @MainActor func sensorsHeaderFramesPreserveGlassAndFallbackInsets() throws {
+  for environment in [
+    GlassSurface.Environment(
+      supportsGlass: true, reduceTransparency: false, increaseContrast: false),
+    .init(supportsGlass: false, reduceTransparency: false, increaseContrast: false),
+    .init(supportsGlass: true, reduceTransparency: true, increaseContrast: false),
+    .init(supportsGlass: true, reduceTransparency: false, increaseContrast: true),
+  ] {
+    for dropdown in [false, true] {
+      let detail = DetailController()
+      detail.glassEnvironment = { environment }
+      detail.isPopoverPresentation = dropdown
+      detail.selected = .sensors
+      let size = dropdown ? SystemStyle.popoverSize : MainWindow.minimumSize
+      detail.view.setFrameSize(size)
+      var snapshot = Snapshot()
+      snapshot.sensors = [.init(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 52)]
+      for allReadings in [false, true] {
+        detail.showsAllReadings = allReadings
+        detail.update(snapshot, history: [])
+        detail.view.layoutSubtreeIfNeeded()
+        let readings = try #require(
+          detail.view.subviews.compactMap { $0 as? NSButton }.first {
+            $0.title == (allReadings ? "Summary" : "All readings")
+          })
+        let count = try #require(
+          detail.view.subviews.compactMap { $0 as? NSTextField }.first {
+            $0.alignment == .right && !$0.isHidden && $0.stringValue.contains("sensor")
+          })
+        if dropdown {
+          let inset = SystemStyle.Space.popoverInset + SystemStyle.Space.inset
+          let glassAllowance: CGFloat = environment.treatment == .glass ? 3 : 0
+          #expect(
+            count.frame
+              == NSRect(
+                x: size.width - inset - 160 + glassAllowance,
+                y: size.height - 39, width: 160, height: 20))
+        } else {
+          let inset: CGFloat = environment.treatment == .glass ? 30 : 24
+          #expect(
+            readings.frame
+              == NSRect(
+                x: size.width - inset - 108, y: size.height - 44, width: 108, height: 26))
+          #expect(count.frame == NSRect(x: 242, y: size.height - 42, width: 152, height: 20))
+        }
+        #expect(!readings.isHidden && !count.isHidden)
+      }
+    }
+  }
+}

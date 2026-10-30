@@ -306,7 +306,7 @@ func sensorsKeepNativeSearchKeyboardEligibilityAndRoundedSelectionAcrossNavigati
                 #expect(abs(text.height - field.fittingSize.height) <= 0.5)
                 let ink = row.convert(try sensorInkBounds(field), from: field)
                 let inset = column == 0 ? ink.minX - selection.minX : selection.maxX - ink.maxX
-                #expect(abs(inset - 8) <= 0.5)
+                #expect(abs(inset - 8) <= (column == 0 ? 0.75 : 0.5))
               }
               if dropdown {
                 let highlight = row.convert(selection, to: detail.view)

@@ -353,11 +353,17 @@ extension SummaryDashboardView {
       title, rect: .init(x: rect.midX, y: rect.minY + 12, width: rect.width / 2 - 14, height: 17),
       color: .secondaryLabelColor, size: 11, alignment: .right)
     drawSeriesLegend(
-      "↓ " + plot.firstValue, marker: plot.firstRole.legendMarker, color: plot.firstColor,
+      "↓ " + plot.firstValue, marker: plot.firstRole.legendMarker,
+      color: SystemStyle.chartTraceColor(
+        plot.firstColor, role: plot.firstRole,
+        glass: usesPopoverLayout && glassEnvironment().treatment == .glass),
       rect: .init(x: rect.minX + 14, y: rect.minY + 36, width: rect.width / 2 - 14, height: 18),
       size: 13, weight: .semibold)
     drawSeriesLegend(
-      "↑ " + plot.secondValue, marker: plot.secondRole.legendMarker, color: plot.secondColor,
+      "↑ " + plot.secondValue, marker: plot.secondRole.legendMarker,
+      color: SystemStyle.chartTraceColor(
+        plot.secondColor, role: plot.secondRole,
+        glass: usesPopoverLayout && glassEnvironment().treatment == .glass),
       rect: .init(x: rect.midX, y: rect.minY + 36, width: rect.width / 2 - 14, height: 18),
       size: 13, weight: .semibold, alignment: .right)
     let graph = Self.overviewNetworkGraph(in: rect)

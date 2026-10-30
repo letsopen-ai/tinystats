@@ -657,6 +657,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private func refreshAppearanceCells() {
     guard isViewLoaded else { return }
     refreshGlassInk()
+    for scroll in [summaryScroll, weatherScroll, detailScroll].compactMap({
+      $0 as? PopoverScrollView
+    }) {
+      scroll.needsLayout = true
+    }
     // Equality only describes sample data. Native icons/semantic colors also depend on
     // appearance; refresh realized body cells while leaving the focused header in place.
     let body = IndexSet(rows.indices.filter { !rows[$0].processGroupingHeader })

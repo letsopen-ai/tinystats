@@ -335,8 +335,10 @@ import TinyStatsCore
           label: names[index], value: Display.rate(first[index]),
           second: Display.rate(second[index]), fraction: fractions[index],
           color: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
+          role: module == .network ? .secondary : .primary,
           secondFraction: fractions[index + first.count],
-          secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent)
+          secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent,
+          secondRole: module == .network ? .primary : .secondary)
       }
     }
     func tile(
@@ -1566,8 +1568,11 @@ import TinyStatsCore
   private func drawPlot(_ plot: Plot, in area: NSRect) {
     guard area.height > 20 else { return }
     let paired = !plot.secondLabel.isEmpty
-    let firstColor = plot.firstColor
-    let secondColor = plot.secondColor
+    let glass = usesPopoverLayout && glassEnvironment().treatment == .glass
+    let firstColor = SystemStyle.chartTraceColor(
+      plot.firstColor, role: plot.firstRole, glass: glass)
+    let secondColor = SystemStyle.chartTraceColor(
+      plot.secondColor, role: plot.secondRole, glass: glass)
     let headline = area.height >= 90
     if headline {
       plotValue(
