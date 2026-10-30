@@ -1,11 +1,20 @@
 import AppKit
 import TinyStatsCore
 
+/// Styling follows metric identity, never paint order or the presence of other readings.
+enum ChartSeriesRole {
+  case primary, secondary
+  var dashed: Bool { self == .secondary }
+  var legendMarker: SummaryDashboardView.SeriesLegendMarker { self == .primary ? .first : .second }
+  var legendGlyph: String { self == .primary ? "● " : "○ " }
+}
+
 @MainActor final class ChartView: ChartHoverView {
   struct Series {
     var name: String
     var color: NSColor
     var values: [Double?]
+    var role: ChartSeriesRole = .primary
   }
   var series: [Series] = [] {
     didSet {
@@ -105,7 +114,7 @@ import TinyStatsCore
     var hasData = false
     let timeline = HistoryTimeline(times: times)
     let duration = max(1, timeline.duration)
-    for (index, line) in series.enumerated() {
+    for line in series {
       let path = NSBezierPath()
       var previous = false
       for i in timeline.indices {
@@ -122,16 +131,16 @@ import TinyStatsCore
         hasData = true
       }
       line.color.setStroke()
-      if index > 0 { path.setLineDash([4, 3], count: 2, phase: 0) }
-      path.lineWidth = 1.6
+      if line.role.dashed { path.setLineDash([4, 3], count: 2, phase: 0) }
+      path.lineWidth = 1.5
       path.lineJoinStyle = .round
       path.stroke()
     }
     let font = NSFont.systemFont(ofSize: 10)
     var x = 0.0
-    for (index, line) in series.enumerated() {
+    for line in series {
       let label =
-        (index == 0 ? "● " : "○ ") + line.name
+        line.role.legendGlyph + line.name
         + (fitsDataRange ? " · " + valueFormat.string(line.values.last.flatMap { $0 }) : "")
       let string = label as NSString
       string.draw(

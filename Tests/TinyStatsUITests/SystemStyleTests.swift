@@ -483,6 +483,30 @@ import Testing
           #expect((backing.brightnessComponent < 0.5) == (theme == .dark))
           try #require(image.representation(using: .png, properties: [:])).write(
             to: url.appendingPathComponent("settings-menubar-customization-\(theme.rawValue).png"))
+          func captureState(_ state: String) throws {
+            root.layoutSubtreeIfNeeded()
+            let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: crop))
+            root.cacheDisplay(in: crop, to: bitmap)
+            try #require(bitmap.representation(using: .png, properties: [:])).write(
+              to: url.appendingPathComponent(
+                "settings-menubar-customization-\(state)-\(theme.rawValue).png"))
+          }
+          let drag = ReadoutDrag()
+          defer { drag.draggingPasteboard.releaseGlobally() }
+          let sourceChip = try #require(customization.chips[.gpu])
+          drag.draggingSource = sourceChip
+          #expect(drag.draggingPasteboard.writeObjects([customization.pasteboardItem(for: .gpu)]))
+          let chip = try #require(customization.strip.chips.first)
+          drag.draggingLocation = customization.strip.convert(
+            .init(x: chip.frame.maxX + 2, y: 26), to: nil)
+          #expect(customization.strip.draggingEntered(drag) == .move)
+          #expect(customization.strip.insertion == 1)
+          try captureState("drag")
+          customization.strip.draggingExited(drag)
+          customization.update(order: Module.allCases.filter { $0 != .overview })
+          #expect(customization.palette.chips.isEmpty)
+          try captureState("empty-available")
+          customization.update(order: settings.readouts)
         }
       }
       let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
@@ -588,7 +612,7 @@ import Testing
           values: [20, 40, nil, 60, 40]),
         .init(
           name: "System / Upload / Write / E", color: color(pair.secondary),
-          values: [10, 20, nil, 30, 20]),
+          values: [10, 20, nil, 30, 20], role: .secondary),
       ]
       #expect(
         (chart.accessibilityValue() as? String)?.contains("System / Upload / Write / E") == true)
@@ -642,8 +666,10 @@ import Testing
       DetailReadingsBuilder.build(
         module: module, snapshot: snapshot, history: [point], settings: Settings(), paused: false))
     #expect(details.series.first?.color == SystemStyle.accent)
+    #expect(details.series.first?.role == .primary)
     if module == .network || module == .disks {
       #expect(details.series.last?.color == SystemStyle.secondaryAccent)
+      #expect(details.series.last?.role == .secondary)
     } else {
       #expect(details.series.count == 1)
     }
@@ -655,6 +681,8 @@ import Testing
       }.first)
     #expect(
       plot.firstColor == (module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent))
+    #expect(plot.firstRole == (module == .network ? .secondary : .primary))
+    #expect(plot.secondRole == (module == .network ? .primary : .secondary))
     if module == .gpu {
       #expect(plot.second.isEmpty && plot.secondLabel.isEmpty)
     } else {
@@ -671,6 +699,7 @@ import Testing
     #expect(
       recorded.firstColor == (module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent)
     )
+    #expect(recorded.firstRole == plot.firstRole && recorded.secondRole == plot.secondRole)
     if module == .network || module == .disks {
       #expect(
         recorded.secondColor
@@ -702,12 +731,25 @@ import Testing
   #expect(abs(trailing.x - (controller.view.bounds.maxX - 22)) < 1)
   let value = try #require(
     controller.tableView(table, viewFor: table.tableColumns[1], row: 0) as? NSTextField)
-  #expect(value.lineBreakMode == .byTruncatingHead)
+  #expect(value.lineBreakMode == .byTruncatingTail)
   #expect(value.stringValue == "1.84 / 2.10 / 2.31")
+  #expect(value.toolTip == value.stringValue && value.accessibilityLabel() == value.stringValue)
   #expect(scroll.frame.maxX <= controller.view.bounds.maxX - 22)
   let mask = try #require(scroll.layer?.mask as? CAGradientLayer)
+  #expect(scroll.layer?.isGeometryFlipped == true)
   #expect(mask.startPoint.y == 1 && mask.endPoint.y == 0)
-  #expect(scroll.contentInsets.bottom == 16)
+  #expect(scroll.contentInsets.bottom == 36)
+  // Reserve nonzero cell spacing too, without changing proportions or horizontal extent.
+  table.intercellSpacing.width = 3
+  controller.view.needsLayout = true
+  controller.view.layoutSubtreeIfNeeded()
+  #expect(table.columnAutoresizingStyle == .noColumnAutoresizing)
+  #expect(table.frame.width <= scroll.contentSize.width + 0.01)
+  #expect(abs(table.tableColumns[0].width / table.tableColumns[1].width - 0.55 / 0.45) < 0.001)
+  #expect(table.rect(ofColumn: 1).maxX <= scroll.documentVisibleRect.maxX + 0.01)
+  let spacedTrailing = table.convert(
+    .init(x: table.rect(ofColumn: 1).maxX, y: 0), to: controller.view)
+  #expect(abs(spacedTrailing.x - (controller.view.bounds.maxX - 22)) < 1)
 }
 
 @Test @MainActor func memoryNeutralSeriesResolveToDistinctInkInBothAppearances() throws {
@@ -721,4 +763,63 @@ import Testing
       #expect(compressed?.alphaComponent == 0.55 && available?.alphaComponent == 0.12)
     }
   }
+}
+
+@Test @MainActor func bottomScrollFadeKeepsTopOpaqueAndFadesOnlyFooterEdge() throws {
+  _ = NSApplication.shared
+  let root = NSView(frame: .init(x: 0, y: 0, width: 100, height: 100))
+  root.wantsLayer = true
+  root.layer?.backgroundColor = NSColor.black.cgColor
+  let scroll = PopoverScrollView(frame: root.bounds)
+  scroll.drawsBackground = true
+  scroll.backgroundColor = .white
+  let document = NSView(frame: .init(x: 0, y: 0, width: 100, height: 200))
+  document.wantsLayer = true
+  document.layer?.backgroundColor = NSColor.white.cgColor
+  scroll.documentView = document
+  root.addSubview(scroll)
+  scroll.fadesBottom = true
+  root.layoutSubtreeIfNeeded()
+  let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+  root.cacheDisplay(in: root.bounds, to: bitmap)
+  let top = try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: 3)?.usingColorSpace(.sRGB))
+  let bottom = try #require(
+    bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh - 3)?.usingColorSpace(.sRGB))
+  let transition = try #require(
+    bitmap.colorAt(x: bitmap.pixelsWide / 2, y: Int(Double(bitmap.pixelsHigh) * 0.76))?
+      .usingColorSpace(.sRGB))
+  #expect(transition.redComponent > 0.20 && transition.redComponent < 0.80)
+  #expect(top.redComponent > 0.95)
+  #expect(bottom.redComponent < 0.20)
+  // Prove this measures the mask, rather than empty document inset or clipping.
+  scroll.layer?.mask = nil
+  let unmasked = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+  root.cacheDisplay(in: root.bounds, to: unmasked)
+  let reference = try #require(
+    unmasked.colorAt(x: unmasked.pixelsWide / 2, y: unmasked.pixelsHigh - 3)?.usingColorSpace(.sRGB)
+  )
+  #expect(reference.redComponent > 0.95)
+}
+
+@Test @MainActor func chartRoleSurvivesEmptyAndReorderedSeries() throws {
+  let chart = ChartView(frame: .init(x: 0, y: 0, width: 280, height: 120))
+  chart.times = (0..<5).map { Date(timeIntervalSince1970: Double($0)) }
+  let primary = ChartView.Series(
+    name: "Download", color: .systemBlue, values: [20, 40, nil, 60, 40], role: .primary)
+  let secondary = ChartView.Series(
+    name: "Upload", color: .systemOrange, values: [10, 20, nil, 30, 20], role: .secondary)
+  func plotImage(_ series: [ChartView.Series]) throws -> Data {
+    chart.series = series
+    let bitmap = try #require(chart.bitmapImageRepForCachingDisplay(in: chart.plotArea))
+    chart.cacheDisplay(in: chart.plotArea, to: bitmap)
+    return try #require(bitmap.representation(using: .png, properties: [:]))
+  }
+  var missing = secondary
+  missing.values = [nil, nil, nil, nil, nil]
+  #expect(try plotImage([primary]) == plotImage([missing, primary]))
+  #expect(!primary.role.dashed && primary.role.legendMarker == .first)
+  #expect(secondary.role.dashed && secondary.role.legendMarker == .second)
+  missing = primary
+  missing.values = []
+  #expect(try plotImage([secondary]) == plotImage([missing, secondary]))
 }

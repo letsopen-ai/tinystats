@@ -123,7 +123,9 @@ enum AccentPalette {
     // Pink loses luminance under protan simulation; the light-mode blue needs more separation.
     let pink = !neutral && (hue >= 335 || hue < 15)
     let preferred =
-      dark ? 0.80 : (pink ? 0.40 : companionHue == 55 ? 0.64 : companionHue == 195 ? 0.60 : 0.52)
+      dark
+      ? (companionHue == 195 ? 0.78 : 0.80)
+      : (pink ? 0.40 : companionHue == 55 ? 0.64 : companionHue == 195 ? 0.60 : 0.52)
     let companion = readable(lch(preferred, 0.18, companionHue), dark: dark)
     let p = primary.lab
     let s = companion.lab

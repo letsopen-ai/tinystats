@@ -211,17 +211,42 @@ enum MenuBarNativeOrder {
   }
 }
 
-/// No timeout/polling: the existing refresh must see the requested layout before native
-/// frame changes can count as a later ⌘-drag. If placement fails, saved user intent wins.
+/// Existing refreshes settle enforcement; a failed placement becomes a baseline, not an edit.
 struct MenuBarOrderObservation {
   private(set) var pendingEnforcedOrder: [Module]?
-  mutating func enforce(_ order: [Module]) { pendingEnforcedOrder = order }
+  private var previousMismatch: [Module]?
+  private var failedPlacement: [Module]?
+  mutating func enforce(_ order: [Module]) {
+    pendingEnforcedOrder = order
+    previousMismatch = nil
+    failedPlacement = nil
+  }
   mutating func accept(_ observed: [Module]?) -> [Module]? {
-    guard let observed, !observed.isEmpty else { return nil }
-    if let pendingEnforcedOrder {
-      guard observed == pendingEnforcedOrder else { return nil }
-      self.pendingEnforcedOrder = nil
+    guard let observed, !observed.isEmpty else {
+      previousMismatch = nil
+      return nil
     }
+    if let pendingEnforcedOrder {
+      guard Set(observed) == Set(pendingEnforcedOrder), observed.count == pendingEnforcedOrder.count
+      else {
+        previousMismatch = nil
+        return nil
+      }
+      if observed != pendingEnforcedOrder {
+        if previousMismatch == observed {
+          self.pendingEnforcedOrder = nil
+          failedPlacement = observed
+          previousMismatch = nil
+        } else {
+          previousMismatch = observed
+        }
+        return nil
+      }
+      self.pendingEnforcedOrder = nil
+      previousMismatch = nil
+    }
+    guard observed != failedPlacement else { return nil }
+    failedPlacement = nil
     return observed
   }
 }

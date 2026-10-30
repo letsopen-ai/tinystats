@@ -88,7 +88,7 @@ func derivedAccentPairIsDistinctReadableAndInGamut(_ fixture: SystemAccentFixtur
 @Test func documentedAccentHexPairsStayInSync() throws {
   let expected = [
     ("#005FCA / #D16C00", "#007AFF / #FFA566"),
-    ("#873089 / #009393", "#B35DB5 / #00D8D9"),
+    ("#873089 / #009393", "#B35DB5 / #00D1D2"),
     ("#EC4495 / #004981", "#F74F9E / #90C6FF"),
     ("#E0383E / #005DA1", "#FF5257 / #8FC6FF"),
     ("#D26A00 / #0067B3", "#F7821B / #0081DE"),

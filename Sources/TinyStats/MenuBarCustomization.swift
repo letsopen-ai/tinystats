@@ -170,7 +170,8 @@ import TinyStatsCore
   }
   override func draw(_ dirtyRect: NSRect) {
     let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
-    NSColor.labelColor.withAlphaComponent(0.06).setFill()
+    (SystemStyle.isDark(effectiveAppearance)
+      ? NSColor.black.withAlphaComponent(0.18) : NSColor.black.withAlphaComponent(0.06)).setFill()
     path.fill()
     NSColor.separatorColor.setStroke()
     path.lineWidth = 0.5
@@ -270,7 +271,7 @@ import TinyStatsCore
     imageScaling = .scaleProportionallyDown
     isBordered = false
     setAccessibilityLabel("\(module.title) menu bar item")
-    setAccessibilityRole(.button)
+    setAccessibilityRole(.group)
     toolTip =
       "Drag to customize; Return/Space to add or remove; ⌥←/→ to move; right-click for more."
   }
@@ -351,7 +352,8 @@ import TinyStatsCore
   }
   override func draw(_ dirtyRect: NSRect) {
     let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
-    NSColor.controlBackgroundColor.setFill()
+    (SystemStyle.isDark(effectiveAppearance)
+      ? NSColor.white.withAlphaComponent(0.10) : NSColor.controlBackgroundColor).setFill()
     path.fill()
     NSColor.separatorColor.setStroke()
     path.lineWidth = 0.5
