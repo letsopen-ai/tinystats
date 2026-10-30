@@ -465,6 +465,22 @@ import Testing
       let views = systemDescendants(root)
       #expect(views.contains { $0 is SystemFormSection })
       #expect(views.contains { $0 is NSSwitch })
+      if page == .menuBar {
+        let customization = try #require(views.compactMap { $0 as? MenuBarCustomization }.first)
+        #expect(customization.strip.chips.map(\.module) == settings.readouts)
+        #expect(customization.palette.chips.map(\.module) == [.gpu, .battery, .clock])
+        #expect(customization.strip.visibleRect.height >= 50)
+        #expect(customization.palette.visibleRect.height >= 80)
+        if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
+          let url = URL(fileURLWithPath: path, isDirectory: true)
+          try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+          let image = try #require(
+            customization.bitmapImageRepForCachingDisplay(in: customization.bounds))
+          customization.cacheDisplay(in: customization.bounds, to: image)
+          try #require(image.representation(using: .png, properties: [:])).write(
+            to: url.appendingPathComponent("settings-menubar-customization-\(theme.rawValue).png"))
+        }
+      }
       let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
       root.cacheDisplay(in: root.bounds, to: bitmap)
       #expect(bitmap.pixelsWide >= 740 && bitmap.pixelsHigh >= 660)
