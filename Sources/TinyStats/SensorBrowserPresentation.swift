@@ -15,6 +15,7 @@ enum SensorBrowserPresentation {
     var selection: SensorBrowserIdentity?
     var title: String
     var count: String
+    var countAccessibilityLabel: String
     var value: String
     var subtitle: String
     var rows: [DetailRow]
@@ -183,10 +184,23 @@ enum SensorBrowserPresentation {
         for: temperatures(type).map(\.key), fahrenheit: settings.fahrenheit)
     case nil: break
     }
+    if !showsAll && query.isEmpty {
+      rows.removeAll {
+        if case .hottest = $0.sensorIdentity { return $0.sensorIdentity == selected }
+        return false
+      }
+      rows = rows.enumerated().filter { index, row in
+        !row.heading || (index + 1 < rows.count && !rows[index + 1].heading)
+      }.map(\.element)
+    }
     return Presentation(
       selection: selected,
       title: "SENSORS" + (paused ? " · PAUSED" : ""),
-      count: "\(physical.count)/\(snapshot.sensors.count)",
+      count: query.isEmpty
+        ? "\(snapshot.sensors.count) sensors"
+        : "\(physical.count) of \(snapshot.sensors.count) sensors",
+      countAccessibilityLabel:
+        "\(physical.count) of \(snapshot.sensors.count) readable sensors match the search",
       value: chosen?.formatted(fahrenheit: settings.fahrenheit) ?? "Sensor unavailable",
       subtitle: subtitle, rows: rows,
       series: [

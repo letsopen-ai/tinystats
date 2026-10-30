@@ -74,42 +74,64 @@ import Testing
   let folder = URL(fileURLWithPath: path, isDirectory: true)
   try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
   let report = folder.appendingPathComponent("glass-capture.txt")
-  guard #available(macOS 27, *), CGPreflightScreenCaptureAccess() else {
+  guard GlassSurface.Environment.current.supportsGlass, CGPreflightScreenCaptureAccess() else {
     try
-      "On-screen glass capture unavailable: macOS 27 or existing screen-capture permission missing. No permission requested.\n"
+      "On-screen glass capture unavailable: macOS 26 or existing screen-capture permission missing. No permission requested.\n"
       .write(to: report, atomically: true, encoding: .utf8)
     return
   }
   _ = NSApplication.shared
-  let window = NSWindow(
-    contentRect: .init(x: 80, y: 80, width: 520, height: 720), styleMask: [.borderless],
+  let savedPolicy = NSApp.activationPolicy()
+  _ = NSApp.setActivationPolicy(.accessory)
+  NSApp.finishLaunching()
+  NSApp.activate()
+  defer { _ = NSApp.setActivationPolicy(savedPolicy) }
+  let window = GlassGalleryWindow(
+    contentRect: .init(x: 80, y: 80, width: 1080, height: 780), styleMask: [.borderless],
     backing: .buffered, defer: false)
   window.isReleasedWhenClosed = false
-  let backdrop = GlassGalleryBackdrop(frame: .init(x: 0, y: 0, width: 520, height: 720))
+  let backdrop = GlassGalleryBackdrop(frame: .init(x: 0, y: 0, width: 1080, height: 780))
   window.contentView = backdrop
-  let controller = DetailController()
-  controller.isPopoverPresentation = true
-  controller.settings.processGrouping = .bundles
-  controller.view.frame = .init(x: 88, y: 40, width: 344, height: 640)
-  backdrop.addSubview(controller.view)
   defer {
-    controller.view.removeFromSuperview()
+    for child in backdrop.subviews { child.removeFromSuperview() }
     window.orderOut(nil)
     window.contentView = nil
     window.close()
   }
   var snapshot = Snapshot()
+  snapshot.timestamp = Date(timeIntervalSince1970: 1_700_000_000)
+  snapshot.uptime = 968400
+  snapshot.device = .init(model: "Mac mini", chip: "Apple M4", operatingSystem: "macOS")
   snapshot.cpu = .init(usage: 23, cores: [30, 16], load: [1.2, 1.1, 1], user: 15, system: 8)
   snapshot.cpuApps = [
     .init(
-      name: "TextEdit", bundlePath: "/System/Applications/TextEdit.app", processCount: 2,
-      cpu: 12, memory: 220_000_000)
+      name: "TextEdit", bundlePath: "/System/Applications/TextEdit.app", processCount: 1234,
+      cpu: 12, memory: 220_000_000, cpuIncomplete: 1),
+    .init(
+      name: "Terminal", bundlePath: "/System/Applications/Utilities/Terminal.app", processCount: 2,
+      cpu: 4, memory: 120_000_000),
   ]
   snapshot.memoryApps = snapshot.cpuApps
   snapshot.memory = .init(
     total: 24_000_000_000, active: 9_000_000_000, inactive: 2_000_000_000, wired: 2_600_000_000,
     compressed: 2_700_000_000, free: 7_700_000_000, speculative: 0, purgeable: 100_000_000,
     swapUsed: 400_000_000, swapTotal: 1_000_000_000, pressure: 1)
+  snapshot.networkTraffic.grouping = .bundles
+  snapshot.networkTraffic.availability = .ready
+  snapshot.networkTraffic.bundles = [
+    .init(
+      name: "TextEdit", processCount: 1234, pid: nil, download: 2048, upload: 512,
+      bundlePath: "/System/Applications/TextEdit.app")
+  ]
+  snapshot.download = 2048
+  snapshot.upload = 512
+  snapshot.sensors = [
+    .init(key: "Tp01", name: "CPU die", kind: .temperature, value: 52),
+    .init(key: "F0Ac", name: "Fan", kind: .fan, value: 1200),
+    .init(key: "PSTR", name: "System total power", kind: .power, value: 6.8),
+  ]
+  snapshot.sensorsSampledAt = snapshot.uptime
+  window.makeKeyAndOrderFront(nil)
   window.orderFrontRegardless()
   window.displayIfNeeded()
   try await Task.sleep(for: .milliseconds(250))
@@ -119,33 +141,72 @@ import Testing
     content.windows.first { $0.windowID == CGWindowID(window.windowNumber) })
   let filter = SCContentFilter(desktopIndependentWindow: ownedWindow)
   let config = SCStreamConfiguration()
-  config.width = 520
-  config.height = 720
+  config.width = 1080
+  config.height = 780
   config.showsCursor = false
   config.ignoreShadowsSingleWindow = true
+  let cases: [(String, Module, Bool, Bool, Int)] = [
+    ("cpu", .cpu, true, false, 0), ("memory", .memory, true, false, 0),
+    ("network", .network, true, false, 0), ("overview", .overview, true, false, 0),
+    ("sensors", .sensors, true, false, 0), ("main-window", .overview, false, false, 0),
+    ("settings-menu-bar", .overview, false, true, 0),
+    ("solid-cpu", .cpu, true, false, 1), ("solid-main-window", .overview, false, false, 1),
+    ("contrast-cpu", .cpu, true, false, 2), ("contrast-main-window", .overview, false, false, 2),
+  ]
+  var activationStates: [String] = []
   for theme in [AppTheme.light, .dark] {
     window.appearance = theme.nativeAppearance
-    // Native material appearance transitions settle independently of AppKit layout.
     window.displayIfNeeded()
     try await Task.sleep(for: .milliseconds(750))
-    for module in [Module.overview, .cpu, .memory, .network] {
+    for (surface, module, dropdown, settingsPage, fallback) in cases {
+      let controller = DetailController(snapshot: snapshot, history: [])
+      controller.glassEnvironment = {
+        .init(
+          supportsGlass: GlassSurface.Environment.current.supportsGlass,
+          reduceTransparency: fallback == 1, increaseContrast: fallback == 2)
+      }
+      controller.settings.processGrouping = .bundles
+      controller.isPopoverPresentation = dropdown
       controller.selected = module
-      controller.update(snapshot, history: [])
+      let size = dropdown ? SystemStyle.popoverSize : MainWindow.minimumSize
+      controller.view.frame = .init(
+        x: (1080 - size.width) / 2, y: (780 - size.height) / 2,
+        width: size.width, height: size.height)
+      backdrop.addSubview(controller.view)
+      var preferences: PreferencesController?
+      if settingsPage {
+        let editor = PreferencesController(
+          settings: controller.settings, interfaces: [],
+          snapshot: snapshot, history: [], initialPage: .menuBar)
+        preferences = editor
+        controller.showSettingsView(
+          try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
+      }
       controller.view.layoutSubtreeIfNeeded()
+      window.makeKey()
       window.displayIfNeeded()
-      // One bounded compositor-settling wait in an explicit render fixture, no app timer.
       try await Task.sleep(for: .milliseconds(450))
-      let stem = "glass-onscreen-\(module.rawValue)-\(theme.rawValue)"
+      activationStates.append(
+        "\(surface)-\(theme.rawValue): active=\(NSApp.isActive), key=\(window.isKeyWindow)")
+      let stem = "glass-onscreen-\(surface)-\(theme.rawValue)"
       let image = try await SCScreenshotManager.captureImage(
         contentFilter: filter, configuration: config)
       try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
         .write(to: folder.appendingPathComponent(stem + ".png"))
       try systemGalleryImage(backdrop, to: folder.appendingPathComponent(stem + "-bitmap.png"))
+      controller.view.removeFromSuperview()
+      preferences?.disposeEmbedded()
+      preferences?.close()
     }
   }
   try
-    "Captured only the owned synthetic borderless window using ScreenCaptureKit, with a colourful backdrop. Compare glass-onscreen PNGs with the paired cacheDisplay bitmap PNGs; this is visual evidence, not a blur assertion. Current treatment: \(GlassSurface.Environment.current.treatment).\n"
+    ("Captured only the owned synthetic window using ScreenCaptureKit after CGPreflightScreenCaptureAccess succeeded. No permission request, real menu bar, live sampling or other application's content. Colour stripes exercise glass. Full-content solid/contrast cases inject the same policy inputs as accessibility notifications; system preferences were not changed. Paired bitmap PNGs establish layout only. Activation is reported honestly; inactive native segments may be gray.\n"
+    + activationStates.joined(separator: "\n") + "\n")
     .write(to: report, atomically: true, encoding: .utf8)
+}
+
+@MainActor private final class GlassGalleryWindow: NSWindow {
+  override var canBecomeKey: Bool { true }
 }
 
 @MainActor private final class GlassGalleryBackdrop: NSView {

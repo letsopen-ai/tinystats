@@ -174,9 +174,9 @@ enum DetailReadingsBuilder {
             if count > 0 {
               utilization(
                 app.label, app.cpu.map { min(100, $0 / Double(count)) }, SystemStyle.accent,
-                text: Display.processPercent(app.cpu) + " of one core")
+                text: app.cpuDisplayValue + " of one core")
             } else {
-              row(app.label, Display.processPercent(app.cpu) + " of one core")
+              row(app.label, app.cpuDisplayValue + " of one core")
             }
           } else {
             row(app.label, app.memory.map(Display.bytes) ?? "—")
@@ -186,7 +186,7 @@ enum DetailReadingsBuilder {
           result.rows[result.rows.count - 1].processCount = app.processCount
           if type == .cpu, app.cpuIncomplete > 0 {
             result.rows[result.rows.count - 1].help =
-              "Sum of measured members · \(app.cpuIncomplete) unmeasured processes"
+              app.cpuMeasurementHelp
           }
           result.rows[result.rows.count - 1].accessibilityLabel =
             app.label + (app.bundlePath.map { " · " + $0 } ?? "")

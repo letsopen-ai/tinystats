@@ -8,7 +8,8 @@ final class DetailNavigationCoordinator: NSObject {
     .overview, .cpu, .gpu, .memory, .disks, .network, .battery, .clock, .weather,
   ]
   static let advancedModules: [Module] = [.sensors]
-  let sidebar = NSVisualEffectView()
+  let sidebar = NSView()
+  let sidebarMaterial: GlassSurface
   private let advancedLabel = NSTextField(labelWithString: "Advanced")
   var onSelectModule: ((Module) -> Void)?
   var onSettingsPage: ((PreferencesController.Page) -> Void)?
@@ -18,11 +19,13 @@ final class DetailNavigationCoordinator: NSObject {
   private(set) var settingsPage: PreferencesController.Page?
   var showsSettings: Bool { settingsPage != nil }
 
-  override init() {
+  init(environment: @escaping () -> GlassSurface.Environment = { .current }) {
+    sidebarMaterial = GlassSurface(role: .sidebar, environment: environment)
     super.init()
-    sidebar.material = .sidebar
-    sidebar.blendingMode = .withinWindow
+    sidebar.addSubview(sidebarMaterial)
+    sidebarMaterial.autoresizingMask = [.width, .height]
     sidebar.frame = .init(x: 0, y: 0, width: 132, height: 560)
+    sidebarMaterial.frame = sidebar.bounds
     let brand = NSTextField(labelWithString: "TinyStats")
     brand.font = .systemFont(ofSize: 15, weight: .bold)
     sidebar.addSubview(brand)
@@ -120,7 +123,7 @@ final class DetailNavigationCoordinator: NSObject {
 
   func layout(in bounds: NSRect) {
     sidebar.frame.size.height = bounds.height
-    if let brand = sidebar.subviews.first as? NSTextField {
+    if let brand = sidebar.subviews.compactMap({ $0 as? NSTextField }).first {
       brand.frame.origin.y = bounds.height - 40
     }
     for (index, module) in Self.mainModules.enumerated() {

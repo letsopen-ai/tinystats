@@ -118,7 +118,7 @@ import Testing
   detail.selected = .network
   #expect(!detail.isViewLoaded)
   detail.loadViewIfNeeded()
-  let sidebar = try #require(detail.view.subviews.first as? NSVisualEffectView)
+  let sidebar = try #require(detail.view.subviews.first)
   let buttons = sidebar.subviews.compactMap { $0 as? NSButton }
   var selections: [Module] = []
   var demand: [Module?] = []
@@ -171,7 +171,7 @@ import Testing
     controller = detail
     window.contentViewController = detail
     root = detail.view
-    let sidebar = try #require(detail.view.subviews.first as? NSVisualEffectView)
+    let sidebar = try #require(detail.view.subviews.first)
     retainedSidebar = sidebar
     let targets = sidebar.subviews.compactMap {
       ($0 as? NSButton)?.target as? DetailNavigationCoordinator

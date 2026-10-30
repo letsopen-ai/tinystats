@@ -29,7 +29,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let headlinePlatter = PlatterView()
   private let readingsPlatter = PlatterView()
   private let tracePlatter = PlatterView()
-  private let popoverMaterial = GlassSurface()
+  var glassEnvironment: () -> GlassSurface.Environment = { .current }
+  private lazy var popoverMaterial = GlassSurface(environment: { [weak self] in
+    self?.glassEnvironment() ?? .current
+  })
   private let summaryScroll = PopoverScrollView()
   private let weatherScroll = PopoverScrollView()
   private let openWindowRow = MenuActionRow()
@@ -129,6 +132,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let readingsButton = MenuActionRow()
   override func loadView() {
     view = MainContentView(frame: NSRect(x: 0, y: 0, width: 700, height: 560))
+    view.clipsToBounds = true
+    (view as? MainContentView)?.onStyleChange = { [weak self] in self?.refreshAppearanceCells() }
     view.setAccessibilityElement(true)
     view.setAccessibilityRole(.group)
     view.addSubview(popoverMaterial)
@@ -147,7 +152,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     historyButton.title = "History…"
     readingsButton.title = "All readings"
     pauseButton.title = paused ? "Resume" : "Pause"
-    let navigation = DetailNavigationCoordinator()
+    let navigation = DetailNavigationCoordinator(environment: glassEnvironment)
     self.navigation = navigation
     view.addSubview(navigation.sidebar, positioned: .below, relativeTo: popoverMaterial)
     navigation.onSelectModule = { [weak self] in self?.selected = $0 }
@@ -289,7 +294,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private func layoutContent() {
     let w = view.bounds.width
     let h = view.bounds.height
-    sensorCountLabel.frame = .init(x: 250, y: h - 42, width: 44, height: 20)
+    sensorCountLabel.frame = .init(x: 242, y: h - 42, width: 152, height: 20)
     guard w > 0, h > 0 else { return }
     navigation?.layout(in: view.bounds)
     if isPopoverPresentation && !showsSettings {
@@ -306,7 +311,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     historyButton.frame = .init(
       x: w - (selected == .overview ? 120 : 227), y: h - 44, width: selected == .overview ? 92 : 90,
       height: selected == .overview ? 28 : 26)
-    sensorSearch.frame = .init(x: 300, y: h - 44, width: max(0, w - 442), height: 26)
+    sensorSearch.frame = .init(x: 400, y: h - 44, width: max(0, w - 542), height: 26)
     weatherCityPicker?.frame = .init(x: 250, y: h - 44, width: max(0, w - 395), height: 26)
     weatherDashboard?.frame = .init(x: 154, y: 56, width: width, height: max(0, h - 186))
     weatherControls?.frame = .init(x: 154, y: h - 118, width: width, height: 70)
@@ -384,7 +389,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     if selected == .weather && !showsAllReadings { titleLabel.isHidden = true }
     var top = h - (compact ? 10 : 118)
     if selected == .sensors {
-      sensorCountLabel.frame = .init(x: w - x - 82, y: h - 39, width: 82, height: 20)
+      sensorCountLabel.frame = .init(x: w - x - 160, y: h - 39, width: 160, height: 20)
       top -= 32
       sensorSearch.frame = .init(x: inset, y: top + 4, width: width, height: 26)
     }
@@ -580,6 +585,14 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   func controlTextDidChange(_ notification: Notification) {
     guard notification.object as? NSSearchField === sensorSearch else { return }
     refresh()
+  }
+  private func refreshAppearanceCells() {
+    guard isViewLoaded else { return }
+    // Equality only describes sample data. Native icons/semantic colors also depend on
+    // appearance; refresh realized body cells while leaving the focused header in place.
+    let body = IndexSet(rows.indices.filter { !rows[$0].processGroupingHeader })
+    table.reloadData(
+      forRowIndexes: body, columnIndexes: IndexSet(integersIn: 0..<table.numberOfColumns))
   }
   private func reloadRows() {
     reloadingRows = true
@@ -877,6 +890,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     chart.setAccessibilityHelp(nil)
     chart.newestValueLabel = "Latest"
     chart.emptyMessage = "No readings yet"
+    chart.showsSummaryDecorations = selected != .sensors
     chart.setAccessibilityLabel(
       selected == .weather ? "Weather forecast chart" : "Metric history chart")
     var lines: [ChartView.Series] = []
@@ -925,7 +939,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       titleLabel.stringValue = SystemStyle.sectionTitle(presentation.title)
       titleLabel.setAccessibilityLabel(presentation.title)
       sensorCountLabel.stringValue = presentation.count
-      sensorCountLabel.toolTip = "Matching sensors / readable sensors"
+      sensorCountLabel.toolTip = presentation.countAccessibilityLabel
+      sensorCountLabel.setAccessibilityLabel(presentation.countAccessibilityLabel)
       rows = presentation.rows
     case .weather:
       let weather = s.weather.filtered(settings: settings.weather, suspended: paused)
@@ -1184,18 +1199,52 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     // module, including Overview, which intentionally has no All readings action.
     pauseButton.toolTip = pauseButton.title + "\n" + information
     pauseButton.setAccessibilityHelp(information)
-    view.setAccessibilityLabel(selected.title + " details")
-    view.setAccessibilityValue(information)
+    (view as? MainContentView)?.sampleInformation = information
   }
 }
 
 @MainActor private final class MainContentView: SystemStyledView {
   var usesPopoverMaterial = false { didSet { needsDisplay = true } }
-  override var isOpaque: Bool { !usesPopoverMaterial }
+  var onStyleChange: (() -> Void)?
+  private lazy var sampleElement: NSAccessibilityElement = {
+    let element = NSAccessibilityElement()
+    element.setAccessibilityElement(true)
+    element.setAccessibilityRole(.staticText)
+    element.setAccessibilityLabel("About this sample")
+    element.setAccessibilityParent(self)
+    return element
+  }()
+  var sampleInformation = "" {
+    didSet {
+      sampleElement.setAccessibilityValue(sampleInformation)
+      sampleElement.setAccessibilityHelp(sampleInformation)
+    }
+  }
+  override func accessibilityChildren() -> [Any]? {
+    let children = super.accessibilityChildren() ?? []
+    guard !sampleInformation.isEmpty else { return children }
+    let localFrame = NSRect(x: 0, y: 0, width: bounds.width, height: min(34, bounds.height))
+    let windowFrame = convert(localFrame, to: nil)
+    sampleElement.setAccessibilityFrame(window?.convertToScreen(windowFrame) ?? windowFrame)
+    return children + [sampleElement]
+  }
+  override func systemStyleDidChange() {
+    super.systemStyleDidChange()
+    onStyleChange?()
+  }
+  override var isOpaque: Bool {
+    !usesPopoverMaterial && !GlassSurface.Environment.current.supportsGlass
+  }
   override func draw(_ dirtyRect: NSRect) {
     guard !usesPopoverMaterial else { return }
     NSColor.windowBackgroundColor.setFill()
-    dirtyRect.fill()
+    // Let the sidebar sample the window backdrop on 26+. Content remains neutral/solid.
+    let content =
+      GlassSurface.Environment.current.supportsGlass
+      ? bounds.intersection(
+        .init(x: 132, y: 0, width: max(0, bounds.width - 132), height: bounds.height))
+      : bounds
+    content.intersection(dirtyRect).fill()
   }
 }
 

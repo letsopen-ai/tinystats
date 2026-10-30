@@ -43,7 +43,7 @@ extension SummaryDashboardView {
     let w = bounds.width
     let h = bounds.height
     let gap: CGFloat = 10
-    let header: CGFloat = w < 650 ? 86 : 74
+    let header: CGFloat = w < 650 ? 108 : 74
     let bottom: CGFloat = h < 500 ? 72 : 88
     let tile = min(160, max(132, (h - header - bottom - 30) * 0.45))
     let middle = max(0, h - header - tile - bottom - gap * 3)
@@ -233,14 +233,14 @@ extension SummaryDashboardView {
       let y = compact ? rect.minY + 62 : rect.minY + 17
       text(
         compact ? ["Uptime", "Thermal", "Memory"][index] : item.0,
-        rect: .init(x: x, y: y, width: compact ? width * 0.48 : width, height: 15),
+        rect: .init(x: x, y: y, width: compact ? width - 12 : width, height: 15),
         color: .secondaryLabelColor, size: 11, alignment: compact ? .left : .right)
       text(
         item.1,
         rect: .init(
-          x: compact ? x + width * 0.48 : x, y: compact ? y : y + 19,
-          width: compact ? width * 0.52 - 6 : width, height: 18), color: item.2,
-        size: compact ? 11 : 13, weight: .semibold, alignment: .right)
+          x: x, y: y + 19,
+          width: compact ? width - 12 : width, height: 18), color: item.2,
+        size: compact ? 11 : 13, weight: .semibold, alignment: compact ? .left : .right)
     }
   }
 
@@ -341,13 +341,14 @@ extension SummaryDashboardView {
     let maximum = max(
       1, (plot.first + plot.second).compactMap { $0 }.filter { $0.isFinite && $0 >= 0 }.max() ?? 1)
     NSColor.separatorColor.withAlphaComponent(0.5).setFill()
-    for fraction in [0.25, 0.5, 0.75] {
+    let hasData = (plot.first + plot.second).contains { $0.map { $0.isFinite && $0 >= 0 } == true }
+    for fraction in [0.25, 0.5, 0.75] where hasData {
       NSRect(
         x: graph.minX, y: graph.minY + graph.height * fraction, width: graph.width, height: 0.5
       ).fill()
     }
-    drawMiniHistory(plot, in: graph, upperBound: maximum)
-    if (plot.first + plot.second).allSatisfy({ $0 == nil || !($0?.isFinite ?? false) }) {
+    if hasData { drawMiniHistory(plot, in: graph, upperBound: maximum) }
+    if !hasData {
       text(
         plot.times.isEmpty ? "No readings yet" : "Readings unavailable",
         rect: graph.insetBy(dx: 8, dy: max(0, graph.height / 2 - 8)), color: .secondaryLabelColor,
@@ -357,7 +358,7 @@ extension SummaryDashboardView {
     upload.first = plot.second
     upload.firstColor = plot.secondColor
     upload.firstRole = plot.secondRole
-    drawMiniHistory(upload, in: graph, upperBound: maximum)
+    if hasData { drawMiniHistory(upload, in: graph, upperBound: maximum) }
     text(
       "5 minutes ago",
       rect: .init(x: graph.minX, y: rect.maxY - 20, width: graph.width / 2, height: 14),
