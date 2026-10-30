@@ -105,7 +105,7 @@ import TinyStatsCore
     var hasData = false
     let timeline = HistoryTimeline(times: times)
     let duration = max(1, timeline.duration)
-    for line in series {
+    for (index, line) in series.enumerated() {
       let path = NSBezierPath()
       var previous = false
       for i in timeline.indices {
@@ -122,15 +122,16 @@ import TinyStatsCore
         hasData = true
       }
       line.color.setStroke()
+      if index > 0 { path.setLineDash([4, 3], count: 2, phase: 0) }
       path.lineWidth = 1.6
       path.lineJoinStyle = .round
       path.stroke()
     }
     let font = NSFont.systemFont(ofSize: 10)
     var x = 0.0
-    for line in series {
+    for (index, line) in series.enumerated() {
       let label =
-        "● " + line.name
+        (index == 0 ? "● " : "○ ") + line.name
         + (fitsDataRange ? " · " + valueFormat.string(line.values.last.flatMap { $0 }) : "")
       let string = label as NSString
       string.draw(

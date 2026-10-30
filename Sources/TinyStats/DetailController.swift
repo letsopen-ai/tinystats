@@ -30,8 +30,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let readingsPlatter = PlatterView()
   private let tracePlatter = PlatterView()
   private let popoverMaterial = NSVisualEffectView()
-  private let summaryScroll = NSScrollView()
-  private let weatherScroll = NSScrollView()
+  private let summaryScroll = PopoverScrollView()
+  private let weatherScroll = PopoverScrollView()
   private let openWindowRow = MenuActionRow()
   private let footerSeparator = NSBox()
   private struct PopoverKeyViewLayout: Equatable {
@@ -162,8 +162,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     add(valueLabel, x: 154, y: 474, w: 520, h: 39)
     add(subtitleLabel, x: 155, y: 449, w: 520, h: 20)
     add(chart, x: 156, y: 310, w: 520, h: 126)
-    let scroll = NSScrollView()
+    let scroll = PopoverScrollView()
     scroll.hasVerticalScroller = true
+    scroll.autohidesScrollers = true
+    scroll.scrollerStyle = .overlay
     scroll.drawsBackground = false
     add(scroll, x: 150, y: 56, w: 532, h: 244)
     detailScroll = scroll
@@ -199,7 +201,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     historyButton.controlSize = .small
     add(historyButton, x: 473, y: 516, w: 90, h: 26)
     footnoteLabel.font = .systemFont(ofSize: 10)
-    footnoteLabel.textColor = .tertiaryLabelColor
+    footnoteLabel.textColor = .secondaryLabelColor
     add(footnoteLabel, x: 156, y: 27, w: 355, h: 18)
     pauseButton.target = self
     pauseButton.action = #selector(togglePause)
@@ -226,6 +228,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     summaryScroll.isHidden = !isPopoverPresentation
     footerSeparator.isHidden = !isPopoverPresentation
+    // Automatic table style adds its own side insets, inside the platter's explicit gutter.
+    table.style = isPopoverPresentation ? .fullWidth : .automatic
     openWindowRow.isHidden = !isPopoverPresentation
     if !isPopoverPresentation { openWindowRow.frame.origin.y = 60 }
     weatherScroll.isHidden = !isPopoverPresentation
@@ -236,6 +240,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         weatherScroll.documentView = nil
         view.addSubview(weatherDashboard)
       }
+    }
+    for scroll in [summaryScroll, weatherScroll, detailScroll].compactMap({
+      $0 as? PopoverScrollView
+    }) {
+      scroll.fadesBottom = isPopoverPresentation
     }
     summary?.usesPopoverLayout = isPopoverPresentation
     if let summary {
@@ -357,9 +366,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     pauseButton.frame = .init(
       x: w - inset - 4 - actionSize, y: inset + 3, width: actionSize, height: actionSize)
-    let bottom = barTop + 24
+    let bottom = barTop + 32
     footerSeparator.frame = .init(x: inset + 4, y: barTop, width: width - 8, height: 0.5)
-    footnoteLabel.frame = .init(x: x, y: bottom - 20, width: width - 24, height: 14)
+    footnoteLabel.frame = .init(x: x, y: barTop + 7, width: width - 24, height: 18)
     footnoteLabel.toolTip = footnoteLabel.stringValue
     titleLabel.frame = .init(x: x, y: h - 39, width: width - 24, height: 20)
     valueLabel.frame = .init(x: x, y: h - 80, width: width - 24, height: 38)
@@ -423,10 +432,12 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     readingsPlatter.isHidden = detailScroll?.isHidden != false
     readingsPlatter.frame = .init(
       x: inset, y: bottom, width: width, height: max(0, tableTop - bottom))
-    detailScroll?.frame = readingsPlatter.frame.insetBy(dx: 8, dy: 6)
-    let tableWidth = max(0, (detailScroll?.contentSize.width ?? width) - 10)
+    detailScroll?.frame = readingsPlatter.frame.insetBy(dx: 12, dy: 6)
+    let tableWidth = max(0, detailScroll?.contentSize.width ?? width)
+    table.frame.size.width = tableWidth
     sizeColumn(table.tableColumns.first, to: tableWidth * 0.55)
     sizeColumn(table.tableColumns.last, to: tableWidth * 0.45)
+    table.sizeToFit()
     if let window = view.window {
       let keyLayout = PopoverKeyViewLayout(
         window: ObjectIdentifier(window), module: selected, allReadings: showsAllReadings,
@@ -609,7 +620,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       : .systemFont(ofSize: 12, weight: row.heading ? .semibold : .regular)
     cell.textColor = row.heading ? .secondaryLabelColor : .labelColor
     cell.alignment = isValue ? .right : .left
-    cell.lineBreakMode = .byTruncatingTail
+    cell.lineBreakMode = isValue && isPopoverPresentation ? .byTruncatingHead : .byTruncatingTail
     cell.toolTip = cell.stringValue
     if !isValue, let spoken = row.accessibilityLabel {
       cell.setAccessibilityLabel(spoken)
@@ -1051,7 +1062,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     readingsButton.toolTip = readingsButton.accessibilityLabel()
     guard isPopoverPresentation else { return }
     historyButton.setIcon("clock.arrow.circlepath", fallback: "clock")
-    openWindowRow.setIcon("macwindow", fallback: "rectangle")
+    openWindowRow.setIcon("arrow.up.forward.app", fallback: "macwindow")
     if selected == .clock {
       readingsButton.setIcon("calendar", fallback: "clock")
     } else if showsAllReadings {
@@ -1059,6 +1070,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     } else {
       readingsButton.setIcon("list.bullet.rectangle", fallback: "list.bullet")
     }
+    pauseButton.showsAccent = paused
     pauseButton.setIcon(paused ? "play.fill" : "pause.fill", fallback: paused ? "play" : "pause")
   }
   private func updateFootnote() {
@@ -1085,5 +1097,32 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     guard !usesPopoverMaterial else { return }
     NSColor.windowBackgroundColor.setFill()
     dirtyRect.fill()
+  }
+}
+
+/// The bottom of a scrolling platter fades into the reserved footer gap. Layer state
+/// follows layout/appearance only; no observer, animation, event loop or timer.
+@MainActor private final class PopoverScrollView: NSScrollView {
+  private let fade = CAGradientLayer()
+  var fadesBottom = false {
+    didSet {
+      automaticallyAdjustsContentInsets = false
+      contentInsets = .init(top: 0, left: 0, bottom: fadesBottom ? 16 : 0, right: 0)
+      wantsLayer = fadesBottom
+      layer?.mask = fadesBottom ? fade : nil
+      needsLayout = true
+    }
+  }
+  override func layout() {
+    super.layout()
+    guard fadesBottom else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    fade.frame = bounds
+    fade.colors = [NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor]
+    fade.locations = [0, NSNumber(value: min(1, 16 / max(1, bounds.height))), 1]
+    fade.startPoint = .init(x: 0.5, y: 1)
+    fade.endPoint = .init(x: 0.5, y: 0)
+    CATransaction.commit()
   }
 }

@@ -480,7 +480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   private func updateMenuBarPreviewContext() {
     // Adopt legacy/native ⌘-drag order on the existing shared refresh, without a new observer/timer.
     // This is also the migration: retain the complete enabled set and the actual native order.
-    if let order = statusItems.observedOrder, settings.adoptNativeReadoutOrder(order) {
+    if let order = statusItems.adoptableOrder, settings.adoptNativeReadoutOrder(order) {
       settings.save(to: Self.preferenceStore)
       preferences?.updateMenuBarSettings(settings)
     }
@@ -809,8 +809,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     self.worker?.update(settings)
     self.detail?.settings = settings
     self.refreshCalendarDemand()
-    self.applyAppearance()
     if rebuild { self.rebuildItems(enforceOrder: true) } else { self.updateTitles() }
+    self.applyAppearance()
     if !rebuild { self.updateMenuBarPreviewContext() }
   }
   private func openDetailsInWindow() {

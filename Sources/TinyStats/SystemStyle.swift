@@ -29,7 +29,12 @@ enum SystemStyle {
   static let secondaryAccent = NSColor(name: nil) { appearance in
     resolvedPalette(in: appearance).secondary
   }
-  static let tertiaryAccent = NSColor.secondaryLabelColor
+  static let neutralSeries = NSColor(name: nil) { appearance in
+    (isDark(appearance) ? NSColor.white : NSColor.black).withAlphaComponent(0.55)
+  }
+  static let availableSeries = NSColor(name: nil) { appearance in
+    (isDark(appearance) ? NSColor.white : NSColor.black).withAlphaComponent(0.12)
+  }
   static let platterFill = NSColor(name: nil) { appearance in
     isDark(appearance)
       ? NSColor.white.withAlphaComponent(0.08)
@@ -53,13 +58,29 @@ enum SystemStyle {
   static func resolvedPalette(in appearance: NSAppearance) -> (primary: NSColor, secondary: NSColor)
   {
     let raw = resolvedAccent(in: appearance)
-    let pair = AccentPalette.derive(
-      from: .init(Double(raw.redComponent), Double(raw.greenComponent), Double(raw.blueComponent)),
+    let pair = paletteCache.resolve(
+      .init(Double(raw.redComponent), Double(raw.greenComponent), Double(raw.blueComponent)),
       dark: isDark(appearance))
     func color(_ rgb: AccentPalette.RGB) -> NSColor {
       NSColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
     }
     return (color(pair.primary), color(pair.secondary))
+  }
+  // Dynamic NSColor providers can resolve off-main. Two entries cover light/dark without
+  // retaining appearance objects; the pure derivation stays independent of this drawing cache.
+  private static let paletteCache = PaletteCache()
+  private final class PaletteCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [(AccentPalette.RGB, Bool, AccentPalette.Pair)] = []
+    func resolve(_ rgb: AccentPalette.RGB, dark: Bool) -> AccentPalette.Pair {
+      lock.withLock {
+        if let entry = entries.first(where: { $0.0 == rgb && $0.1 == dark }) { return entry.2 }
+        let pair = AccentPalette.derive(from: rgb, dark: dark)
+        if entries.count == 2 { entries.removeFirst() }
+        entries.append((rgb, dark, pair))
+        return pair
+      }
+    }
   }
   /// Preserve the user's hue; lift dark-bar graphics slightly like the approved board.
   static func menuBarAccent(_ accent: NSColor, dark: Bool) -> NSColor {
@@ -224,6 +245,9 @@ enum SystemStyle {
     let path = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
     NSColor.quaternaryLabelColor.setFill()
     path.fill()
+    NSColor.separatorColor.setStroke()
+    path.lineWidth = 0.5
+    path.stroke()
     path.addClip()
     var offset = 0.0
     for segment in segments {
@@ -245,12 +269,20 @@ enum SystemStyle {
   private var hoverTracking: NSTrackingArea?
   private var hovering = false
   private var iconName: String?
+  var showsAccent = false { didSet { updateTint() } }
+  private func updateTint() {
+    contentTintColor =
+      usesIconPresentation
+      ? (showsAccent ? .controlAccentColor : hovering ? .labelColor : .secondaryLabelColor)
+      : .labelColor
+  }
   var usesIconPresentation = false {
     didSet {
       guard oldValue != usesIconPresentation else { return }
       imagePosition = usesIconPresentation ? .imageOnly : .imageLeading
       if !usesIconPresentation { image = nil }
       hovering = false
+      updateTint()
       needsDisplay = true
       noteFocusRingMaskChanged()
     }
@@ -265,7 +297,7 @@ enum SystemStyle {
   static func symbolImage(_ name: String, fallback: String) -> NSImage? {
     (NSImage(systemSymbolName: name, accessibilityDescription: nil)
       ?? NSImage(systemSymbolName: fallback, accessibilityDescription: nil))?
-      .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+      .withSymbolConfiguration(.init(pointSize: 15, weight: .regular))
   }
   override var acceptsFirstResponder: Bool { isEnabled && !isHiddenOrHasHiddenAncestor }
   override var canBecomeKeyView: Bool { acceptsFirstResponder }
@@ -297,16 +329,20 @@ enum SystemStyle {
   }
   override func mouseEntered(with event: NSEvent) {
     hovering = true
+    updateTint()
     needsDisplay = true
   }
   override func mouseExited(with event: NSEvent) {
     hovering = false
+    updateTint()
     needsDisplay = true
   }
   override func draw(_ dirtyRect: NSRect) {
     if usesIconPresentation {
       if isEnabled && (hovering || isHighlighted) {
-        NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.14 : 0.07).setFill()
+        let dark = SystemStyle.isDark(effectiveAppearance)
+        (dark ? NSColor.white : NSColor.black)
+          .withAlphaComponent(isHighlighted ? 0.14 : dark ? 0.12 : 0.08).setFill()
         NSBezierPath(
           roundedRect: bounds, xRadius: SystemStyle.Radius.control,
           yRadius: SystemStyle.Radius.control

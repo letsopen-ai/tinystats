@@ -38,7 +38,7 @@ import Testing
   #expect(try tile("Memory").segments?.compactMap(\.fraction) == [0.35, 0.2, 0.1])
   #expect(
     try tile("Memory").segments?.map(\.color) == [
-      SystemStyle.accent, SystemStyle.secondaryAccent, SystemStyle.tertiaryAccent,
+      SystemStyle.accent, SystemStyle.secondaryAccent, SystemStyle.neutralSeries,
     ])
   #expect(try tile("Memory").composition.contains("available including cache 350 B"))
   #expect(try tile("Startup").segments?.first?.fraction == 0.6)
