@@ -293,6 +293,8 @@ func sensorsKeepNativeSearchKeyboardEligibilityAndRoundedSelectionAcrossNavigati
             func assertTextGeometry() throws {
               let selection = row.selectionRect
               #expect(row.isSelected)
+              #expect(abs(selection.minX - row.bounds.minX - 4) <= 0.01)
+              #expect(abs(row.bounds.maxX - selection.maxX - 4) <= 0.01)
               #expect(selection.minY >= row.bounds.minY && selection.maxY <= row.bounds.maxY)
               for column in 0..<table.numberOfColumns {
                 let field = try #require(
@@ -302,7 +304,9 @@ func sensorsKeepNativeSearchKeyboardEligibilityAndRoundedSelectionAcrossNavigati
                 #expect(selection.contains(text))
                 #expect(abs(selection.midY - text.midY) <= 0.5)
                 #expect(abs(text.height - field.fittingSize.height) <= 0.5)
-
+                let ink = row.convert(try sensorInkBounds(field), from: field)
+                let inset = column == 0 ? ink.minX - selection.minX : selection.maxX - ink.maxX
+                #expect(abs(inset - 8) <= 0.5)
               }
               if dropdown {
                 let highlight = row.convert(selection, to: detail.view)

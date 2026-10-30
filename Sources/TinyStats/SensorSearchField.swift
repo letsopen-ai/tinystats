@@ -65,6 +65,7 @@ import AppKit
     let height = ceil((font?.ascender ?? 0) - (font?.descender ?? 0) + (font?.leading ?? 0))
     text.origin.y = rect.midY - height / 2
     text.size.height = height
+    // Keep whole-point ink anchoring consistent in detached and hosted fallback cells.
     return text
   }
   override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
