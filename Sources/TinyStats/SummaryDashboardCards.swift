@@ -29,6 +29,9 @@ extension SummaryDashboardView {
     var secondFraction: Double? = nil
     var secondColor: NSColor = SystemStyle.secondaryAccent
     var accessibilityValue: String? = nil
+    var bundlePath: String? = nil
+    var processCount: Int = 1
+    var displayName: String? = nil
   }
   struct Gauge {
     var label: String, value: String
@@ -73,6 +76,8 @@ extension SummaryDashboardView {
   }
   struct Card {
     var frame: NSRect, title: String, trailing: String = "", content: Content, note: String = ""
+    var help = ""
+    var groupsProcesses = false
     var headerHeight: CGFloat = 31
     var contentRect: NSRect {
       .init(
@@ -96,7 +101,8 @@ extension SummaryDashboardView {
       case .message(let message): parts.append(message)
       case .rows(let rows):
         parts += rows.map {
-          $0.label + ": " + ($0.accessibilityValue ?? $0.value)
+          $0.label + ($0.bundlePath.map { " · " + $0 } ?? "") + ": "
+            + ($0.accessibilityValue ?? $0.value)
             + ($0.second.map { ", " + $0 } ?? "")
         }
       case .tiles(let tiles, _):
@@ -111,7 +117,8 @@ extension SummaryDashboardView {
           return tile.label + ": " + tile.value
             + (tile.detail.isEmpty ? "" : ", " + tile.detail) + history
         }
-      case .gauges(let gauges): parts += gauges.map { $0.label + ": " + $0.value }
+      case .gauges(let gauges):
+        parts += gauges.map { $0.label + ": " + $0.value }
       case .memory(let memory):
         let c = memory.composition
         parts += [
@@ -175,7 +182,7 @@ extension SummaryDashboardView {
                 ?? "No recorded values in this window"))
         }
       }
-      return (parts + [note]).filter { !$0.isEmpty }.joined(separator: ". ")
+      return (parts + [note, help]).filter { !$0.isEmpty }.joined(separator: ". ")
     }
   }
   nonisolated static func displayedCoreIndices(_ cpu: CPUReading) -> [Int] {
@@ -214,12 +221,14 @@ extension SummaryDashboardView {
       let y = area.minY + CGFloat(index) * height
       let paired = row.second != nil
       let pairedLayout = PairedRowLayout(height: height)
+      let iconInset: CGFloat = row.displayName == nil ? 0 : 24
+      let textY = paired ? y : y + (height - 16) / 2
       if !paired, let fraction = row.fraction, fraction.isFinite, fraction >= 0 {
         row.color.withAlphaComponent(0.13).setFill()
         NSBezierPath(
           roundedRect: NSRect(
-            x: area.minX, y: y,
-            width: area.width * min(1, fraction), height: max(1, height - 2)),
+            x: area.minX + iconInset, y: y + max(0, (height - 22) / 2),
+            width: (area.width - iconInset) * min(1, fraction), height: min(22, height)),
           xRadius: 3, yRadius: 3
         ).fill()
       }
@@ -237,17 +246,42 @@ extension SummaryDashboardView {
             x: area.minX + area.width * 0.73 + 2,
             y: y + pairedLayout.meterY, width: barWidth - 4, height: 2), color: row.secondColor)
       }
-      let textHeight = paired ? pairedLayout.textHeight : max(12, height)
+      var label = row.displayName ?? row.label
+      if let fallback = row.displayName {
+        let icon: NSImage
+        if let path = row.bundlePath {
+          let entry = appDisplayCache.entry(path: path, fallback: fallback)
+          icon = entry.icon
+          label = entry.name
+        } else {
+          icon = ProcessAppDisplayCache.placeholder
+        }
+        let iconRect = NSRect(x: area.minX, y: y + (height - 16) / 2, width: 16, height: 16)
+        icon.draw(
+          in: iconRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
+          hints: nil)
+        NSColor.separatorColor.setStroke()
+        let rim = NSBezierPath(
+          roundedRect: iconRect.insetBy(dx: 0.25, dy: 0.25), xRadius: 3, yRadius: 3)
+        rim.lineWidth = 0.5
+        rim.stroke()
+        text(
+          "\(row.processCount)",
+          rect: .init(x: valueStart - 22, y: textY, width: 19, height: 16),
+          color: .labelColor, size: 10, alignment: .right)
+      }
+      let textHeight = paired ? pairedLayout.textHeight : 16
       text(
-        row.label,
+        label,
         rect: NSRect(
-          x: area.minX + 3, y: y,
-          width: area.width * (paired ? 0.42 : 0.55) - 3, height: textHeight),
+          x: area.minX + 3 + iconInset, y: textY,
+          width: area.width * (paired ? 0.42 : 0.55) - 3 - iconInset
+            - (row.displayName == nil ? 0 : 22), height: textHeight),
         size: height < 18 ? 10 : 11)
       text(
         row.value,
         rect: NSRect(
-          x: valueStart, y: y,
+          x: valueStart, y: textY,
           width: area.width * (paired ? 0.27 : 0.44) - 3, height: textHeight),
         color: .labelColor, size: height < 18 ? 10 : 11,
         weight: .medium, alignment: .right)
@@ -537,11 +571,12 @@ extension SummaryDashboardView {
           ).fill()
         }
         text(
-          cpu.cores[index].map { String(format: "%.0f", $0) } ?? "—",
+          cpu.cores[index].map { String(format: "%.0f%%", $0) } ?? "—",
           rect: .init(x: bar.midX - cellWidth / 2, y: bar.maxY + 2, width: cellWidth, height: 12),
           color: .secondaryLabelColor, size: 9, alignment: .center)
       }
-      let kinds = CPUCoreKind.allCases.filter { kind in order.contains { cpu.kind(at: $0) == kind }
+      let kinds = CPUCoreKind.allCases.filter { kind in
+        kind != .unknown && order.contains { cpu.kind(at: $0) == kind }
       }
       let width = area.width / CGFloat(max(1, kinds.count))
       for (index, kind) in kinds.enumerated() {
@@ -563,7 +598,9 @@ extension SummaryDashboardView {
         rect: .init(x: rect.minX, y: rect.midY - 6, width: rect.width, height: 12), size: 8,
         weight: .medium, alignment: .center)
     }
-    let kinds = CPUCoreKind.allCases.filter { kind in order.contains { cpu.kind(at: $0) == kind } }
+    let kinds = CPUCoreKind.allCases.filter { kind in
+      kind != .unknown && order.contains { cpu.kind(at: $0) == kind }
+    }
     let legendWidth = area.width / CGFloat(max(1, kinds.count))
     for (position, kind) in kinds.enumerated() {
       let values = cpu.cores.indices.filter { cpu.kind(at: $0) == kind }.compactMap {

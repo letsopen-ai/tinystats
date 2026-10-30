@@ -271,14 +271,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       self.refreshWeatherSource()
       self.weatherLocationReader?.requestAuthorization()
     }
-    detail.onNetworkGrouping = { [weak self] mode in
-      guard let self, self.settings.networkTrafficGrouping != mode else { return }
+    detail.onProcessGrouping = { [weak self] mode in
+      guard let self, self.settings.processGrouping != mode else { return }
       self.interruptCycleProbe()
-      self.settings.networkTrafficGrouping = mode
-      self.settings.networkTrafficRevision = UUID().uuidString
+      self.settings.processGrouping = mode
+      if self.detail?.selected == .network {
+        self.settings.networkTrafficRevision = UUID().uuidString
+      }
       self.detail?.settings = self.settings
       self.settings.save(to: Self.preferenceStore)
-      self.preferences?.updateNetworkGrouping(mode, revision: self.settings.networkTrafficRevision)
+      self.preferences?.updateProcessGrouping(mode, revision: self.settings.networkTrafficRevision)
       self.worker?.update(self.settings)
     }
     detail.onWeatherLocations = { [weak self] in self?.showWeatherSettings() }

@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 import Testing
 
 @testable import TinyStats
@@ -6,6 +7,157 @@ import Testing
 
 @MainActor private func systemDescendants(_ view: NSView) -> [NSView] {
   view.subviews.flatMap { [$0] + systemDescendants($0) }
+}
+
+/// Composite material/document gaps on the native background for standalone PNG review.
+@MainActor private func systemGalleryImage(_ view: NSView, to url: URL) throws {
+  let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+  view.effectiveAppearance.performAsCurrentDrawingAppearance {
+    view.cacheDisplay(in: view.bounds, to: bitmap)
+  }
+  let output = try #require(
+    NSBitmapImageRep(
+      bitmapDataPlanes: nil, pixelsWide: bitmap.pixelsWide, pixelsHigh: bitmap.pixelsHigh,
+      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+      colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+  let context = try #require(NSGraphicsContext(bitmapImageRep: output))
+  NSGraphicsContext.saveGraphicsState()
+  NSGraphicsContext.current = context
+  view.effectiveAppearance.performAsCurrentDrawingAppearance {
+    NSColor.windowBackgroundColor.setFill()
+    let rect = NSRect(x: 0, y: 0, width: output.pixelsWide, height: output.pixelsHigh)
+    rect.fill()
+    let image = NSImage(size: rect.size)
+    image.addRepresentation(bitmap)
+    image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+  }
+  NSGraphicsContext.restoreGraphicsState()
+  try #require(output.representation(using: .png, properties: [:])).write(to: url)
+}
+
+/// Review the solid accessibility fallback and unchanged legacy material alongside native glass.
+@Test @MainActor func systemGlassFallbackGallery() throws {
+  guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] else {
+    return
+  }
+  let folder = URL(fileURLWithPath: path, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  for theme in [AppTheme.light, .dark] {
+    for treatment in [GlassSurface.Treatment.legacy, .solid] {
+      let surface = GlassSurface(environment: {
+        .init(
+          supportsGlass: treatment != .legacy, reduceTransparency: treatment == .solid,
+          increaseContrast: false)
+      })
+      surface.frame = .init(origin: .zero, size: SystemStyle.popoverSize)
+      surface.appearance = theme.nativeAppearance
+      let title = NSTextField(labelWithString: "CPU · Paused")
+      title.font = .systemFont(ofSize: 13, weight: .semibold)
+      title.frame = .init(x: 22, y: 600, width: 280, height: 20)
+      surface.addSubview(title)
+      let caption = NSTextField(labelWithString: "No reading available")
+      caption.textColor = .secondaryLabelColor
+      caption.frame = .init(x: 22, y: 570, width: 280, height: 20)
+      surface.addSubview(caption)
+      try systemGalleryImage(
+        surface, to: folder.appendingPathComponent("glass-\(treatment)-\(theme.rawValue).png"))
+    }
+  }
+}
+
+/// Explicit gallery-only capture of our synthetic window. Never request screen-recording access,
+/// capture another app, or enable live collection. Bitmap caching alone cannot prove glass blur.
+@Test @MainActor func systemGlassOnscreenGallery() async throws {
+  guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"],
+    ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_GLASS_CAPTURE"] == "1"
+  else { return }
+  let folder = URL(fileURLWithPath: path, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  let report = folder.appendingPathComponent("glass-capture.txt")
+  guard #available(macOS 27, *), CGPreflightScreenCaptureAccess() else {
+    try
+      "On-screen glass capture unavailable: macOS 27 or existing screen-capture permission missing. No permission requested.\n"
+      .write(to: report, atomically: true, encoding: .utf8)
+    return
+  }
+  _ = NSApplication.shared
+  let window = NSWindow(
+    contentRect: .init(x: 80, y: 80, width: 520, height: 720), styleMask: [.borderless],
+    backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
+  let backdrop = GlassGalleryBackdrop(frame: .init(x: 0, y: 0, width: 520, height: 720))
+  window.contentView = backdrop
+  let controller = DetailController()
+  controller.isPopoverPresentation = true
+  controller.settings.processGrouping = .bundles
+  controller.view.frame = .init(x: 88, y: 40, width: 344, height: 640)
+  backdrop.addSubview(controller.view)
+  defer {
+    controller.view.removeFromSuperview()
+    window.orderOut(nil)
+    window.contentView = nil
+    window.close()
+  }
+  var snapshot = Snapshot()
+  snapshot.cpu = .init(usage: 23, cores: [30, 16], load: [1.2, 1.1, 1], user: 15, system: 8)
+  snapshot.cpuApps = [
+    .init(
+      name: "TextEdit", bundlePath: "/System/Applications/TextEdit.app", processCount: 2,
+      cpu: 12, memory: 220_000_000)
+  ]
+  snapshot.memoryApps = snapshot.cpuApps
+  snapshot.memory = .init(
+    total: 24_000_000_000, active: 9_000_000_000, inactive: 2_000_000_000, wired: 2_600_000_000,
+    compressed: 2_700_000_000, free: 7_700_000_000, speculative: 0, purgeable: 100_000_000,
+    swapUsed: 400_000_000, swapTotal: 1_000_000_000, pressure: 1)
+  window.orderFrontRegardless()
+  window.displayIfNeeded()
+  try await Task.sleep(for: .milliseconds(250))
+  let content = try await SCShareableContent.excludingDesktopWindows(
+    true, onScreenWindowsOnly: true)
+  let ownedWindow = try #require(
+    content.windows.first { $0.windowID == CGWindowID(window.windowNumber) })
+  let filter = SCContentFilter(desktopIndependentWindow: ownedWindow)
+  let config = SCStreamConfiguration()
+  config.width = 520
+  config.height = 720
+  config.showsCursor = false
+  config.ignoreShadowsSingleWindow = true
+  for theme in [AppTheme.light, .dark] {
+    window.appearance = theme.nativeAppearance
+    // Native material appearance transitions settle independently of AppKit layout.
+    window.displayIfNeeded()
+    try await Task.sleep(for: .milliseconds(750))
+    for module in [Module.overview, .cpu, .memory, .network] {
+      controller.selected = module
+      controller.update(snapshot, history: [])
+      controller.view.layoutSubtreeIfNeeded()
+      window.displayIfNeeded()
+      // One bounded compositor-settling wait in an explicit render fixture, no app timer.
+      try await Task.sleep(for: .milliseconds(450))
+      let stem = "glass-onscreen-\(module.rawValue)-\(theme.rawValue)"
+      let image = try await SCScreenshotManager.captureImage(
+        contentFilter: filter, configuration: config)
+      try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+        .write(to: folder.appendingPathComponent(stem + ".png"))
+      try systemGalleryImage(backdrop, to: folder.appendingPathComponent(stem + "-bitmap.png"))
+    }
+  }
+  try
+    "Captured only the owned synthetic borderless window using ScreenCaptureKit, with a colourful backdrop. Compare glass-onscreen PNGs with the paired cacheDisplay bitmap PNGs; this is visual evidence, not a blur assertion. Current treatment: \(GlassSurface.Environment.current.treatment).\n"
+    .write(to: report, atomically: true, encoding: .utf8)
+}
+
+@MainActor private final class GlassGalleryBackdrop: NSView {
+  override func draw(_ dirtyRect: NSRect) {
+    let colors: [NSColor] = [.systemBlue, .systemPurple, .systemOrange, .systemGreen]
+    for (index, color) in colors.enumerated() {
+      color.setFill()
+      NSRect(
+        x: CGFloat(index) * bounds.width / 4, y: 0, width: bounds.width / 4, height: bounds.height
+      ).fill()
+    }
+  }
 }
 
 @Test @MainActor func systemAccentPairResolvesInBothAppearancesAndKeepsCoreClassification() throws {
@@ -100,7 +252,7 @@ import Testing
         #expect(action.frame.minY == 13)
         #expect(action.image != nil && action.imagePosition == .imageOnly)
         #expect(!action.isBordered && action.usesIconPresentation)
-        #expect(action.toolTip == action.accessibilityLabel())
+        #expect(action.toolTip?.hasPrefix(action.accessibilityLabel() ?? "") == true)
         #expect(action.accessibilityLabel()?.isEmpty == false)
         #expect(action.acceptsFirstResponder && action.focusRingType == .exterior)
         #expect(action.keyEquivalent.isEmpty)
@@ -137,7 +289,8 @@ import Testing
       #expect(pause.accessibilityLabel() == "Pause")
       pause.performClick(nil)
       #expect(controller.paused && pause.title == "Resume")
-      #expect(pause.accessibilityLabel() == "Resume" && pause.toolTip == "Resume")
+      #expect(
+        pause.accessibilityLabel() == "Resume" && pause.toolTip?.hasPrefix("Resume\n") == true)
       #expect(pause.image !== pauseIcon)
       pause.performClick(nil)
       #expect(!controller.paused && pause.accessibilityLabel() == "Pause")
@@ -150,7 +303,7 @@ import Testing
       if let summary = views.compactMap({ $0 as? SummaryDashboardView }).first, !summary.isHidden {
         #expect(summary.usesPopoverLayout)
         #expect(summary.enclosingScrollView != nil)
-        #expect(summary.enclosingScrollView?.frame.minY == 76)
+        #expect(summary.enclosingScrollView?.frame.minY == 48)
         for card in summary.cards {
           #expect(card.frame.width == summary.bounds.width)
           #expect(summary.bounds.contains(card.frame))
@@ -261,6 +414,9 @@ import Testing
       if module == .sensors {
         #expect(visited.contains { $0 is NSSearchField })
       }
+      if [.cpu, .memory, .network].contains(module) && !allReadings {
+        #expect(visited.contains { $0 is ProcessGroupingControl })
+      }
       if module == .weather {
         // The city picker is disabled while Weather is off; its opt-in action stays available.
         #expect(!visited.contains { ($0 as? NSPopUpButton)?.isEnabled == false })
@@ -363,8 +519,14 @@ import Testing
   snapshot.download = 1_200_000
   snapshot.upload = 48_000
   snapshot.sampleMilliseconds = 3
+  snapshot.gpuTime.status = .ready
+  snapshot.gpuTime.rows = [
+    .init(pid: 42, name: "Xcode", millisecondsPerSecond: 125),
+    .init(pid: 43, name: "WindowServer", millisecondsPerSecond: 4.5),
+  ]
+  snapshot.peripherals = [.init(name: "Keyboard", percent: 75)]
   snapshot.processes = [
-    .init(pid: 42, name: "Xcode", cpu: 38.2, memory: 0, read: nil, written: nil)
+    .init(pid: 42, name: "Xcode", cpu: 38.2, memory: 0, read: 22_000, written: 12_000)
   ]
   let history = (0..<150).map { index in
     var point = snapshot.historyPoint
@@ -408,6 +570,28 @@ import Testing
           let state = alternate ? "-readings-paused" : ""
           try #require(bitmap.representation(using: .png, properties: [:])).write(
             to: url.appendingPathComponent("\(module.rawValue)\(state)-\(name.rawValue).png"))
+          let views = systemDescendants(controller.view)
+          if alternate, module != .overview,
+            let table = views.compactMap({ $0 as? NSTableView }).first
+          {
+            table.scrollRowToVisible(table.numberOfRows - 1)
+            controller.view.layoutSubtreeIfNeeded()
+            try systemGalleryImage(
+              controller.view,
+              to: url.appendingPathComponent(
+                "\(module.rawValue)-sample-\(name.rawValue).png"))
+            table.scrollRowToVisible(0)
+          } else if !alternate {
+            for document in views.filter({
+              ($0 is SummaryDashboardView || $0 is WeatherDashboardView)
+                && !$0.isHiddenOrHasHiddenAncestor
+            }) {
+              try systemGalleryImage(
+                document,
+                to: url.appendingPathComponent(
+                  "\(module.rawValue)-document-\(name.rawValue).png"))
+            }
+          }
         }
       }
     }
@@ -763,7 +947,7 @@ import Testing
   let mask = try #require(scroll.layer?.mask as? CAGradientLayer)
   #expect(scroll.layer?.isGeometryFlipped == true)
   #expect(mask.startPoint.y == 1 && mask.endPoint.y == 0)
-  #expect(scroll.contentInsets.bottom == 36)
+  #expect(scroll.contentInsets.bottom == 22)
   // Reserve nonzero cell spacing too, without changing proportions or horizontal extent.
   table.intercellSpacing.width = 3
   controller.view.needsLayout = true
@@ -811,7 +995,7 @@ import Testing
   let bottom = try #require(
     bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh - 3)?.usingColorSpace(.sRGB))
   let transition = try #require(
-    bitmap.colorAt(x: bitmap.pixelsWide / 2, y: Int(Double(bitmap.pixelsHigh) * 0.76))?
+    bitmap.colorAt(x: bitmap.pixelsWide / 2, y: Int(Double(bitmap.pixelsHigh) * 0.86))?
       .usingColorSpace(.sRGB))
   #expect(transition.redComponent > 0.20 && transition.redComponent < 0.80)
   #expect(top.redComponent > 0.95)
@@ -890,7 +1074,266 @@ import Testing
       view.cards.first {
         $0.title == "TOP PROCESSES" || $0.title == "PROCESS TRAFFIC · PARTIAL"
       })
-    #expect(card.frame.height == (module == .network ? 96 : 56))
+    #expect(card.frame.height == 56)
     #expect(!card.note.isEmpty)
+  }
+}
+
+/// Exercise the production header, icon cells and worker projections with local-only fixtures.
+@Test @MainActor func systemProcessGroupingGalleryAndHeadersCoverAllThreeModules() throws {
+  _ = NSApplication.shared
+  let controller = DetailController()
+  controller.isPopoverPresentation = true
+  controller.view.setFrameSize(SystemStyle.popoverSize)
+  let terminal = "/System/Applications/Utilities/Terminal.app"
+  let editor = "/System/Applications/TextEdit.app"
+  var sample = Snapshot()
+  sample.cpu = .init(usage: 23, cores: [30, 16], load: [1.2, 1.1, 1.0], user: 15, system: 8)
+  sample.memory = .init(
+    total: 24_000_000_000, active: 9_000_000_000, inactive: 2_000_000_000, wired: 2_600_000_000,
+    compressed: 2_700_000_000, free: 7_700_000_000, speculative: 0, purgeable: 100_000_000,
+    swapUsed: 400_000_000, swapTotal: 1_000_000_000, pressure: 1)
+  sample.processes = [
+    .init(pid: 42, name: "Terminal helper", cpu: 18, memory: 220_000_000, read: nil, written: nil),
+    .init(pid: 43, name: "TextEdit", cpu: 4, memory: 120_000_000, read: nil, written: nil),
+    .init(pid: 99, name: "Shared broker", cpu: 1, memory: 40_000_000, read: nil, written: nil),
+  ]
+  sample.cpuApps = [
+    .init(name: "Terminal", bundlePath: terminal, processCount: 12, cpu: 38, memory: 420_000_000),
+    .init(name: "TextEdit", bundlePath: editor, processCount: 1, cpu: 4, memory: 120_000_000),
+    .init(name: "Shared broker", pid: 99, processCount: 1, cpu: 1, memory: 40_000_000),
+  ]
+  sample.memoryApps = sample.cpuApps
+  sample.selectedInterface = "en0"
+  sample.download = 2048
+  sample.upload = 1024
+  sample.networkTraffic.availability = .ready
+  sample.networkTraffic.message = "Ready · socket byte counters"
+  sample.networkTraffic.processes = [
+    .init(pid: 42, uniqueID: 1, name: "Terminal helper", download: 2048, upload: 1024)
+  ]
+  sample.networkTraffic.bundles = [
+    .init(
+      name: "Terminal", processCount: 12, pid: nil, download: 4096, upload: 1024,
+      bundlePath: terminal),
+    .init(
+      name: "TextEdit", processCount: 1, pid: nil, download: 1024, upload: 2048, bundlePath: editor),
+    .init(name: "Shared broker", processCount: 1, pid: 99, download: 512, upload: 256),
+  ]
+  let history = (0..<20).map { index in
+    var point = sample.historyPoint
+    point.time = Date(timeIntervalSince1970: Double(index * 2))
+    return point
+  }
+  func capture(_ view: NSView, name: String) throws {
+    guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] else {
+      return
+    }
+    let folder = URL(fileURLWithPath: path, isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+    view.effectiveAppearance.performAsCurrentDrawingAppearance {
+      view.cacheDisplay(in: view.bounds, to: bitmap)
+    }
+    // A document-only crop has transparent platter gaps/material. Composite it on the
+    // native background so dark ink/fills remain reviewable in ordinary PNG viewers.
+    let output = try #require(
+      NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: bitmap.pixelsWide, pixelsHigh: bitmap.pixelsHigh,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+    let context = try #require(NSGraphicsContext(bitmapImageRep: output))
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    view.effectiveAppearance.performAsCurrentDrawingAppearance {
+      NSColor.windowBackgroundColor.setFill()
+      let rect = NSRect(x: 0, y: 0, width: output.pixelsWide, height: output.pixelsHigh)
+      rect.fill()
+      let image = NSImage(size: rect.size)
+      image.addRepresentation(bitmap)
+      image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+    }
+    NSGraphicsContext.restoreGraphicsState()
+    try #require(output.representation(using: .png, properties: [:])).write(
+      to: folder.appendingPathComponent(name + ".png"))
+  }
+  for theme in [AppTheme.light, .dark] {
+    controller.view.appearance = theme.nativeAppearance
+    for module in [Module.cpu, .memory, .network] {
+      controller.selected = module
+      for mode in [TrafficGrouping.processes, .bundles] {
+        controller.showsAllReadings = false
+        controller.paused = false
+        controller.settings.processGrouping = mode
+        var snapshot = sample
+        snapshot.networkTraffic.grouping = mode
+        controller.update(snapshot, history: history)
+        controller.view.layoutSubtreeIfNeeded()
+        let summary = try #require(
+          systemDescendants(controller.view).compactMap { $0 as? SummaryDashboardView }.first)
+        let control = try #require(
+          systemDescendants(controller.view).compactMap { $0 as? ProcessGroupingControl }.first)
+        let card = try #require(summary.cards.first { $0.groupsProcesses })
+        #expect(control.superview === summary && card.frame.contains(control.frame))
+        #expect(control.frame.minY == card.frame.minY + 9)
+        #expect(
+          control.label(forSegment: 0) == "Processes" && control.label(forSegment: 1) == "Apps")
+        #expect(
+          control.accessibilityLabel() == "Process list grouping" && control.controlSize == .small)
+        #expect(control.selectedSegment == (mode == .bundles ? 1 : 0))
+        if mode == .bundles {
+          #expect(card.spoken.contains("Terminal · 12 processes") && card.spoken.contains(terminal))
+          let entry = summary.appDisplayCache.entry(path: terminal, fallback: "Terminal")
+          #expect(entry.icon.size.width > 0 && !entry.name.isEmpty)
+        } else {
+          #expect(card.spoken.contains("Terminal helper") && !card.spoken.contains("12 processes"))
+        }
+        let stem = "\(module.rawValue)-\(mode == .bundles ? "apps" : "processes")-\(theme.rawValue)"
+        // The whole document includes below-fold process cards; root also checks actual viewport chrome.
+        try capture(summary, name: stem + "-details")
+        try capture(controller.view, name: stem + "-dropdown")
+        let windowController = DetailController()
+        windowController.settings = controller.settings
+        windowController.selected = module
+        windowController.view.appearance = theme.nativeAppearance
+        windowController.view.setFrameSize(MainWindow.minimumSize)
+        windowController.update(snapshot, history: history)
+        windowController.view.layoutSubtreeIfNeeded()
+        let windowSummary = try #require(
+          systemDescendants(windowController.view).compactMap { $0 as? SummaryDashboardView }.first)
+        let windowCard = try #require(windowSummary.cards.first { $0.groupsProcesses })
+        let windowControl = try #require(windowSummary.groupingControl)
+        #expect(windowCard.frame.contains(windowControl.frame))
+        try capture(windowController.view, name: stem + "-window")
+        controller.paused = true
+        controller.view.layoutSubtreeIfNeeded()
+        try capture(controller.view, name: stem + "-summary-paused")
+        if mode == .bundles {
+          controller.showsAllReadings = true
+          controller.paused = true
+          controller.update(snapshot, history: history)
+          controller.view.layoutSubtreeIfNeeded()
+          let table = try #require(
+            systemDescendants(controller.view).compactMap { $0 as? NSTableView }.first)
+          let presentation = try #require(
+            DetailReadingsBuilder.build(
+              module: module, snapshot: snapshot, history: history, settings: controller.settings,
+              paused: true))
+          let header = try #require(presentation.rows.firstIndex { $0.processGroupingHeader })
+          table.scrollRowToVisible(min(table.numberOfRows - 1, header + 5))
+          table.scrollRowToVisible(header)
+          controller.view.layoutSubtreeIfNeeded()
+          let headerCell = try #require(table.view(atColumn: 1, row: header, makeIfNecessary: true))
+          #expect(control.superview === headerCell)
+          #expect(headerCell.bounds.contains(control.frame))
+          #expect(presentation.rows.contains { $0.bundlePath == terminal && $0.processCount == 12 })
+          try capture(controller.view, name: stem + "-readings-paused")
+        }
+      }
+    }
+  }
+}
+
+@Test @MainActor func sharedHeaderControlSwitchesCPUAndMemoryRowsAndSurvivesNavigation() throws {
+  let controller = DetailController()
+  var sample = Snapshot()
+  sample.processes = [.init(pid: 42, name: "Helper", cpu: 2, memory: 100, read: nil, written: nil)]
+  sample.cpuApps = [
+    .init(name: "Outer", bundlePath: "/Outer.app", processCount: 2, cpu: 4, memory: 200)
+  ]
+  sample.memoryApps = sample.cpuApps
+  sample.networkTraffic.availability = .ready
+  sample.networkTraffic.processes = [
+    .init(pid: 42, uniqueID: 1, name: "Helper", download: 1, upload: 1)
+  ]
+  sample.networkTraffic.bundles = [
+    .init(
+      name: "Outer", processCount: 2, pid: nil, download: 2, upload: 2, bundlePath: "/Outer.app")
+  ]
+  controller.selected = .cpu
+  controller.update(sample, history: [])
+  let control = try #require(
+    systemDescendants(controller.view).compactMap { $0 as? ProcessGroupingControl }.first)
+  var chosen: [TrafficGrouping] = []
+  controller.onProcessGrouping = { chosen.append($0) }
+  for module in [Module.cpu, .memory, .network] {
+    controller.selected = module
+    control.selectedSegment = 1
+    #expect(NSApp.sendAction(try #require(control.action), to: control.target, from: control))
+    #expect(controller.settings.processGrouping == .bundles)
+    sample.networkTraffic.grouping = .bundles
+    controller.update(sample, history: [])
+    let summary = try #require(control.superview as? SummaryDashboardView)
+    #expect(
+      summary.cards.contains {
+        $0.groupsProcesses && $0.title.hasPrefix(module == .network ? "APP TRAFFIC" : "TOP APPS")
+      })
+    #expect(
+      summary.cards.filter { $0.groupsProcesses }.map(\.spoken).joined().contains(
+        "Outer · 2 processes"))
+    #expect(!summary.cards.filter { $0.groupsProcesses }.map(\.spoken).joined().contains("Helper"))
+    control.selectedSegment = 0
+    #expect(NSApp.sendAction(try #require(control.action), to: control.target, from: control))
+    #expect(controller.settings.processGrouping == .processes)
+    sample.networkTraffic.grouping = .processes
+    controller.update(sample, history: [])
+    #expect(summary.cards.filter { $0.groupsProcesses }.map(\.spoken).joined().contains("Helper"))
+    #expect(!summary.cards.filter { $0.groupsProcesses }.map(\.spoken).joined().contains("Outer"))
+  }
+  #expect(chosen == [.bundles, .processes, .bundles, .processes, .bundles, .processes])
+}
+
+@Test @MainActor func systemSensorStatesGalleryAndScrolledFade() throws {
+  guard let directory = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] else {
+    return
+  }
+  let folder = URL(fileURLWithPath: directory, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  let detail = DetailController()
+  detail.isPopoverPresentation = true
+  detail.selected = .sensors
+  detail.view.setFrameSize(SystemStyle.popoverSize)
+  for state in ["empty", "populated", "scan-limit"] {
+    var sample = Snapshot()
+    sample.sensors =
+      state == "empty"
+      ? []
+      : [
+        .init(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 45),
+        .init(key: "F0Ac", name: "Fan 1", kind: .fan, value: 1200),
+      ]
+    if state == "scan-limit" {
+      sample.sensors += (0..<126).map {
+        .init(key: "Te\($0)", name: "CPU", kind: .temperature, value: 50)
+      }
+    }
+    for index in 0..<3 {
+      sample.uptime = Double(100 + index * 6)
+      sample.timestamp = Date(timeIntervalSince1970: 1_700_000_000 + sample.uptime)
+      sample.sensorsSampledAt = sample.uptime
+      detail.update(sample, history: [])
+    }
+    for all in [false, true] {
+      detail.showsAllReadings = all
+      for paused in [false, true] {
+        detail.paused = paused
+        for theme in [AppTheme.light, .dark] {
+          detail.view.appearance = theme.nativeAppearance
+          detail.view.layoutSubtreeIfNeeded()
+          let stem =
+            "sensors-\(state)-\(all ? "readings" : "summary")-\(paused ? "paused" : "running")-\(theme.rawValue)"
+          try systemGalleryImage(detail.view, to: folder.appendingPathComponent(stem + ".png"))
+          if state == "scan-limit", all {
+            let table = try #require(
+              systemDescendants(detail.view).compactMap { $0 as? NSTableView }.first)
+            table.scrollRowToVisible(min(20, table.numberOfRows - 1))
+            detail.view.layoutSubtreeIfNeeded()
+            try systemGalleryImage(
+              detail.view, to: folder.appendingPathComponent(stem + "-scrolled.png"))
+            table.scrollRowToVisible(0)
+          }
+        }
+      }
+    }
   }
 }

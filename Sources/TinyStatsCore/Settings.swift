@@ -85,6 +85,11 @@ public struct Settings: Codable, Equatable, Sendable {
   public var separateItems = true
   public var readouts: [Module] = [.cpu, .memory, .network]
   public var networkInterface = "auto"
+  /// Shared CPU/Memory/Network choice. Keep the original encoded key to preserve saved choices.
+  public var processGrouping: TrafficGrouping {
+    get { networkTrafficGrouping }
+    set { networkTrafficGrouping = newValue }
+  }
   public var networkTrafficGrouping: TrafficGrouping = .processes
   public var networkTrafficRevision = ""
   public var fahrenheit = false

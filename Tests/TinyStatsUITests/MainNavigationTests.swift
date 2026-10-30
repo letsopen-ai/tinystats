@@ -292,7 +292,7 @@ import Testing
   #expect(plot.times == history.map(\.time) && plot.first == [10, 20, 30])
 }
 
-@Test @MainActor func pingOnlyFooterDescribesNetworkChecksWithoutClaimingInternetTraffic() {
+@Test @MainActor func pingOnlySampleHelpDescribesNetworkChecksWithoutClaimingInternetTraffic() {
   let detail = DetailController(snapshot: Snapshot(), history: [])
   var settings = Settings()
   settings.weather.enabled = false
@@ -300,13 +300,15 @@ import Testing
   detail.settings = settings
   detail.loadViewIfNeeded()
   detail.selected = .network
-  func strings(_ view: NSView) -> [String] {
-    (view as? NSTextField).map { [$0.stringValue] } ?? view.subviews.flatMap(strings)
+  func help() -> String {
+    detail.view.subviews.compactMap { $0 as? MenuActionRow }.first {
+      $0.title == "Pause"
+    }?.accessibilityHelp() ?? ""
   }
-  #expect(strings(detail.view).contains { $0.hasPrefix("Network checks enabled") })
-  #expect(!strings(detail.view).contains { $0.hasPrefix("Internet requests enabled") })
+  #expect(help().contains("Network checks enabled"))
+  #expect(!help().contains("Internet requests enabled"))
   settings.pingCheck.enabled = false
   detail.settings = settings
   detail.update(Snapshot(), history: [])
-  #expect(strings(detail.view).contains { $0.hasPrefix("Local only") })
+  #expect(help().contains("Local only"))
 }

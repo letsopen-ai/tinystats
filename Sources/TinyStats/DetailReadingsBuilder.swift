@@ -10,7 +10,14 @@ struct DetailRow: Equatable {
   var heading = false
   var meter: Meter?
   var sensorIdentity: SensorBrowserIdentity?
+  var processGroupingHeader = false
+  var bundlePath: String?
+  var processCount: Int = 1
+  var appName: String?
   var accessibilityLabel: String?
+  var compactValue: String?
+  var help: String?
+  var sampleSection = false
 }
 
 /// Formats existing local observations; never collects, persists, or requests permission.
@@ -37,7 +44,7 @@ enum DetailReadingsBuilder {
         "\(s.thermalState) thermal state · up \(Display.duration(s.uptime))"
     case .cpu:
       result.value = Display.percent(s.cpu?.usage)
-      result.subtitle = "Of total capacity · \(s.cpu?.cores.count ?? 0) logical cores"
+      result.subtitle = "Of total capacity"
     case .gpu:
       result.value = Display.percent(s.gpus.compactMap(\.usage).max())
       result.subtitle = s.gpus.map(\.name).joined(separator: " · ")
@@ -65,6 +72,35 @@ enum DetailReadingsBuilder {
     case .sensors, .weather, .clock: return nil
     }
     return result
+  }
+
+  /// Existing observations only; available as table rows and footer action help.
+  static func sampleRows(snapshot: Snapshot, settings: Settings, paused: Bool) -> [DetailRow] {
+    let privacy =
+      settings.connectivityChecks || settings.publicIPChecks || settings.weather.enabled
+      ? "Internet requests enabled"
+      : settings.pingCheck.enabled ? "Network checks enabled" : "Local only"
+    let cost = snapshot.sampleMilliseconds
+    var rows: [DetailRow] = [
+      .init(label: "ABOUT THIS SAMPLE", value: "", heading: true, sampleSection: true),
+      .init(
+        label: "Privacy", value: privacy,
+        compactValue: privacy == "Internet requests enabled"
+          ? "Internet enabled"
+          : privacy == "Network checks enabled" ? "Network checks" : nil),
+      .init(
+        label: "Monitoring", value: paused ? "Paused · readings are frozen" : "Running",
+        compactValue: paused ? "Paused" : nil),
+      .init(label: "Configured cadence", value: "\(Int(settings.interval))s"),
+      .init(
+        label: "Last sample cost",
+        value: cost.isFinite && cost >= 0
+          ? String(format: "%.1f ms", cost) : "Unavailable"),
+    ]
+    if snapshot.sensors.filter({ !$0.key.hasPrefix("ioreport:") }).count >= 128 {
+      rows.append(.init(label: "SMC scan limit", value: "128 · some sensors may be missing"))
+    }
+    return rows
   }
 
   static func build(
@@ -110,12 +146,57 @@ enum DetailReadingsBuilder {
         .init(name: name, color: color, values: history.map { $0[keyPath: key] }, role: role))
     }
     func processes(_ type: Module) {
+      let apps = type != .disks && settings.processGrouping == .bundles
       section(
-        type == .cpu
-          ? "TOP CPU · BARS = MAC CAPACITY"
-          : type == .memory ? "TOP MEMORY" : "TOP DISK I/O · READ + WRITE")
-      if type == .memory {
+        apps
+          ? "TOP APPS"
+          : type == .cpu
+            ? "TOP CPU"
+            : type == .memory ? "TOP MEMORY" : "TOP DISK I/O")
+      result.rows[result.rows.count - 1].processGroupingHeader = type != .disks
+      if type == .cpu && !apps {
+        result.rows[result.rows.count - 1].accessibilityLabel = "TOP CPU · BARS = MAC CAPACITY"
+        result.rows[result.rows.count - 1].help = "Bars show Mac capacity"
+      } else if type == .disks {
+        result.rows[result.rows.count - 1].accessibilityLabel = "TOP DISK I/O · READ + WRITE"
+        result.rows[result.rows.count - 1].help = "Disk read and write"
+      }
+      if type == .memory && !apps {
         result.rows[result.rows.count - 1].accessibilityLabel = "Top memory · physical footprint"
+        result.rows[result.rows.count - 1].help = "Physical footprint"
+      }
+      if apps {
+        let groups = type == .cpu ? s.cpuApps : s.memoryApps
+        if groups.isEmpty { row("Waiting for next process scan", "—") }
+        for app in groups.prefix(7) {
+          if type == .cpu {
+            let count = s.cpu?.cores.count ?? 0
+            if count > 0 {
+              utilization(
+                app.label, app.cpu.map { min(100, $0 / Double(count)) }, SystemStyle.accent,
+                text: Display.processPercent(app.cpu) + " of one core")
+            } else {
+              row(app.label, Display.processPercent(app.cpu) + " of one core")
+            }
+          } else {
+            row(app.label, app.memory.map(Display.bytes) ?? "—")
+          }
+          result.rows[result.rows.count - 1].bundlePath = app.bundlePath
+          result.rows[result.rows.count - 1].appName = app.name
+          result.rows[result.rows.count - 1].processCount = app.processCount
+          if type == .cpu, app.cpuIncomplete > 0 {
+            result.rows[result.rows.count - 1].help =
+              "Sum of measured members · \(app.cpuIncomplete) unmeasured processes"
+          }
+          result.rows[result.rows.count - 1].accessibilityLabel =
+            app.label + (app.bundlePath.map { " · " + $0 } ?? "")
+        }
+        if type == .memory {
+          row("Shared pages", "May be counted twice")
+          result.rows[result.rows.count - 1].accessibilityLabel =
+            "Sum of per-process physical footprints · shared pages may be counted twice"
+        }
+        return
       }
       let list = s.processes.sorted { a, b in
         switch type {
@@ -192,7 +273,10 @@ enum DetailReadingsBuilder {
         }
       }
       componentSensors(.cpu)
-      section("CPU COOLING · SHARED / UNASSIGNED INCLUDED")
+      section("CPU COOLING")
+      result.rows[result.rows.count - 1].help = "Shared / unassigned fans included"
+      result.rows[result.rows.count - 1].accessibilityLabel =
+        "CPU cooling · shared / unassigned fans included"
       for fan in s.sensors where fan.kind == .fan && (fan.fanOwner == .cpu || fan.fanOwner == nil) {
         row(fan.name, fan.formatted(fahrenheit: false))
       }
@@ -222,7 +306,10 @@ enum DetailReadingsBuilder {
       }
       row(s.gpuTime.message, "")
       row("Accessible creating processes · helpers separate", "Not GPU/core utilization")
-      section("GPU COOLING · SHARED / UNASSIGNED INCLUDED")
+      section("GPU COOLING")
+      result.rows[result.rows.count - 1].help = "Shared / unassigned fans included"
+      result.rows[result.rows.count - 1].accessibilityLabel =
+        "GPU cooling · shared / unassigned fans included"
       for fan in s.sensors where fan.kind == .fan && (fan.fanOwner == .gpu || fan.fanOwner == nil) {
         row(fan.name, fan.formatted(fahrenheit: false))
       }
@@ -362,14 +449,27 @@ enum DetailReadingsBuilder {
         row("Public IP", "Off · enable in Settings")
       }
       section(
-        settings.networkTrafficGrouping == .bundles
-          ? "APP BUNDLES · PARTIAL" : "PROCESS TRAFFIC · PARTIAL")
+        settings.processGrouping == .bundles
+          ? "APP TRAFFIC · PARTIAL" : "PROCESS TRAFFIC · PARTIAL")
+      result.rows[result.rows.count - 1].processGroupingHeader = true
       let traffic = s.networkTraffic
+      if traffic.availability == .ready && settings.processGrouping == .bundles {
+        if traffic.bundles.isEmpty { row("Active kernel TCP/UDP traffic", "None") }
+        for bundle in traffic.bundles {
+          row(
+            bundle.label, "↓ \(Display.rate(bundle.download))  ↑ \(Display.rate(bundle.upload))")
+          result.rows[result.rows.count - 1].bundlePath = bundle.bundlePath
+          result.rows[result.rows.count - 1].appName = bundle.name
+          result.rows[result.rows.count - 1].processCount = bundle.processCount
+          result.rows[result.rows.count - 1].accessibilityLabel =
+            bundle.label + (bundle.bundlePath.map { " · " + $0 } ?? "")
+        }
+      }
       row("Scope", "All interfaces + loopback")
       row("Coverage", "Kernel TCP/UDP only")
       row("Modern / QUIC", "Not fully covered")
       row("Accounting", traffic.message)
-      if settings.networkTrafficGrouping == .bundles {
+      if settings.processGrouping == .bundles {
         row("Grouping", "Current outermost executable bundle path")
         row("Active members", "Owners with bytes in this interval")
         row("Shared services / WebKit", "Separate processes · not attributed to apps")
@@ -381,17 +481,9 @@ enum DetailReadingsBuilder {
           "Process counters checked",
           "\(Int(max(0, s.uptime - checked)))s ago · \(traffic.activeSources) sockets")
       }
-      if traffic.availability == .ready {
-        if settings.networkTrafficGrouping == .bundles {
-          if traffic.bundles.isEmpty { row("Active kernel TCP/UDP traffic", "None") }
-          for bundle in traffic.bundles {
-            row(
-              bundle.label, "↓ \(Display.rate(bundle.download))  ↑ \(Display.rate(bundle.upload))")
-          }
-        } else if traffic.processes.isEmpty {
-          row("Accessible kernel sockets", "None")
-        }
-        for process in settings.networkTrafficGrouping == .processes ? traffic.processes : [] {
+      if traffic.availability == .ready && settings.processGrouping == .processes {
+        if traffic.processes.isEmpty { row("Accessible kernel sockets", "None") }
+        for process in traffic.processes {
           row(
             process.pid == 0 ? process.name : "\(process.name) · \(process.pid)",
             "↓ \(Display.rate(process.download))  ↑ \(Display.rate(process.upload))")

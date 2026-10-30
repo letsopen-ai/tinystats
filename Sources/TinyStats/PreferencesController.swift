@@ -502,8 +502,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     settings.pingCheck = pingCheck
     settings.internetRevision = revision
   }
-  func updateNetworkGrouping(_ value: TrafficGrouping, revision: String) {
-    settings.networkTrafficGrouping = value
+  func updateProcessGrouping(_ value: TrafficGrouping, revision: String) {
+    settings.processGrouping = value
     settings.networkTrafficRevision = revision
   }
   func updateHistoryPersistence(_ enabled: Bool) {

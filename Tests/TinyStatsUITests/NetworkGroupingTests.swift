@@ -5,6 +5,10 @@ import Testing
 @testable import TinyStats
 @testable import TinyStatsCore
 
+@MainActor private func groupingDescendants(_ root: NSView) -> [NSView] {
+  root.subviews.flatMap { [$0] + groupingDescendants($0) }
+}
+
 @Test func trafficGroupingMigratesAndRoundTripsWithoutChangingExistingChoices() throws {
   let legacy = try JSONDecoder().decode(
     Settings.self, from: Data("{\"theme\":\"dark\",\"networkInterface\":\"en0\"}".utf8))
@@ -22,10 +26,10 @@ import Testing
   let controller = DetailController()
   controller.selected = .network
   let control = try #require(
-    controller.view.subviews.compactMap { $0 as? NSSegmentedControl }.first)
+    groupingDescendants(controller.view).compactMap { $0 as? NSSegmentedControl }.first)
   #expect(!control.isHidden && control.selectedSegment == 0)
   var chosen: TrafficGrouping?
-  controller.onNetworkGrouping = { [weak controller] mode in
+  controller.onProcessGrouping = { [weak controller] mode in
     chosen = mode
     controller?.settings.networkTrafficRevision = "new"
   }
@@ -51,14 +55,15 @@ import Testing
   controller.update(snapshot, history: [])
   let summary = try #require(
     controller.view.subviews.compactMap { $0 as? SummaryDashboardView }.first)
-  #expect(summary.cards.map(\.spoken).joined().contains("Stale bundle · 2 active"))
+  #expect(summary.cards.map(\.spoken).joined().contains("Stale bundle · 2 processes"))
   controller.selected = .cpu
-  #expect(control.isHidden)
+  #expect(!control.isHidden)
   controller.selected = .network
   #expect(!control.isHidden && control.selectedSegment == 1)
-  let history = try #require(
-    controller.view.subviews.compactMap { $0 as? NSButton }.first { $0.title == "History…" })
-  #expect(control.frame.maxX <= history.frame.minX)
+  #expect(control.superview === summary)
+  let card = try #require(summary.cards.first { $0.groupsProcesses })
+  #expect(card.frame.contains(control.frame))
+  #expect(control.frame.minY == card.frame.minY + 9)
 }
 @Test @MainActor func bundleDashboardKeepsGraphicalRatesAndMakesScopeSpoken() throws {
   var snapshot = Snapshot()
@@ -72,9 +77,9 @@ import Testing
   let view = SummaryDashboardView(frame: .init(x: 0, y: 0, width: 520, height: 454))
   view.update(snapshot, history: [], settings: settings, module: .network)
   let card = try #require(view.cards.last)
-  #expect(card.title.contains("APP BUNDLES") && card.title.contains("PARTIAL"))
+  #expect(card.title.contains("APP TRAFFIC") && card.title.contains("PARTIAL"))
   #expect(
-    card.spoken.contains("Browser · 3 active")
+    card.spoken.contains("Browser · 3 processes")
       && card.spoken.contains("shared / unresolved separate"))
   guard case .rows(let rows) = card.content else {
     Issue.record("Missing paired graphical rows")
@@ -87,7 +92,7 @@ import Testing
   let preferences = PreferencesController(
     settings: Settings(), interfaces: [], snapshot: Snapshot(), history: [])
   defer { preferences.close() }
-  preferences.updateNetworkGrouping(.bundles, revision: "live")
+  preferences.updateProcessGrouping(.bundles, revision: "live")
   var saved: Settings?
   preferences.onChange = { saved = $0 }
   func descendants(_ root: NSView) -> [NSView] { root.subviews.flatMap { [$0] + descendants($0) } }
@@ -125,9 +130,14 @@ import Testing
     controller.view.subviews.compactMap { $0 as? NSScrollView }.first?.documentView as? NSTableView)
   func rowStrings() -> [(String, String)] {
     (0..<table.numberOfRows).map { row in
-      (
-        (controller.tableView(table, viewFor: table.tableColumns[0], row: row) as? NSTextField)?
-          .stringValue ?? "",
+      let labelView = controller.tableView(table, viewFor: table.tableColumns[0], row: row)
+      let label =
+        (labelView as? NSTextField)?.stringValue
+        ?? (labelView as? ProcessAppLabelCell)?.accessibilityLabel()?.components(
+          separatedBy: " · "
+        ).prefix(2).joined(separator: " · ") ?? ""
+      return (
+        label,
         (controller.tableView(table, viewFor: table.tableColumns[1], row: row) as? NSTextField)?
           .stringValue ?? ""
       )
@@ -136,9 +146,9 @@ import Testing
   let rows = rowStrings()
   #expect(
     rows.contains {
-      $0.0 == "Browser · 3 active" && $0.1 == "↓ \(Display.rate(2048))  ↑ \(Display.rate(1024))"
+      $0.0 == "Browser · 3 processes" && $0.1 == "↓ \(Display.rate(2048))  ↑ \(Display.rate(1024))"
     })
-  #expect(rows.contains { $0.0 == "Broker · 99" && $0.1 == "↓ 512 B/s  ↑ 256 B/s" })
+  #expect(rows.contains { $0.0 == "Broker · 1 process" && $0.1 == "↓ 512 B/s  ↑ 256 B/s" })
   #expect(!rows.contains { $0.0.contains("Duplicate sentinel") })
   #expect(rows.contains { $0.0 == "Scope" && $0.1 == "All interfaces + loopback" })
   #expect(rows.contains { $0.0 == "Shared services / WebKit" && $0.1.contains("not attributed") })
@@ -211,4 +221,123 @@ import Testing
         to: folder.appendingPathComponent("synthetic-\(state)-\(theme).png"))
     }
   }
+}
+
+@Test func oneSharedGroupingPreferenceKeepsTheOriginalPersistedValueAndDefaults() throws {
+  let saved = try JSONDecoder().decode(
+    Settings.self,
+    from: Data(#"{"networkTrafficGrouping":"bundles","networkTrafficRevision":"saved"}"#.utf8))
+  #expect(saved.processGrouping == .bundles)
+  var updated = saved
+  updated.processGrouping = .processes
+  #expect(updated.networkTrafficGrouping == .processes && updated.networkTrafficRevision == "saved")
+  #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(updated)) == updated)
+  let suite = "TinyStatsGroupingTests-" + UUID().uuidString
+  let store = try #require(UserDefaults(suiteName: suite))
+  defer { store.removePersistentDomain(forName: suite) }
+  saved.save(to: store)
+  #expect(Settings.load(from: store).processGrouping == .bundles)
+}
+
+@Test @MainActor func appReadingsKeepKnownCPUWithoutCoreInventoryAndUnavailableMemory() throws {
+  var settings = Settings()
+  settings.processGrouping = .bundles
+  var sample = Snapshot()
+  sample.cpuApps = [.init(name: "App", processCount: 2, cpu: 4, memory: nil)]
+  sample.memoryApps = sample.cpuApps
+  let cpu = try #require(
+    DetailReadingsBuilder.build(
+      module: .cpu, snapshot: sample, history: [], settings: settings, paused: true))
+  let row = try #require(cpu.rows.first { $0.label == "App · 2 processes" })
+  #expect(row.value == "4.0% of one core" && row.meter == nil)
+  let memory = try #require(
+    DetailReadingsBuilder.build(
+      module: .memory, snapshot: sample, history: [], settings: settings, paused: true))
+  #expect(memory.rows.first { $0.label == "App · 2 processes" }?.value == "—")
+  #expect(memory.rows.contains { $0.label == "Shared pages" && $0.value == "May be counted twice" })
+}
+
+@Test @MainActor func cpuAndMemoryGroupingPreservesTrafficSnapshotAndRevision() throws {
+  for module in [Module.cpu, .memory] {
+    let detail = DetailController()
+    detail.selected = module
+    var sample = Snapshot()
+    sample.networkTraffic.availability = .ready
+    sample.networkTraffic.revision = "retained"
+    sample.networkTraffic.processes = [
+      .init(pid: 5, uniqueID: 6, name: "Broker", download: 10, upload: 20)
+    ]
+    detail.settings.networkTrafficRevision = "retained"
+    detail.update(sample, history: [])
+    let control = try #require(
+      groupingDescendants(detail.view).compactMap { $0 as? ProcessGroupingControl }.first)
+    control.selectedSegment = 1
+    #expect(NSApp.sendAction(try #require(control.action), to: control.target, from: control))
+    #expect(detail.snapshot.networkTraffic.availability == .ready)
+    #expect(detail.snapshot.networkTraffic.revision == "retained")
+    #expect(detail.snapshot.networkTraffic.processes.first?.pid == 5)
+    #expect(detail.snapshot.networkTraffic.processes.first?.download == 10)
+    #expect(detail.settings.networkTrafficRevision == "retained")
+  }
+}
+
+@Test @MainActor func readingsGroupingHeaderRetainsParentAndKeyboardFocusAcrossSamples() throws {
+  let detail = DetailController()
+  detail.selected = .cpu
+  detail.showsAllReadings = true
+  var sample = Snapshot()
+  sample.cpu = .init(usage: 10, cores: [10], load: [])
+  sample.processes = [.init(pid: 1, name: "Helper", cpu: 10, memory: 1, read: nil, written: nil)]
+  detail.update(sample, history: [])
+  let window = NSWindow(
+    contentRect: detail.view.bounds, styleMask: [.titled], backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
+  window.contentViewController = detail
+  defer {
+    window.contentViewController = nil
+    window.close()
+  }
+  let table = try #require(groupingDescendants(detail.view).compactMap { $0 as? NSTableView }.first)
+  let rows = try #require(
+    DetailReadingsBuilder.build(
+      module: .cpu, snapshot: sample, history: [], settings: detail.settings, paused: false)
+  ).rows
+  let header = try #require(rows.firstIndex(where: { $0.processGroupingHeader }))
+  table.scrollRowToVisible(header)
+  let cell = try #require(table.view(atColumn: 1, row: header, makeIfNecessary: true))
+  let control = try #require(cell.subviews.compactMap { $0 as? ProcessGroupingControl }.first)
+  #expect(window.makeFirstResponder(control))
+  sample.processes[0].cpu = 20
+  detail.update(sample, history: [])
+  #expect(control.superview === cell && window.firstResponder === control)
+  sample.processes.append(.init(pid: 2, name: "Second", cpu: 1, memory: 1, read: nil, written: nil))
+  detail.update(sample, history: [])
+  #expect(window.firstResponder === control)
+  sample.cpuApps = [
+    .init(name: "App", processCount: 1, cpu: 20, memory: 1),
+    .init(name: "Second", processCount: 1, cpu: 1, memory: 1),
+  ]
+  detail.update(sample, history: [])
+  control.selectedSegment = 1
+  #expect(NSApp.sendAction(try #require(control.action), to: control.target, from: control))
+  let heading = table.view(atColumn: 0, row: header, makeIfNecessary: true) as? NSTextField
+  #expect(heading?.stringValue == "Top apps")
+  #expect(control.superview === cell && window.firstResponder === control)
+}
+
+@Test @MainActor func brokerTableCellReservesTheCountAndKeepsPIDProvenance() throws {
+  let cell = ProcessAppLabelCell(frame: .init(x: 0, y: 0, width: 165, height: 25))
+  cell.update(
+    .init(name: "Shared broker", icon: ProcessAppDisplayCache.placeholder), count: 1, path: nil,
+    provenance: "Shared broker · 99")
+  cell.needsLayout = true
+  cell.layoutSubtreeIfNeeded()
+  let fields = cell.subviews.compactMap { $0 as? NSTextField }
+  let name = try #require(fields.first { $0.stringValue == "Shared broker" })
+  let count = try #require(fields.first { $0.stringValue == "1" })
+  #expect(!name.frame.intersects(count.frame))
+  #expect(name.intrinsicContentSize.width <= name.frame.width)
+  #expect(count.toolTip == "1 process")
+  #expect(cell.accessibilityLabel()?.contains("Shared broker · 99") == true)
+  #expect(cell.accessibilityLabel()?.contains("1 process") == true)
 }
