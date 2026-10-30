@@ -267,6 +267,7 @@ public struct Snapshot: Sendable {
   public var selectedSensor: SensorReading?
   public var thermalState = "Nominal", lowPower = false, sampleMilliseconds: Double = 0
   public var download: Double?, upload: Double?
+  public var cpuApps: [ProcessAppReading] = [], memoryApps: [ProcessAppReading] = []
   public var selectedInterface = "", processTimestamp: Date?
   public var networkConfiguration = NetworkConfiguration()
   public var networkDetailsSampledAt: Double?

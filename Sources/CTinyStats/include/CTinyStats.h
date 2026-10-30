@@ -30,6 +30,7 @@ size_t ts_read_disks(ts_disk_io *out, size_t capacity);
 size_t ts_read_volumes(ts_volume *out, size_t capacity);
 /* Count estimate only: the caller must retry a filled record buffer. */
 int32_t ts_process_count_hint(void);
+bool ts_read_process_path(int32_t pid, uint64_t started, char *path, size_t capacity);
 size_t ts_read_processes(ts_process *out, size_t capacity);
 // Identity only: pid/start/name are populated; no process inventory is enumerated.
 bool ts_read_process_identity(int32_t pid, ts_process *out);

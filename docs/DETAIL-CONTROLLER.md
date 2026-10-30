@@ -31,3 +31,6 @@ Summary and Weather documents move into native scroll views only for dropdown pr
 
 
 In the persistent window, Overview's existing Pause/Resume and History buttons occupy its toolbar, with their callbacks unchanged; other pages keep their existing window action placement. Promoting a dropdown restores titled button presentation and widths; returning from Overview resets those frames and icons. The summary remains the same immediate-mode view and keeps its early return, bounded histories, hover inspection and reused accessibility children. Sidebar section headings display Advanced and Settings in secondary system text; module enum order, shortcuts and accessibility identities remain stable.
+
+
+CPU/Memory/Network share one `ProcessGroupingControl`, owned by DetailController and reparented into the Summary process card header or the All readings heading’s trailing cell. The persisted Network key now applies to all three modules. The input-only readings builder consumes bounded worker app projections; it never reconstructs app totals from its seven process rows. A single detail-lifetime display cache supplies only drawn/realized bundle names/icons on the main actor; closing the controller releases the cache. See [Components](COMPONENTS.md#cpu-memory-and-network-process-grouping).

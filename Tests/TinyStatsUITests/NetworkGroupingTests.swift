@@ -5,6 +5,10 @@ import Testing
 @testable import TinyStats
 @testable import TinyStatsCore
 
+@MainActor private func groupingDescendants(_ root: NSView) -> [NSView] {
+  root.subviews.flatMap { [$0] + groupingDescendants($0) }
+}
+
 @Test func trafficGroupingMigratesAndRoundTripsWithoutChangingExistingChoices() throws {
   let legacy = try JSONDecoder().decode(
     Settings.self, from: Data("{\"theme\":\"dark\",\"networkInterface\":\"en0\"}".utf8))
@@ -22,10 +26,10 @@ import Testing
   let controller = DetailController()
   controller.selected = .network
   let control = try #require(
-    controller.view.subviews.compactMap { $0 as? NSSegmentedControl }.first)
+    groupingDescendants(controller.view).compactMap { $0 as? NSSegmentedControl }.first)
   #expect(!control.isHidden && control.selectedSegment == 0)
   var chosen: TrafficGrouping?
-  controller.onNetworkGrouping = { [weak controller] mode in
+  controller.onProcessGrouping = { [weak controller] mode in
     chosen = mode
     controller?.settings.networkTrafficRevision = "new"
   }
@@ -51,14 +55,15 @@ import Testing
   controller.update(snapshot, history: [])
   let summary = try #require(
     controller.view.subviews.compactMap { $0 as? SummaryDashboardView }.first)
-  #expect(summary.cards.map(\.spoken).joined().contains("Stale bundle · 2 active"))
+  #expect(summary.cards.map(\.spoken).joined().contains("Stale bundle · 2 processes"))
   controller.selected = .cpu
-  #expect(control.isHidden)
+  #expect(!control.isHidden)
   controller.selected = .network
   #expect(!control.isHidden && control.selectedSegment == 1)
-  let history = try #require(
-    controller.view.subviews.compactMap { $0 as? NSButton }.first { $0.title == "History…" })
-  #expect(control.frame.maxX <= history.frame.minX)
+  #expect(control.superview === summary)
+  let card = try #require(summary.cards.first { $0.groupsProcesses })
+  #expect(card.frame.contains(control.frame))
+  #expect(control.frame.minY == card.frame.minY + 5)
 }
 @Test @MainActor func bundleDashboardKeepsGraphicalRatesAndMakesScopeSpoken() throws {
   var snapshot = Snapshot()
@@ -72,9 +77,9 @@ import Testing
   let view = SummaryDashboardView(frame: .init(x: 0, y: 0, width: 520, height: 454))
   view.update(snapshot, history: [], settings: settings, module: .network)
   let card = try #require(view.cards.last)
-  #expect(card.title.contains("APP BUNDLES") && card.title.contains("PARTIAL"))
+  #expect(card.title.contains("APP TRAFFIC") && card.title.contains("PARTIAL"))
   #expect(
-    card.spoken.contains("Browser · 3 active")
+    card.spoken.contains("Browser · 3 processes")
       && card.spoken.contains("shared / unresolved separate"))
   guard case .rows(let rows) = card.content else {
     Issue.record("Missing paired graphical rows")
@@ -87,7 +92,7 @@ import Testing
   let preferences = PreferencesController(
     settings: Settings(), interfaces: [], snapshot: Snapshot(), history: [])
   defer { preferences.close() }
-  preferences.updateNetworkGrouping(.bundles, revision: "live")
+  preferences.updateProcessGrouping(.bundles, revision: "live")
   var saved: Settings?
   preferences.onChange = { saved = $0 }
   func descendants(_ root: NSView) -> [NSView] { root.subviews.flatMap { [$0] + descendants($0) } }
@@ -136,7 +141,7 @@ import Testing
   let rows = rowStrings()
   #expect(
     rows.contains {
-      $0.0 == "Browser · 3 active" && $0.1 == "↓ \(Display.rate(2048))  ↑ \(Display.rate(1024))"
+      $0.0 == "Browser · 3 processes" && $0.1 == "↓ \(Display.rate(2048))  ↑ \(Display.rate(1024))"
     })
   #expect(rows.contains { $0.0 == "Broker · 99" && $0.1 == "↓ 512 B/s  ↑ 256 B/s" })
   #expect(!rows.contains { $0.0.contains("Duplicate sentinel") })
@@ -211,4 +216,38 @@ import Testing
         to: folder.appendingPathComponent("synthetic-\(state)-\(theme).png"))
     }
   }
+}
+
+@Test func oneSharedGroupingPreferenceKeepsTheOriginalPersistedValueAndDefaults() throws {
+  let saved = try JSONDecoder().decode(
+    Settings.self,
+    from: Data(#"{"networkTrafficGrouping":"bundles","networkTrafficRevision":"saved"}"#.utf8))
+  #expect(saved.processGrouping == .bundles)
+  var updated = saved
+  updated.processGrouping = .processes
+  #expect(updated.networkTrafficGrouping == .processes && updated.networkTrafficRevision == "saved")
+  #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(updated)) == updated)
+  let suite = "TinyStatsGroupingTests-" + UUID().uuidString
+  let store = try #require(UserDefaults(suiteName: suite))
+  defer { store.removePersistentDomain(forName: suite) }
+  saved.save(to: store)
+  #expect(Settings.load(from: store).processGrouping == .bundles)
+}
+
+@Test @MainActor func appReadingsKeepKnownCPUWithoutCoreInventoryAndUnavailableMemory() throws {
+  var settings = Settings()
+  settings.processGrouping = .bundles
+  var sample = Snapshot()
+  sample.cpuApps = [.init(name: "App", processCount: 2, cpu: 4, memory: nil)]
+  sample.memoryApps = sample.cpuApps
+  let cpu = try #require(
+    DetailReadingsBuilder.build(
+      module: .cpu, snapshot: sample, history: [], settings: settings, paused: true))
+  let row = try #require(cpu.rows.first { $0.label == "App · 2 processes" })
+  #expect(row.value == "4.0% of one core" && row.meter == nil)
+  let memory = try #require(
+    DetailReadingsBuilder.build(
+      module: .memory, snapshot: sample, history: [], settings: settings, paused: true))
+  #expect(memory.rows.first { $0.label == "App · 2 processes" }?.value == "—")
+  #expect(memory.rows.contains { $0.label == "Shared pages" && $0.value == "May be counted twice" })
 }

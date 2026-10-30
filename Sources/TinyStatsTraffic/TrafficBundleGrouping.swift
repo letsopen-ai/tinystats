@@ -4,23 +4,8 @@ import Foundation
 /// Executable bundle paths are observed now, not delegated network responsibility.
 /// No filesystem reads, icons, IPC, timers or retained path/identity caches.
 enum TrafficBundleGrouping {
-  struct Bundle: Equatable { var path: String, name: String }
-  static func bundle(for path: String) -> Bundle? {
-    guard path.utf8.count < 4096, path.hasPrefix("/"), !path.hasSuffix("/"),
-      !path.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
-    else { return nil }
-    let parts = path.split(separator: "/", omittingEmptySubsequences: false)
-    guard !parts.dropFirst().contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else {
-      return nil
-    }
-    for i in 1..<max(1, parts.count - 2) {
-      let part = parts[i]
-      if part.hasSuffix(".app"), part.count > 4, parts[i + 1] == "Contents" {
-        return Bundle(path: parts[0...i].joined(separator: "/"), name: String(part.dropLast(4)))
-      }
-    }
-    return nil
-  }
+  typealias Bundle = ExecutableBundle.Bundle
+  static func bundle(for path: String) -> Bundle? { ExecutableBundle.bundle(for: path) }
   static func rows(_ owners: [ProcessTrafficReading]) -> [TrafficBundleReading]? {
     var buffer = [CChar](repeating: 0, count: 4096)
     return rows(owners) { owner in
@@ -54,7 +39,7 @@ enum TrafficBundleGrouping {
         groups[key]
         ?? .init(
           name: bundle?.name ?? owner.name, processCount: 0, pid: bundle == nil ? owner.pid : nil,
-          download: 0, upload: 0)
+          download: 0, upload: 0, bundlePath: bundle?.path)
       row.processCount += 1
       row.download += owner.download
       row.upload += owner.upload
