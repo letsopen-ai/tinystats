@@ -148,7 +148,10 @@ import Testing
   let cases: [(String, Module, Bool, Bool, Int)] = [
     ("cpu", .cpu, true, false, 0), ("memory", .memory, true, false, 0),
     ("network", .network, true, false, 0), ("overview", .overview, true, false, 0),
-    ("sensors", .sensors, true, false, 0), ("main-window", .overview, false, false, 0),
+    ("sensors", .sensors, true, false, 0),
+    // Keep the original eleven surfaces/names and add a paired Sensors readings capture.
+    ("sensors-readings", .sensors, true, false, 0),
+    ("main-window", .overview, false, false, 0),
     ("settings-menu-bar", .overview, false, true, 0),
     ("solid-cpu", .cpu, true, false, 1), ("solid-main-window", .overview, false, false, 1),
     ("contrast-cpu", .cpu, true, false, 2), ("contrast-main-window", .overview, false, false, 2),
@@ -168,6 +171,7 @@ import Testing
       controller.settings.processGrouping = .bundles
       controller.isPopoverPresentation = dropdown
       controller.selected = module
+      controller.showsAllReadings = surface == "sensors-readings"
       let size = dropdown ? SystemStyle.popoverSize : MainWindow.minimumSize
       controller.view.frame = .init(
         x: (1080 - size.width) / 2, y: (780 - size.height) / 2,

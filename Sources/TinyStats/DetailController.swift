@@ -442,7 +442,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     readingsPlatter.isHidden = detailScroll?.isHidden != false
     readingsPlatter.frame = .init(
       x: inset, y: bottom, width: width, height: max(0, tableTop - bottom))
-    detailScroll?.frame = readingsPlatter.frame.insetBy(dx: 12, dy: 6)
+    // Sensors draw selection 4pt inside the card; text retains its existing 12pt padding.
+    detailScroll?.frame = readingsPlatter.frame.insetBy(dx: selected == .sensors ? 0 : 12, dy: 6)
     let tableWidth = max(0, detailScroll?.contentSize.width ?? width)
     table.frame.size.width = tableWidth
     let columnWidth = max(
@@ -586,6 +587,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       tableView.makeView(withIdentifier: identifier, owner: self) as? SensorBrowserRowView
       ?? SensorBrowserRowView()
     view.identifier = identifier
+    view.horizontalCellInset = isPopoverPresentation ? 12 : 4
     return view
   }
   func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {

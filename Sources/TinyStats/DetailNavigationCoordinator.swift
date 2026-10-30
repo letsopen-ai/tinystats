@@ -8,6 +8,7 @@ final class DetailNavigationCoordinator: NSObject {
     .overview, .cpu, .gpu, .memory, .disks, .network, .battery, .clock, .weather,
   ]
   static let advancedModules: [Module] = [.sensors]
+  static let modernAdvancedSectionGap: CGFloat = 6
   let sidebar = NSView()
   let sidebarMaterial: GlassSurface
   private let advancedLabel = NSTextField(labelWithString: "Advanced")
@@ -143,7 +144,7 @@ final class DetailNavigationCoordinator: NSObject {
     for (index, module) in Self.mainModules.enumerated() {
       moduleButtons[module]?.frame.origin.y = height - 83 - CGFloat(index * 35)
     }
-    let sectionGap: CGFloat = inset == 0 ? 0 : 6
+    let sectionGap: CGFloat = inset == 0 ? 0 : Self.modernAdvancedSectionGap
     advancedLabel.frame = .init(x: 17, y: height - 382 - sectionGap, width: 100, height: 15)
     for (index, module) in Self.advancedModules.enumerated() {
       moduleButtons[module]?.frame.origin.y = height - 418 - sectionGap - CGFloat(index * 35)
