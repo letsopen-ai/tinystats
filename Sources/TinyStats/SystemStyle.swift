@@ -13,7 +13,8 @@ enum SystemStyle {
     static let gap: CGFloat = 8
     static let popoverInset: CGFloat = 10
     static let row: CGFloat = 36
-    static let action: CGFloat = 26
+    static let action: CGFloat = 28
+    static let actionBar: CGFloat = 34
   }
   enum TypeSize {
     static let value: CGFloat = 30
@@ -239,10 +240,52 @@ enum SystemStyle {
   override func draw(_ dirtyRect: NSRect) { Self.draw(segments, in: bounds) }
 }
 
-/// Native button semantics and keyboard/AX activation, with a full-width menu hit target.
+/// Shared native action control: compact icons in dropdowns, standard buttons in windows.
 @MainActor final class MenuActionRow: NSButton {
   private var hoverTracking: NSTrackingArea?
   private var hovering = false
+  private var iconName: String?
+  var usesIconPresentation = false {
+    didSet {
+      guard oldValue != usesIconPresentation else { return }
+      imagePosition = usesIconPresentation ? .imageOnly : .imageLeading
+      if !usesIconPresentation { image = nil }
+      hovering = false
+      needsDisplay = true
+      noteFocusRingMaskChanged()
+    }
+  }
+  func setIcon(_ name: String, fallback: String) {
+    // AppKit can restore image-leading placement when a button's title changes.
+    defer { imagePosition = .imageOnly }
+    guard iconName != name || image == nil else { return }
+    iconName = name
+    image = Self.symbolImage(name, fallback: fallback)
+  }
+  static func symbolImage(_ name: String, fallback: String) -> NSImage? {
+    (NSImage(systemSymbolName: name, accessibilityDescription: nil)
+      ?? NSImage(systemSymbolName: fallback, accessibilityDescription: nil))?
+      .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+  }
+  override var acceptsFirstResponder: Bool { isEnabled && !isHiddenOrHasHiddenAncestor }
+  override var canBecomeKeyView: Bool { acceptsFirstResponder }
+  override func keyDown(with event: NSEvent) {
+    let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    if modifiers.isEmpty, [" ", "\r", "\u{3}"].contains(event.charactersIgnoringModifiers),
+      isEnabled
+    {
+      performClick(nil)
+    } else {
+      super.keyDown(with: event)
+    }
+  }
+  override var focusRingMaskBounds: NSRect { bounds }
+  override func drawFocusRingMask() {
+    NSBezierPath(
+      roundedRect: bounds, xRadius: SystemStyle.Radius.control,
+      yRadius: SystemStyle.Radius.control
+    ).fill()
+  }
   override func updateTrackingAreas() {
     super.updateTrackingAreas()
     if let hoverTracking { removeTrackingArea(hoverTracking) }
@@ -261,6 +304,17 @@ enum SystemStyle {
     needsDisplay = true
   }
   override func draw(_ dirtyRect: NSRect) {
+    if usesIconPresentation {
+      if isEnabled && (hovering || isHighlighted) {
+        NSColor.labelColor.withAlphaComponent(isHighlighted ? 0.14 : 0.07).setFill()
+        NSBezierPath(
+          roundedRect: bounds, xRadius: SystemStyle.Radius.control,
+          yRadius: SystemStyle.Radius.control
+        ).fill()
+      }
+      cell?.drawInterior(withFrame: bounds, in: self)
+      return
+    }
     guard !isBordered else {
       super.draw(dirtyRect)
       return
@@ -288,6 +342,8 @@ enum SystemStyle {
     alignment = .left
     font = .systemFont(ofSize: SystemStyle.TypeSize.body)
     setButtonType(.momentaryPushIn)
+    focusRingType = .exterior
+    contentTintColor = .labelColor
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }

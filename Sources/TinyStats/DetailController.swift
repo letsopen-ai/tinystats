@@ -34,6 +34,16 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let weatherScroll = NSScrollView()
   private let openWindowRow = MenuActionRow()
   private let footerSeparator = NSBox()
+  private struct PopoverKeyViewLayout: Equatable {
+    let window: ObjectIdentifier
+    let module: Module
+    let allReadings: Bool
+    let paused: Bool
+    let weatherEnabled: Bool
+    let weatherSource: WeatherLocationSource
+    let size: NSSize
+  }
+  private var popoverKeyViewLayout: PopoverKeyViewLayout?
   var onCalendarDate: ((Date) -> Void)?
   var onCalendarSettings: (() -> Void)?
   var calendarSnapshot = CalendarAgendaSnapshot()
@@ -207,6 +217,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     refresh()
   }
   private func configurePresentation() {
+    popoverKeyViewLayout = nil
     navigation?.sidebar.isHidden = isPopoverPresentation
     (view as? MainContentView)?.usesPopoverMaterial = isPopoverPresentation
     popoverMaterial.isHidden = !isPopoverPresentation
@@ -235,11 +246,12 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         view.addSubview(summary)
       }
     }
-    for button in [historyButton, readingsButton, pauseButton] {
+    for button in [historyButton, openWindowRow, readingsButton, pauseButton] {
+      button.usesIconPresentation = isPopoverPresentation
       button.isBordered = !isPopoverPresentation
       button.bezelStyle = isPopoverPresentation ? .recessed : .rounded
-      button.alignment = isPopoverPresentation ? .left : .center
-      button.font = .systemFont(ofSize: isPopoverPresentation ? 13 : 12)
+      button.alignment = .center
+      button.font = .systemFont(ofSize: 12)
     }
   }
   @objc private func openInWindow() { onOpenInWindow?() }
@@ -277,7 +289,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     let width = max(0, w - 180)
     titleLabel.frame.origin = .init(x: 154, y: h - 42)
-    readingsButton.frame.origin = .init(x: w - 132, y: h - 44)
+    readingsButton.frame = .init(x: w - 132, y: h - 44, width: 108, height: 26)
     historyButton.frame = .init(
       x: w - (selected == .overview ? 120 : 227), y: h - 44, width: selected == .overview ? 92 : 90,
       height: selected == .overview ? 28 : 26)
@@ -324,7 +336,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       historyButton.image = nil
     }
   }
-  /// A narrow material surface; the document scrolls, actions keep their full-width hit targets.
+  /// A narrow material surface; one fixed icon bar gives the remaining height to content.
   private func layoutPopover() {
     let w = view.bounds.width
     let h = view.bounds.height
@@ -333,16 +345,20 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let width = max(0, w - 2 * inset)
     popoverMaterial.frame = view.bounds
     navigation?.sidebar.isHidden = true
-    openWindowRow.title = "Open \(selected.title) in TinyStats"
-    let actions = [historyButton, openWindowRow, readingsButton, pauseButton].filter {
+    let actions = [historyButton, openWindowRow, readingsButton].filter {
       !$0.isHidden
     }
-    for (index, action) in actions.reversed().enumerated() {
+    let actionSize = SystemStyle.Space.action
+    let barTop = inset + SystemStyle.Space.actionBar
+    for (index, action) in actions.enumerated() {
       action.frame = .init(
-        x: inset + 4, y: inset + CGFloat(index) * 26, width: width - 8, height: 26)
+        x: inset + 4 + CGFloat(index) * (actionSize + SystemStyle.Space.gap), y: inset + 3,
+        width: actionSize, height: actionSize)
     }
-    let bottom = inset + CGFloat(actions.count) * 26 + 24
-    footerSeparator.frame = .init(x: inset + 4, y: bottom - 24, width: width - 8, height: 1)
+    pauseButton.frame = .init(
+      x: w - inset - 4 - actionSize, y: inset + 3, width: actionSize, height: actionSize)
+    let bottom = barTop + 24
+    footerSeparator.frame = .init(x: inset + 4, y: barTop, width: width - 8, height: 0.5)
     footnoteLabel.frame = .init(x: x, y: bottom - 20, width: width - 24, height: 14)
     footnoteLabel.toolTip = footnoteLabel.stringValue
     titleLabel.frame = .init(x: x, y: h - 39, width: width - 24, height: 20)
@@ -411,6 +427,18 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let tableWidth = max(0, (detailScroll?.contentSize.width ?? width) - 10)
     sizeColumn(table.tableColumns.first, to: tableWidth * 0.55)
     sizeColumn(table.tableColumns.last, to: tableWidth * 0.45)
+    if let window = view.window {
+      let keyLayout = PopoverKeyViewLayout(
+        window: ObjectIdentifier(window), module: selected, allReadings: showsAllReadings,
+        paused: paused, weatherEnabled: settings.weather.enabled,
+        weatherSource: settings.weather.source, size: view.bounds.size)
+      if keyLayout != popoverKeyViewLayout {
+        // New/hidden module controls need a fresh native loop after their final frames.
+        // Keep content controls reachable; unchanged samples do not rebuild traversal.
+        popoverKeyViewLayout = keyLayout
+        window.recalculateKeyViewLoop()
+      }
+    }
   }
   private func sizeColumn(_ column: NSTableColumn?, to width: CGFloat) {
     guard let column, column.width != width else { return }
@@ -678,6 +706,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         : selected == .sensors
           ? (showsAllReadings ? "Show summary" : "Show all readings and SMC keys")
           : showsAllReadings ? "Show summary" : "Show all readings")
+    updateActionPresentation()
     titleLabel.frame.size.width =
       selected == .overview && !isPopoverPresentation
       ? max(0, view.bounds.width - 390)
@@ -1012,6 +1041,25 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     table.setAccessibilityLabel("\(selected.title) details")
     reloadRows()
     updateFootnote()
+  }
+  private func updateActionPresentation() {
+    openWindowRow.title = "Open \(selected.title) in TinyStats"
+    for button in [historyButton, openWindowRow, pauseButton] {
+      button.setAccessibilityLabel(button.title)
+      button.toolTip = button.title
+    }
+    readingsButton.toolTip = readingsButton.accessibilityLabel()
+    guard isPopoverPresentation else { return }
+    historyButton.setIcon("clock.arrow.circlepath", fallback: "clock")
+    openWindowRow.setIcon("macwindow", fallback: "rectangle")
+    if selected == .clock {
+      readingsButton.setIcon("calendar", fallback: "clock")
+    } else if showsAllReadings {
+      readingsButton.setIcon("square.grid.2x2", fallback: "square")
+    } else {
+      readingsButton.setIcon("list.bullet.rectangle", fallback: "list.bullet")
+    }
+    pauseButton.setIcon(paused ? "play.fill" : "pause.fill", fallback: paused ? "play" : "pause")
   }
   private func updateFootnote() {
     if selected == .sensors

@@ -69,8 +69,11 @@ import Testing
   controller.view.setFrameSize(SystemStyle.popoverSize)
   var opened = 0
   var histories: [Module] = []
+  var calendarSettings = 0
   controller.onOpenInWindow = { opened += 1 }
   controller.onHistory = { histories.append($0) }
+  controller.onCalendarSettings = { calendarSettings += 1 }
+  controller.onPause = { [weak controller] in controller?.paused.toggle() }
   for module in Module.allCases {
     for allReadings in [false, true] {
       controller.selected = module
@@ -80,15 +83,64 @@ import Testing
       let buttons = controller.view.subviews.compactMap { $0 as? NSButton }.filter { !$0.isHidden }
       let open = try #require(buttons.first { $0.title == "Open \(module.title) in TinyStats" })
       #expect(controller.view.bounds.contains(open.frame))
-      #expect(open.frame.width == 316)
+      #expect(open.frame.width == 28)
       #expect(NSApp.sendAction(try #require(open.action), to: open.target, from: open))
-      for action in buttons.filter({ $0 is MenuActionRow }) {
+      let actions = buttons.compactMap { $0 as? MenuActionRow }.sorted {
+        $0.frame.minX < $1.frame.minX
+      }
+      let hasHistory = [.overview, .cpu, .gpu, .memory, .disks, .network, .battery].contains(module)
+      let optionTitle = module == .clock ? "Calendar…" : allReadings ? "Summary" : "All readings"
+      let expected =
+        (hasHistory ? ["History…"] : []) + [open.title]
+        + (module == .overview ? [] : [optionTitle]) + ["Pause"]
+      #expect(actions.map(\.title) == expected)
+      for action in actions {
         #expect(controller.view.bounds.contains(action.frame))
-        #expect(action.frame.height == 26)
+        #expect(action.frame.size == NSSize(width: 28, height: 28))
+        #expect(action.frame.minY == 13)
+        #expect(action.image != nil && action.imagePosition == .imageOnly)
+        #expect(!action.isBordered && action.usesIconPresentation)
+        #expect(action.toolTip == action.accessibilityLabel())
+        #expect(action.accessibilityLabel()?.isEmpty == false)
+        #expect(action.acceptsFirstResponder && action.focusRingType == .exterior)
+        #expect(action.keyEquivalent.isEmpty)
         for other in buttons where action !== other {
           #expect(!action.frame.intersects(other.frame))
         }
       }
+      if module != .overview {
+        let option = try #require(actions.first { $0.title == optionTitle })
+        let expectedLabel =
+          module == .clock
+          ? "Calendar settings"
+          : allReadings
+            ? "Show summary"
+            : module == .sensors ? "Show all readings and SMC keys" : "Show all readings"
+        #expect(option.accessibilityLabel() == expectedLabel)
+        let iconBefore = option.image
+        #expect(NSApp.sendAction(try #require(option.action), to: option.target, from: option))
+        if module == .clock {
+          #expect(calendarSettings == (allReadings ? 2 : 1))
+          #expect(controller.showsAllReadings == allReadings)
+          #expect(option.image === iconBefore)
+        } else {
+          #expect(controller.showsAllReadings != allReadings)
+          #expect(option.title == (allReadings ? "All readings" : "Summary"))
+          #expect(option.image !== iconBefore)
+          #expect(option.toolTip == option.accessibilityLabel())
+          controller.showsAllReadings = allReadings
+        }
+      }
+      let pause = try #require(actions.last)
+      let pauseIcon = pause.image
+      #expect(pause.frame.maxX == 330)
+      #expect(pause.accessibilityLabel() == "Pause")
+      pause.performClick(nil)
+      #expect(controller.paused && pause.title == "Resume")
+      #expect(pause.accessibilityLabel() == "Resume" && pause.toolTip == "Resume")
+      #expect(pause.image !== pauseIcon)
+      pause.performClick(nil)
+      #expect(!controller.paused && pause.accessibilityLabel() == "Pause")
       if let history = buttons.first(where: { $0.title == "History…" }) {
         #expect(NSApp.sendAction(try #require(history.action), to: history.target, from: history))
         #expect(histories.last == module)
@@ -98,6 +150,7 @@ import Testing
       if let summary = views.compactMap({ $0 as? SummaryDashboardView }).first, !summary.isHidden {
         #expect(summary.usesPopoverLayout)
         #expect(summary.enclosingScrollView != nil)
+        #expect(summary.enclosingScrollView?.frame.minY == 68)
         for card in summary.cards {
           #expect(card.frame.width == summary.bounds.width)
           #expect(summary.bounds.contains(card.frame))
@@ -114,6 +167,11 @@ import Testing
   let summary = try #require(
     controller.view.subviews.compactMap { $0 as? SummaryDashboardView }.first)
   #expect(!summary.usesPopoverLayout && summary.enclosingScrollView == nil)
+  let windowButtons = controller.view.subviews.compactMap { $0 as? MenuActionRow }
+    .filter { !$0.isHidden }
+  #expect(windowButtons.allSatisfy { !$0.usesIconPresentation && $0.isBordered })
+  #expect(windowButtons.first { $0.title == "All readings" }?.frame.width == 108)
+  #expect(windowButtons.allSatisfy { $0.image == nil })
   #expect(controller.view.subviews.first?.isHidden == false)
   controller.selected = .overview
   controller.view.layoutSubtreeIfNeeded()
@@ -122,6 +180,146 @@ import Testing
       $0.stringValue == "Overview"
     })
   #expect(title.frame.minX == 154)
+}
+
+@Test @MainActor func systemDropdownIconActionsParticipateInNativeKeyLoopAndActivate() throws {
+  _ = NSApplication.shared
+  let controller = DetailController()
+  controller.isPopoverPresentation = true
+  let window = NSWindow(
+    contentRect: .init(origin: .zero, size: SystemStyle.popoverSize), styleMask: [.titled],
+    backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
+  window.contentViewController = controller
+  window.setContentSize(SystemStyle.popoverSize)
+  defer {
+    window.contentViewController = nil
+    window.close()
+  }
+  var opened = 0
+  var histories: [Module] = []
+  var calendars = 0
+  controller.onOpenInWindow = { opened += 1 }
+  controller.onHistory = { histories.append($0) }
+  controller.onCalendarSettings = { calendars += 1 }
+  controller.onPause = { [weak controller] in controller?.paused.toggle() }
+  for module in Module.allCases {
+    for allReadings in [false, true] {
+      controller.selected = module
+      controller.showsAllReadings = allReadings
+      controller.view.layoutSubtreeIfNeeded()
+      let actions = controller.view.subviews.compactMap { $0 as? MenuActionRow }
+        .filter { !$0.isHidden }.sorted { $0.frame.minX < $1.frame.minX }
+      for (index, button) in actions.enumerated() {
+        #expect(window.makeFirstResponder(button))
+        #expect(window.firstResponder === button)
+        #expect(button.focusRingMaskBounds == button.bounds)
+        if index + 1 < actions.count {
+          window.selectNextKeyView(button)
+          #expect(window.firstResponder === actions[index + 1])
+          window.selectPreviousKeyView(actions[index + 1])
+          #expect(window.firstResponder === button)
+        }
+        for (characters, code) in [(" ", UInt16(49)), ("\r", UInt16(36))] {
+          let priorOpened = opened
+          let priorHistories = histories.count
+          let priorCalendars = calendars
+          let priorPaused = controller.paused
+          let priorReadings = controller.showsAllReadings
+          let title = button.title
+          let event = try #require(
+            NSEvent.keyEvent(
+              with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+              windowNumber: window.windowNumber, context: nil, characters: characters,
+              charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code))
+          window.sendEvent(event)
+          if title.hasPrefix("Open ") {
+            #expect(opened == priorOpened + 1)
+          } else if title == "History…" {
+            #expect(histories.count == priorHistories + 1 && histories.last == module)
+          } else if title == "Calendar…" {
+            #expect(calendars == priorCalendars + 1)
+          } else if title == "Pause" || title == "Resume" {
+            #expect(controller.paused != priorPaused)
+          } else {
+            #expect(controller.showsAllReadings != priorReadings)
+          }
+        }
+      }
+      // The native loop must also wrap and skip hidden module actions.
+      let first = try #require(actions.first)
+      var visited: [NSView] = []
+      var candidate: NSView? = first
+      while let current = candidate, !visited.contains(where: { $0 === current }),
+        visited.count < 40
+      {
+        visited.append(current)
+        candidate = current.nextValidKeyView
+      }
+      #expect(actions.allSatisfy { action in visited.contains { $0 === action } })
+      #expect(!visited.contains { $0.isHiddenOrHasHiddenAncestor })
+      if module == .sensors {
+        #expect(visited.contains { $0 is NSSearchField })
+      }
+      if module == .weather {
+        // The city picker is disabled while Weather is off; its opt-in action stays available.
+        #expect(!visited.contains { ($0 as? NSPopUpButton)?.isEnabled == false })
+      }
+    }
+  }
+}
+
+@Test @MainActor func systemDropdownIconsFallbackToAvailableSymbols() throws {
+  let fallback = try #require(MenuActionRow.symbolImage("clock", fallback: "clock"))
+  let unavailable = try #require(
+    MenuActionRow.symbolImage("tinystats.unavailable.symbol", fallback: "clock"))
+  #expect(unavailable.tiffRepresentation == fallback.tiffRepresentation)
+}
+
+@Test @MainActor func systemDropdownIconHoverAndPressRenderInBothAppearances() throws {
+  _ = NSApplication.shared
+  let controller = DetailController()
+  controller.isPopoverPresentation = true
+  controller.loadViewIfNeeded()
+  controller.view.setFrameSize(SystemStyle.popoverSize)
+  controller.selected = .cpu
+  controller.view.layoutSubtreeIfNeeded()
+  let button = try #require(
+    controller.view.subviews.compactMap { $0 as? MenuActionRow }.first { $0.title == "History…" })
+  let event = try #require(
+    NSEvent.enterExitEvent(
+      with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0,
+      windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+  for name in [NSAppearance.Name.aqua, .darkAqua] {
+    controller.view.appearance = NSAppearance(named: name)
+    func render(_ state: String) throws -> Data {
+      let rect = NSRect(x: 0, y: 0, width: 344, height: 54)
+      let bitmap = try #require(controller.view.bitmapImageRepForCachingDisplay(in: rect))
+      controller.view.cacheDisplay(in: rect, to: bitmap)
+      let png = try #require(bitmap.representation(using: .png, properties: [:]))
+      if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try png.write(to: url.appendingPathComponent("footer-\(state)-\(name.rawValue).png"))
+      }
+      return png
+    }
+    let normal = try render("normal")
+    button.mouseEntered(with: event)
+    let hover = try render("hover")
+    button.highlight(true)
+    let pressed = try render("pressed")
+    #expect(normal != hover && hover != pressed)
+    button.highlight(false)
+    button.mouseExited(with: event)
+    #expect(try render("normal") == normal)
+    #expect(button.accessibilityLabel() == "History…")
+    button.isEnabled = false
+    button.mouseEntered(with: event)
+    #expect(!button.acceptsFirstResponder && !button.canBecomeKeyView)
+    button.mouseExited(with: event)
+    button.isEnabled = true
+  }
 }
 
 @Test @MainActor func systemPopoverRenderingGalleryPreservesMissingAndZeroReadings() throws {
@@ -191,19 +389,30 @@ import Testing
       sample.sensors.append(.init(key: "TB0T", name: "Battery", kind: .temperature, value: 31))
     }
     controller.update(sample, history: history)
-    for name in [NSAppearance.Name.aqua, .darkAqua] {
-      controller.view.appearance = NSAppearance(named: name)
-      controller.view.layoutSubtreeIfNeeded()
-      let bitmap = try #require(
-        controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds))
-      controller.view.cacheDisplay(in: controller.view.bounds, to: bitmap)
-      if let directory = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
-        let url = URL(fileURLWithPath: directory, isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        try #require(bitmap.representation(using: .png, properties: [:])).write(
-          to: url.appendingPathComponent("\(module.rawValue)-\(name.rawValue).png"))
+    // Existing filenames keep the summary/running fixture; add the alternate icons per module.
+    for alternate in [false, true] {
+      controller.showsAllReadings = alternate
+      controller.paused = alternate
+      for name in [NSAppearance.Name.aqua, .darkAqua] {
+        controller.view.appearance = NSAppearance(named: name)
+        controller.view.layoutSubtreeIfNeeded()
+        let actions = controller.view.subviews.compactMap { $0 as? MenuActionRow }
+          .filter { !$0.isHidden }
+        #expect(actions.allSatisfy { $0.image != nil && $0.imagePosition == .imageOnly })
+        let bitmap = try #require(
+          controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds))
+        controller.view.cacheDisplay(in: controller.view.bounds, to: bitmap)
+        if let directory = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
+          let url = URL(fileURLWithPath: directory, isDirectory: true)
+          try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+          let state = alternate ? "-readings-paused" : ""
+          try #require(bitmap.representation(using: .png, properties: [:])).write(
+            to: url.appendingPathComponent("\(module.rawValue)\(state)-\(name.rawValue).png"))
+        }
       }
     }
+    controller.showsAllReadings = false
+    controller.paused = false
   }
   controller.isPopoverPresentation = false
   controller.selected = .overview
