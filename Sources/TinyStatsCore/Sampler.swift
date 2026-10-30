@@ -22,6 +22,7 @@ public final class Sampler {
     var started: UInt64
     var cpu = RateCounter(), read = RateCounter(), written = RateCounter()
   }
+  private var processBundleCache = ProcessBundleCache()
   private var processRates: [Int32: ProcessState] = [:]
   private var gpuProcessTime = GPUProcessTimeCollector()
   private var lastSlow = -Double.infinity, lastSensors = -Double.infinity
@@ -38,6 +39,7 @@ public final class Sampler {
     networkRates = [:]
     diskRates = [:]
     processRates = [:]
+    processBundleCache = .init()
     gpuProcessTime.reset()
     cached.gpuTime = .init()
     lastSlow = -Double.infinity
@@ -83,8 +85,11 @@ public final class Sampler {
   }
   public func clearProcessBaselines() {
     processRates = [:]
+    processBundleCache = .init()
     gpuProcessTime.reset()
     cached.gpuTime = .init()
+    cached.cpuApps = []
+    cached.memoryApps = []
     cached.processes = []
     cached.processTimestamp = nil
   }
@@ -132,7 +137,7 @@ public final class Sampler {
     }
     if detailModule == .network {
       snapshot.networkTraffic = networkTraffic.read(
-        at: started, grouping: settings.networkTrafficGrouping)
+        at: started, grouping: settings.processGrouping)
       snapshot.networkTraffic.revision = settings.networkTrafficRevision
       let radio = wifiReader ?? WiFiReader()
       wifiReader = radio
@@ -172,10 +177,18 @@ public final class Sampler {
     snapshot.download = selected?.download
     snapshot.upload = selected?.upload
     if includeProcesses {
-      snapshot.processes = readProcesses(at: started)
+      let groupsApps =
+        settings.processGrouping == .bundles && (detailModule == .cpu || detailModule == .memory)
+      let processes = readProcesses(at: started, groupApps: groupsApps)
+      snapshot.processes = processes.processes
+      snapshot.cpuApps = processes.cpu
+      snapshot.memoryApps = processes.memory
       snapshot.processTimestamp = snapshot.timestamp
     } else {
       processRates = [:]
+      processBundleCache = .init()
+      snapshot.cpuApps = []
+      snapshot.memoryApps = []
       snapshot.processes = []
       snapshot.processTimestamp = nil
     }
@@ -287,7 +300,9 @@ public final class Sampler {
         mountID: $0.mount_id)
     }
   }
-  private func readProcesses(at time: Double) -> [ProcessReading] {
+  private func readProcesses(at time: Double, groupApps: Bool) -> (
+    processes: [ProcessReading], cpu: [ProcessAppReading], memory: [ProcessAppReading]
+  ) {
     let raw = ProcessSampleBuffer.read(estimatedCount: Int(ts_process_count_hint())) { output in
       ts_read_processes(&output, output.count)
     }
@@ -307,6 +322,21 @@ public final class Sampler {
         read: read, written: written)
     }
     processRates = processRates.filter { alive.contains($0.key) }
+    var apps: (cpu: [ProcessAppReading], memory: [ProcessAppReading]) = ([], [])
+    if groupApps {
+      processBundleCache.beginScan()
+      var buffer = [CChar](repeating: 0, count: 4096)
+      let bundles = raw.map { row -> ExecutableBundle.Bundle? in
+        guard ts_read_process_path(row.pid, row.started, &buffer, buffer.count) else { return nil }
+        let path = String(
+          bytes: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, encoding: .utf8)
+        return path.flatMap { processBundleCache.resolve($0) }
+      }
+      processBundleCache.endScan()
+      apps = ProcessAppGrouping.rows(result, bundles: bundles)
+    } else {
+      processBundleCache = .init()
+    }
     // Retain baselines for all visible processes; carry only top lists to the UI.
     let cpu = result.sorted { ($0.cpu ?? 0) > ($1.cpu ?? 0) }.prefix(8)
     let memory = result.sorted { $0.memory > $1.memory }.prefix(8)
@@ -314,7 +344,10 @@ public final class Sampler {
       ($0.diskActivity ?? 0) > ($1.diskActivity ?? 0)
     }.prefix(8)
     var seen = Set<Int32>()
-    return (Array(cpu) + Array(memory) + Array(io)).filter { seen.insert($0.pid).inserted }
+    return (
+      (Array(cpu) + Array(memory) + Array(io)).filter { seen.insert($0.pid).inserted }, apps.cpu,
+      apps.memory
+    )
   }
 }
 

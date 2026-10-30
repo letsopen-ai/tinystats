@@ -157,6 +157,22 @@ bool ts_read_process_identity(int32_t pid, ts_process *out) {
     out->started = after.ri_proc_start_abstime;
     return true;
 }
+// Observe the current executable, bracketing PID reuse and executable UUID changes.
+// No filesystem metadata calls. A path is not delegated responsibility.
+bool ts_read_process_path(int32_t pid, uint64_t started, char *path, size_t capacity) {
+    if (!path || capacity != PROC_PIDPATHINFO_MAXSIZE) return false;
+    memset(path, 0, capacity);
+    struct rusage_info_v2 before = {0}, after = {0};
+    if (pid <= 0 || !started || proc_pid_rusage(pid, RUSAGE_INFO_V2, (rusage_info_t *)&before) != 0
+        || before.ri_proc_start_abstime != started) return false;
+    int count = proc_pidpath(pid, path, (uint32_t)capacity);
+    if (count <= 0 || (size_t)count >= capacity || path[0] != '/' || !memchr(path, 0, capacity)
+        || proc_pid_rusage(pid, RUSAGE_INFO_V2, (rusage_info_t *)&after) != 0
+        || after.ri_proc_start_abstime != started || memcmp(before.ri_uuid, after.ri_uuid, sizeof(before.ri_uuid))) {
+        memset(path, 0, capacity); return false;
+    }
+    return true;
+}
 size_t ts_read_processes(ts_process *out, size_t capacity) {
     mach_timebase_info_data_t timebase = {0};
     if (mach_timebase_info(&timebase) != KERN_SUCCESS || !timebase.numer || !timebase.denom) return 0;

@@ -72,8 +72,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   var weatherCitiesStatus = "Saved Weather cities unavailable" {
     didSet { if isViewLoaded && selected == .weather { refresh() } }
   }
-  var onNetworkGrouping: ((TrafficGrouping) -> Void)?
-  private var networkGrouping: NSSegmentedControl?
+  var onProcessGrouping: ((TrafficGrouping) -> Void)?
+  private var processGroupingControl: ProcessGroupingControl?
+  private let appDisplayCache = ProcessAppDisplayCache()
   var onWeatherCity: ((WeatherLocation?) -> Void)?
   var onWeatherEnabled: ((Bool) -> Void)?
   var onWeatherLocationRequest: (() -> Void)?
@@ -303,7 +304,6 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       x: w - (selected == .overview ? 120 : 227), y: h - 44, width: selected == .overview ? 92 : 90,
       height: selected == .overview ? 28 : 26)
     sensorSearch.frame = .init(x: 300, y: h - 44, width: max(0, w - 442), height: 26)
-    networkGrouping?.frame.origin.y = h - 44
     weatherCityPicker?.frame = .init(x: 250, y: h - 44, width: max(0, w - 395), height: 26)
     weatherDashboard?.frame = .init(x: 154, y: 56, width: width, height: max(0, h - 186))
     weatherControls?.frame = .init(x: 154, y: h - 118, width: width, height: 70)
@@ -385,10 +385,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     if selected == .weather && !showsAllReadings { titleLabel.isHidden = true }
     var top = h - (compact ? 10 : 118)
-    if selected == .sensors || selected == .network {
+    if selected == .sensors {
       top -= 32
       sensorSearch.frame = .init(x: inset, y: top + 4, width: width, height: 26)
-      networkGrouping?.frame = .init(x: inset, y: top + 4, width: width, height: 26)
     }
     if selected == .weather {
       weatherCityPicker?.frame = .init(x: inset, y: h - 40, width: width, height: 26)
@@ -464,13 +463,13 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   @objc private func enableWeather(_ sender: NSButton) { onWeatherEnabled?(sender.state == .on) }
   @objc private func requestWeatherLocation() { onWeatherLocationRequest?() }
   @objc private func editWeatherLocations() { onWeatherLocations?() }
-  @objc private func selectNetworkGrouping(_ sender: NSSegmentedControl) {
+  @objc private func selectProcessGrouping(_ sender: NSSegmentedControl) {
     let mode: TrafficGrouping = sender.selectedSegment == 1 ? .bundles : .processes
-    settings.networkTrafficGrouping = mode
+    settings.processGrouping = mode
     snapshot.networkTraffic = .init()
     snapshot.networkTraffic.grouping = mode
     snapshot.networkTraffic.message = "Collecting a new complete traffic interval."
-    onNetworkGrouping?(mode)
+    onProcessGrouping?(mode)
     refresh()
   }
   private func prepareWeatherControls() {
@@ -600,6 +599,28 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   {
     let id = NSUserInterfaceItemIdentifier(tableColumn?.identifier.rawValue ?? "label")
     let row = rows[index]
+    if id.rawValue == "value", row.processGroupingHeader, let control = processGroupingControl {
+      let header = NSView(
+        frame: .init(x: 0, y: 0, width: tableColumn?.width ?? 135, height: table.rowHeight))
+      header.addSubview(control)
+      control.isHidden = false
+      control.frame = .init(
+        x: max(0, header.bounds.width - ProcessGroupingControl.width), y: 3,
+        width: ProcessGroupingControl.width, height: 22)
+      control.autoresizingMask = [.minXMargin]
+      return header
+    }
+    if id.rawValue == "label", let path = row.bundlePath {
+      let cellID = NSUserInterfaceItemIdentifier("process-app-label")
+      let cell =
+        table.makeView(withIdentifier: cellID, owner: self) as? ProcessAppLabelCell
+        ?? ProcessAppLabelCell(frame: .zero)
+      cell.identifier = cellID
+      let fallback = row.label.components(separatedBy: " · ")[0]
+      cell.update(
+        appDisplayCache.entry(path: path, fallback: fallback), count: row.processCount, path: path)
+      return cell
+    }
     if id.rawValue == "value", let reading = row.meter {
       let meterID = NSUserInterfaceItemIdentifier("utilization-meter")
       let cell =
@@ -658,29 +679,24 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     guard isViewLoaded, !showsSettings else { return }
     chart.inspectionDateLabel = nil
     defer { layoutContent() }
-    if selected == .network {
-      if networkGrouping == nil {
-        let control = NSSegmentedControl(
-          labels: ["Processes", "App bundles"], trackingMode: .selectOne,
-          target: self, action: #selector(selectNetworkGrouping(_:)))
-        control.controlSize = .small
-        control.setAccessibilityLabel("Network traffic grouping")
-        control.toolTip =
-          "Group current executable bundle paths. Shared services and unresolved paths stay separate."
-        add(control, x: 284, y: 516, w: 184, h: 26)
-        networkGrouping = control
+    let groupsProcesses = [.cpu, .memory, .network].contains(selected)
+    if groupsProcesses {
+      if processGroupingControl == nil {
+        processGroupingControl = ProcessGroupingControl(
+          target: self, action: #selector(selectProcessGrouping(_:)))
       }
-      networkGrouping?.selectedSegment = settings.networkTrafficGrouping == .bundles ? 1 : 0
-      if snapshot.networkTraffic.grouping != settings.networkTrafficGrouping
-        || snapshot.networkTraffic.revision != settings.networkTrafficRevision
-      {
-        snapshot.networkTraffic = .init()
-        snapshot.networkTraffic.grouping = settings.networkTrafficGrouping
-        snapshot.networkTraffic.revision = settings.networkTrafficRevision
-        snapshot.networkTraffic.message = "Collecting a new complete traffic interval."
-      }
+      processGroupingControl?.selectedSegment = settings.processGrouping == .bundles ? 1 : 0
     }
-    networkGrouping?.isHidden = selected != .network
+    processGroupingControl?.isHidden = !groupsProcesses
+    if selected == .network,
+      snapshot.networkTraffic.grouping != settings.processGrouping
+        || snapshot.networkTraffic.revision != settings.networkTrafficRevision
+    {
+      snapshot.networkTraffic = .init()
+      snapshot.networkTraffic.grouping = settings.processGrouping
+      snapshot.networkTraffic.revision = settings.networkTrafficRevision
+      snapshot.networkTraffic.message = "Collecting a new complete traffic interval."
+    }
     titleLabel.isHidden = false
     footnoteLabel.isHidden = false
     pauseButton.isHidden = false
@@ -771,6 +787,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       if summary == nil {
         let dashboard = SummaryDashboardView(frame: .zero)
         add(dashboard, x: 154, y: 56, w: 520, h: 454)
+        dashboard.appDisplayCache = appDisplayCache
         summary = dashboard
         dashboard.usesPopoverLayout = isPopoverPresentation
         if isPopoverPresentation { summaryScroll.documentView = dashboard }
@@ -782,6 +799,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         subtitleLabel.stringValue = headline.subtitle
         summary?.popoverHeadline = (selected.title, headline.value, headline.subtitle)
       }
+      summary?.groupingControl = groupsProcesses ? processGroupingControl : nil
       summary?.update(s, history: history, settings: settings, module: selected)
       if !rows.isEmpty {
         rows = []
@@ -794,6 +812,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       updateFootnote()
       return
     }
+    if groupsProcesses { processGroupingControl?.removeFromSuperview() }
     chart.fitsDataRange = selected == .sensors
     chart.times = history.map(\.time)
     chart.upperBound = 100

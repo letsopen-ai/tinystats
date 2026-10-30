@@ -10,6 +10,9 @@ struct DetailRow: Equatable {
   var heading = false
   var meter: Meter?
   var sensorIdentity: SensorBrowserIdentity?
+  var processGroupingHeader = false
+  var bundlePath: String?
+  var processCount: Int = 1
   var accessibilityLabel: String?
 }
 
@@ -110,12 +113,44 @@ enum DetailReadingsBuilder {
         .init(name: name, color: color, values: history.map { $0[keyPath: key] }, role: role))
     }
     func processes(_ type: Module) {
+      let apps = type != .disks && settings.processGrouping == .bundles
       section(
-        type == .cpu
-          ? "TOP CPU · BARS = MAC CAPACITY"
-          : type == .memory ? "TOP MEMORY" : "TOP DISK I/O · READ + WRITE")
-      if type == .memory {
+        apps
+          ? "TOP APPS"
+          : type == .cpu
+            ? "TOP CPU · BARS = MAC CAPACITY"
+            : type == .memory ? "TOP MEMORY" : "TOP DISK I/O · READ + WRITE")
+      result.rows[result.rows.count - 1].processGroupingHeader = type != .disks
+      if type == .memory && !apps {
         result.rows[result.rows.count - 1].accessibilityLabel = "Top memory · physical footprint"
+      }
+      if apps {
+        let groups = type == .cpu ? s.cpuApps : s.memoryApps
+        if groups.isEmpty { row("Waiting for next process scan", "—") }
+        for app in groups.prefix(7) {
+          if type == .cpu {
+            let count = s.cpu?.cores.count ?? 0
+            if count > 0 {
+              utilization(
+                app.label, app.cpu.map { min(100, $0 / Double(count)) }, SystemStyle.accent,
+                text: Display.processPercent(app.cpu) + " of one core")
+            } else {
+              row(app.label, Display.processPercent(app.cpu) + " of one core")
+            }
+          } else {
+            row(app.label, app.memory.map(Display.bytes) ?? "—")
+          }
+          result.rows[result.rows.count - 1].bundlePath = app.bundlePath
+          result.rows[result.rows.count - 1].processCount = app.processCount
+          result.rows[result.rows.count - 1].accessibilityLabel =
+            app.label + (app.bundlePath.map { " · " + $0 } ?? "")
+        }
+        if type == .memory {
+          row("Shared pages", "May be counted twice")
+          result.rows[result.rows.count - 1].accessibilityLabel =
+            "Sum of per-process physical footprints · shared pages may be counted twice"
+        }
+        return
       }
       let list = s.processes.sorted { a, b in
         switch type {
@@ -362,14 +397,26 @@ enum DetailReadingsBuilder {
         row("Public IP", "Off · enable in Settings")
       }
       section(
-        settings.networkTrafficGrouping == .bundles
-          ? "APP BUNDLES · PARTIAL" : "PROCESS TRAFFIC · PARTIAL")
+        settings.processGrouping == .bundles
+          ? "APP TRAFFIC · PARTIAL" : "PROCESS TRAFFIC · PARTIAL")
+      result.rows[result.rows.count - 1].processGroupingHeader = true
       let traffic = s.networkTraffic
+      if traffic.availability == .ready && settings.processGrouping == .bundles {
+        if traffic.bundles.isEmpty { row("Active kernel TCP/UDP traffic", "None") }
+        for bundle in traffic.bundles {
+          row(
+            bundle.label, "↓ \(Display.rate(bundle.download))  ↑ \(Display.rate(bundle.upload))")
+          result.rows[result.rows.count - 1].bundlePath = bundle.bundlePath
+          result.rows[result.rows.count - 1].processCount = bundle.processCount
+          result.rows[result.rows.count - 1].accessibilityLabel =
+            bundle.label + (bundle.bundlePath.map { " · " + $0 } ?? "")
+        }
+      }
       row("Scope", "All interfaces + loopback")
       row("Coverage", "Kernel TCP/UDP only")
       row("Modern / QUIC", "Not fully covered")
       row("Accounting", traffic.message)
-      if settings.networkTrafficGrouping == .bundles {
+      if settings.processGrouping == .bundles {
         row("Grouping", "Current outermost executable bundle path")
         row("Active members", "Owners with bytes in this interval")
         row("Shared services / WebKit", "Separate processes · not attributed to apps")
@@ -381,17 +428,9 @@ enum DetailReadingsBuilder {
           "Process counters checked",
           "\(Int(max(0, s.uptime - checked)))s ago · \(traffic.activeSources) sockets")
       }
-      if traffic.availability == .ready {
-        if settings.networkTrafficGrouping == .bundles {
-          if traffic.bundles.isEmpty { row("Active kernel TCP/UDP traffic", "None") }
-          for bundle in traffic.bundles {
-            row(
-              bundle.label, "↓ \(Display.rate(bundle.download))  ↑ \(Display.rate(bundle.upload))")
-          }
-        } else if traffic.processes.isEmpty {
-          row("Accessible kernel sockets", "None")
-        }
-        for process in settings.networkTrafficGrouping == .processes ? traffic.processes : [] {
+      if traffic.availability == .ready && settings.processGrouping == .processes {
+        if traffic.processes.isEmpty { row("Accessible kernel sockets", "None") }
+        for process in traffic.processes {
           row(
             process.pid == 0 ? process.name : "\(process.name) · \(process.pid)",
             "↓ \(Display.rate(process.download))  ↑ \(Display.rate(process.upload))")

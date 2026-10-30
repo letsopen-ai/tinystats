@@ -29,6 +29,8 @@ extension SummaryDashboardView {
     var secondFraction: Double? = nil
     var secondColor: NSColor = SystemStyle.secondaryAccent
     var accessibilityValue: String? = nil
+    var bundlePath: String? = nil
+    var processCount: Int = 1
   }
   struct Gauge {
     var label: String, value: String
@@ -73,6 +75,7 @@ extension SummaryDashboardView {
   }
   struct Card {
     var frame: NSRect, title: String, trailing: String = "", content: Content, note: String = ""
+    var groupsProcesses = false
     var headerHeight: CGFloat = 31
     var contentRect: NSRect {
       .init(
@@ -96,7 +99,8 @@ extension SummaryDashboardView {
       case .message(let message): parts.append(message)
       case .rows(let rows):
         parts += rows.map {
-          $0.label + ": " + ($0.accessibilityValue ?? $0.value)
+          $0.label + ($0.bundlePath.map { " · " + $0 } ?? "") + ": "
+            + ($0.accessibilityValue ?? $0.value)
             + ($0.second.map { ", " + $0 } ?? "")
         }
       case .tiles(let tiles, _):
@@ -111,7 +115,8 @@ extension SummaryDashboardView {
           return tile.label + ": " + tile.value
             + (tile.detail.isEmpty ? "" : ", " + tile.detail) + history
         }
-      case .gauges(let gauges): parts += gauges.map { $0.label + ": " + $0.value }
+      case .gauges(let gauges):
+        parts += gauges.map { $0.label + ": " + $0.value }
       case .memory(let memory):
         let c = memory.composition
         parts += [
@@ -237,12 +242,29 @@ extension SummaryDashboardView {
             x: area.minX + area.width * 0.73 + 2,
             y: y + pairedLayout.meterY, width: barWidth - 4, height: 2), color: row.secondColor)
       }
+      var label = row.label
+      var iconInset: CGFloat = 0
+      if let path = row.bundlePath {
+        let entry = appDisplayCache.entry(
+          path: path, fallback: String((path as NSString).lastPathComponent.dropLast(4)))
+        entry.icon.draw(
+          in: .init(x: area.minX, y: y + max(0, (height - 16) / 2), width: 16, height: 16),
+          from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        label = entry.name
+        iconInset = 20
+        // Count gets its own reserved gutter; long app names cannot hide membership.
+        text(
+          "\(row.processCount)",
+          rect: .init(x: valueStart - 22, y: y, width: 19, height: max(16, height)),
+          color: .secondaryLabelColor, size: 10, alignment: .right)
+      }
       let textHeight = paired ? pairedLayout.textHeight : max(12, height)
       text(
-        row.label,
+        label,
         rect: NSRect(
-          x: area.minX + 3, y: y,
-          width: area.width * (paired ? 0.42 : 0.55) - 3, height: textHeight),
+          x: area.minX + 3 + iconInset, y: y,
+          width: area.width * (paired ? 0.42 : 0.55) - 3 - iconInset
+            - (row.bundlePath == nil ? 0 : 22), height: textHeight),
         size: height < 18 ? 10 : 11)
       text(
         row.value,

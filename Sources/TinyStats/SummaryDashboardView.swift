@@ -3,7 +3,7 @@ import TinyStatsCore
 
 /// Owns module assembly, layout, accessibility lifetime, and history charts.
 /// Card presentation lives in SummaryDashboardCards.swift and draws in this same view.
-/// No layers, per-card controls or timers. Overview draws the existing app icon.
+/// Immediate-mode cards share one native process-header control; no view timers.
 @MainActor final class SummaryDashboardView: ChartHoverView {
   /// Availability of a statistic among valid readings, not coverage of elapsed time.
   struct ObservationCoverage {
@@ -82,6 +82,17 @@ import TinyStatsCore
     }
   }
 
+  var appDisplayCache = ProcessAppDisplayCache()
+  weak var groupingControl: ProcessGroupingControl?
+  func layoutGroupingControl() {
+    guard let control = groupingControl, let card = cards.first(where: \.groupsProcesses) else {
+      return
+    }
+    if control.superview !== self { addSubview(control) }
+    control.frame = .init(
+      x: card.frame.maxX - ProcessGroupingControl.width - 10, y: card.frame.minY + 5,
+      width: ProcessGroupingControl.width, height: 22)
+  }
   private(set) var cards: [Card] = []
   var usesPopoverLayout = false
   private(set) var isOverview = false
@@ -98,9 +109,9 @@ import TinyStatsCore
     case .rows(let rows):
       return max(
         canonical.height, 38 + CGFloat(min(7, rows.count)) * 25 + (card.note.isEmpty ? 0 : 17))
-    case .none where card.title == "TOP PROCESSES": return 56
+    case .none where card.title == "TOP PROCESSES" || card.title == "TOP APPS": return 56
     case .none
-    where card.title.contains("TRAFFIC · PARTIAL") || card.title == "APP BUNDLES · PARTIAL":
+    where card.title.contains("TRAFFIC · PARTIAL"):
       return 96
     case .memory: return 204
     case .tiles(_, let columns): return max(canonical.height, columns > 2 ? 150 : 134)
@@ -128,9 +139,8 @@ import TinyStatsCore
   }
   private func isExpandable(_ card: Card) -> Bool {
     if case .plot = card.content { return true }
-    return card.title == "TOP PROCESSES" || card.title == "METAL GPU TIME"
+    return card.groupsProcesses || card.title == "TOP PROCESSES" || card.title == "METAL GPU TIME"
       || card.title.contains("TRAFFIC · PARTIAL")
-      || card.title == "APP BUNDLES · PARTIAL"
   }
   func displayedRows(in card: Card) -> ArraySlice<Reading> {
     guard case .rows(let rows) = card.content else { return [] }
@@ -153,6 +163,7 @@ import TinyStatsCore
     }
   }
   private func layoutSummaryCards() {
+    defer { layoutGroupingControl() }
     guard canonicalFrames.count == cards.count else { return }
     if usesOverviewLayout {
       for (index, frame) in Self.overviewFrames(in: bounds).enumerated()
@@ -216,7 +227,8 @@ import TinyStatsCore
       child.setAccessibilityFrame(
         window.map { $0.convertToScreen(convert(card.frame, to: nil)) } ?? card.frame)
     }
-    return accessibleCards + (hoverAccessibilityElement.map { [$0] } ?? [])
+    return accessibleCards + (groupingControl.map { [$0] } ?? [])
+      + (hoverAccessibilityElement.map { [$0] } ?? [])
   }
   func update(_ s: Snapshot, history: [HistoryPoint], settings: Settings, module: Module) {
     prepareTextStyles(for: module)
@@ -275,10 +287,20 @@ import TinyStatsCore
     func processName(_ process: ProcessReading) -> String {
       duplicateNames.contains(process.name) ? "\(process.name) (\(process.pid))" : process.name
     }
+    func appRows(_ apps: [ProcessAppReading], memory: Bool) -> [Reading] {
+      let fractions = Self.relativeFractions(
+        apps.map { memory ? $0.memory.map(Double.init) : $0.cpu })
+      return zip(apps, fractions).map { app, fraction in
+        Reading(
+          label: app.label,
+          value: memory ? app.memory.map(Display.bytes) ?? "—" : Display.processPercent(app.cpu),
+          fraction: fraction, bundlePath: app.bundlePath, processCount: app.processCount)
+      }
+    }
     func cpuProcesses() -> [Reading] {
+      if settings.processGrouping == .bundles { return appRows(s.cpuApps, memory: false) }
       let processes = Array(
-        s.processes.filter { $0.cpu != nil }.sorted { ($0.cpu ?? -1) > ($1.cpu ?? -1) }.prefix(12)
-      )
+        s.processes.filter { $0.cpu != nil }.sorted { ($0.cpu ?? -1) > ($1.cpu ?? -1) }.prefix(12))
       let fractions = Self.relativeFractions(processes.map(\.cpu))
       return zip(processes, fractions).map { process, fraction in
         Reading(
@@ -331,12 +353,17 @@ import TinyStatsCore
       ]
     }
     func trafficRows() -> [Reading] {
-      guard s.networkTraffic.grouping == settings.networkTrafficGrouping,
+      guard s.networkTraffic.grouping == settings.processGrouping,
         s.networkTraffic.revision == settings.networkTrafficRevision
       else { return [] }
-      if settings.networkTrafficGrouping == .bundles {
+      if settings.processGrouping == .bundles {
         let bundles = Array(s.networkTraffic.bundles.prefix(12))
-        return rateRows(bundles.map(\.label), bundles.map(\.upload), bundles.map(\.download))
+        var rows = rateRows(bundles.map(\.label), bundles.map(\.upload), bundles.map(\.download))
+        for index in rows.indices {
+          rows[index].bundlePath = bundles[index].bundlePath
+          rows[index].processCount = bundles[index].processCount
+        }
+        return rows
       }
       let processes = Array(s.networkTraffic.processes.prefix(12))
       return rateRows(processes.map(\.name), processes.map(\.upload), processes.map(\.download))
@@ -386,7 +413,8 @@ import TinyStatsCore
       }
       let cpuRows = cpuProcesses()
       card(
-        "TOP PROCESSES", 284, 108, cpuRows.isEmpty ? .none : .rows(cpuRows),
+        settings.processGrouping == .bundles ? "TOP APPS" : "TOP PROCESSES", 284, 108,
+        cpuRows.isEmpty ? .none : .rows(cpuRows),
         note: cpuRows.isEmpty
           ? "No process readings yet" : "Bars relative to largest · % of one core", width: 252
       )
@@ -465,15 +493,23 @@ import TinyStatsCore
       let processes = Array(
         s.processes.sorted { $0.memory > $1.memory }.prefix(12))
       let fractions = Self.relativeFractions(processes.map { Double($0.memory) })
-      let rows = zip(processes, fractions).map { process, fraction in
-        Reading(
-          label: processName(process), value: Display.bytes(process.memory),
-          fraction: fraction, color: SystemStyle.accent)
-      }
+      let rows =
+        settings.processGrouping == .bundles
+        ? appRows(s.memoryApps, memory: true)
+        : zip(processes, fractions).map { process, fraction in
+          Reading(
+            label: processName(process), value: Display.bytes(process.memory),
+            fraction: fraction, color: SystemStyle.accent)
+        }
       card(
-        "TOP PROCESSES", 288, 124, rows.isEmpty ? .none : .rows(rows),
+        settings.processGrouping == .bundles ? "TOP APPS" : "TOP PROCESSES", 288, 124,
+        rows.isEmpty ? .none : .rows(rows),
         trailing: rows.isEmpty ? "No readings" : "Memory",
-        note: rows.isEmpty ? "No process readings yet" : "Bars relative to largest footprint")
+        note: rows.isEmpty
+          ? "No process readings yet"
+          : settings.processGrouping == .bundles
+            ? "Sum of footprints · shared pages may be counted twice"
+            : "Bars relative to largest footprint")
       card(
         "SWAP", 420, 34, .none,
         trailing: s.memory.map { Display.bytes($0.swapUsed) + " / " + Display.bytes($0.swapTotal) }
@@ -569,20 +605,21 @@ import TinyStatsCore
       card("CONNECTION", 188, 104 + pingHeight, .rows(connectionRows))
       let networkRows = trafficRows()
       card(
-        settings.networkTrafficGrouping == .bundles
-          ? "APP BUNDLES · PARTIAL" : "PROCESS TRAFFIC · PARTIAL",
+        settings.processGrouping == .bundles
+          ? "APP TRAFFIC · PARTIAL" : "PROCESS TRAFFIC · PARTIAL",
         300 + pingHeight, 154 - pingHeight, networkRows.isEmpty ? .none : .rows(networkRows),
         trailing: "↑ / ↓",
-        note: settings.networkTrafficGrouping == .bundles
-          ? (s.networkTraffic.availability == .ready
-            ? (s.networkTraffic.bundles.isEmpty ? "No active TCP/UDP · " : "TCP/UDP · ")
-              + "bundle paths; shared / unresolved separate · all interfaces + loopback"
-            : trafficMessage)
-          : s.networkTraffic.availability == .ready
-            ? (networkRows.isEmpty
-              ? "No active accessible TCP/UDP owners in this interval"
-              : "Bars relative to largest · TCP/UDP · all interfaces + loopback")
-            : trafficMessage)
+        note: "↑ / ↓ · "
+          + (settings.processGrouping == .bundles
+            ? (s.networkTraffic.availability == .ready
+              ? (s.networkTraffic.bundles.isEmpty ? "No active TCP/UDP · " : "TCP/UDP · ")
+                + "bundle paths; shared / unresolved separate · all interfaces + loopback"
+              : trafficMessage)
+            : s.networkTraffic.availability == .ready
+              ? (networkRows.isEmpty
+                ? "No active accessible TCP/UDP owners in this interval"
+                : "Bars relative to largest · TCP/UDP · all interfaces + loopback")
+              : trafficMessage))
     case .sensors: break
     case .battery:
       if let battery = s.batteries.first {
@@ -672,6 +709,14 @@ import TinyStatsCore
     default:
       cards = Self.overviewCards(s, history: recent, settings: settings)
       canonicalFrames = Self.overviewFrames(in: .init(x: 0, y: 0, width: 520, height: 554))
+    }
+    if [.cpu, .memory, .network].contains(module),
+      let index = cards.firstIndex(where: {
+        $0.title == "TOP PROCESSES" || $0.title == "TOP APPS"
+          || $0.title.contains("TRAFFIC · PARTIAL")
+      })
+    {
+      cards[index].groupsProcesses = true
     }
     layoutSummaryCards()
     setAccessibilityLabel(module.title + " summary")
@@ -946,14 +991,18 @@ import TinyStatsCore
             height: 16), color: .secondaryLabelColor, size: 11)
       } else {
         text(
-          SystemStyle.sectionTitle(card.title),
+          SystemStyle.sectionTitle(
+            card.groupsProcesses && card.title.contains("TRAFFIC")
+              ? (card.title.hasPrefix("APP") ? "APP TRAFFIC" : "PROCESS TRAFFIC") : card.title),
           rect: .init(
             x: card.frame.minX + 12, y: card.frame.minY + 9,
-            width: card.frame.width * (usesPopoverLayout ? 0.62 : 0.55) - 12, height: 16),
+            width: card.groupsProcesses
+              ? card.frame.width - ProcessGroupingControl.width / zoom - 28
+              : card.frame.width * (usesPopoverLayout ? 0.62 : 0.55) - 12, height: 16),
           color: .secondaryLabelColor, size: 12,
           weight: .semibold)
         text(
-          card.trailing,
+          card.groupsProcesses ? "" : card.trailing,
           rect: .init(
             x: card.frame.minX + card.frame.width * (usesPopoverLayout ? 0.62 : 0.5),
             y: card.frame.minY + 9,

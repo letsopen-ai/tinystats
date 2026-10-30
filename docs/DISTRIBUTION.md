@@ -17,6 +17,8 @@ Synthetic screenshot/QA fixtures must never ship in the production app. Before s
 
 For an app archived some other way, run `python3 scripts/check-release-chrome.py --sources Sources <Archive.app>/Contents/MacOS/TinyStats` from the exact source checkout used to build it. These checks cover known literal fixture labels; other synthetic UI still needs review.
 
+CPU/Memory/Network app grouping retains the existing bounded sampling and persisted choice. Its synthetic light/dark gallery and strict host tests do not complete release readiness: the maintainer’s final-tree `verify-local.sh`, real process-churn measurement and native macOS 14/15/Intel checks remain required. See [Performance](PERFORMANCE.md#process-app-grouping-cost-and-bounds).
+
 ## Signed binary release checklist
 
 - [ ] Developer ID signing completes unattended and notarization credentials are configured.
