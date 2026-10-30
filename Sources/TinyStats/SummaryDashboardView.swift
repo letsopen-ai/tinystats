@@ -22,6 +22,7 @@ import TinyStatsCore
     var firstValue: String, secondValue: String
     var percent: Bool, mirrored: Bool
     var firstColor: NSColor = SystemStyle.accent, secondColor: NSColor = SystemStyle.secondaryAccent
+    var firstRole: ChartSeriesRole = .primary, secondRole: ChartSeriesRole = .secondary
     /// Immutable inputs and their derived positions move together; no width/statistic cache.
     struct TimeAxis {
       let times: [Date]
@@ -97,6 +98,10 @@ import TinyStatsCore
     case .rows(let rows):
       return max(
         canonical.height, 38 + CGFloat(min(7, rows.count)) * 25 + (card.note.isEmpty ? 0 : 17))
+    case .none where card.title == "TOP PROCESSES": return 56
+    case .none
+    where card.title.contains("TRAFFIC · PARTIAL") || card.title == "APP BUNDLES · PARTIAL":
+      return 96
     case .memory: return 204
     case .tiles(_, let columns): return max(canonical.height, columns > 2 ? 150 : 134)
     default: return canonical.height
@@ -240,10 +245,14 @@ import TinyStatsCore
     ) -> Content {
       .plot(
         .init(
-          first: recent.map { $0[keyPath: first] }, second: recent.map { $0[keyPath: second] },
+          first: recent.map { $0[keyPath: first] },
+          second: labels.1.isEmpty ? [] : recent.map { $0[keyPath: second] },
           firstLabel: labels.0, secondLabel: labels.1, firstValue: values.0, secondValue: values.1,
           percent: percent, mirrored: mirrored,
-          firstColor: SystemStyle.accent, secondColor: SystemStyle.secondaryAccent,
+          firstColor: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
+          secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent,
+          firstRole: module == .network ? .secondary : .primary,
+          secondRole: module == .network ? .primary : .secondary,
           time: .init(recent.map(\.time), intervals: recent.map(\.sampleInterval)),
           valueFormat: percent ? .percent : .rate))
     }
@@ -283,8 +292,9 @@ import TinyStatsCore
         Reading(
           label: names[index], value: Display.rate(first[index]),
           second: Display.rate(second[index]), fraction: fractions[index],
-          color: SystemStyle.secondaryAccent,
-          secondFraction: fractions[index + first.count])
+          color: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
+          secondFraction: fractions[index + first.count],
+          secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent)
       }
     }
     func tile(
@@ -297,7 +307,7 @@ import TinyStatsCore
         trend = Plot(
           first: miniRecent.map { $0[keyPath: key] }, second: [], firstLabel: label,
           secondLabel: "", firstValue: value, secondValue: "", percent: percent,
-          mirrored: false, firstColor: color,
+          mirrored: false, firstColor: SystemStyle.accent,
           time: .init(miniRecent.map(\.time), intervals: miniRecent.map(\.sampleInterval)),
           valueFormat: key == \.temperature
             ? .temperature(fahrenheit: settings.fahrenheit) : percent ? .percent : .rate)
@@ -314,7 +324,7 @@ import TinyStatsCore
           color: SystemStyle.accent),
         Gauge(
           label: "Renderer", value: Display.percent(gpu?.rendererUsage),
-          percent: gpu?.rendererUsage, color: SystemStyle.secondaryAccent),
+          percent: gpu?.rendererUsage, color: SystemStyle.accent),
         Gauge(
           label: "Tiler", value: Display.percent(gpu?.tilerUsage), percent: gpu?.tilerUsage,
           color: SystemStyle.secondaryAccent),
@@ -448,7 +458,7 @@ import TinyStatsCore
         card(
           "PHYSICAL MEMORY", 0, 280, .memory(memory),
           trailing: Display.bytes(memory.total) + " RAM",
-          note: "App estimate = active less purgeable · Available includes cache and free RAM")
+          note: "App = active − purgeable · Available = cache + free")
       } else {
         card("PHYSICAL MEMORY", 0, 280, .none, trailing: "Unavailable")
       }
@@ -462,7 +472,8 @@ import TinyStatsCore
       }
       card(
         "TOP PROCESSES", 288, 124, rows.isEmpty ? .none : .rows(rows),
-        trailing: rows.isEmpty ? "No process readings yet" : "Memory · bars relative to largest")
+        trailing: rows.isEmpty ? "No readings" : "Memory",
+        note: rows.isEmpty ? "No process readings yet" : "Bars relative to largest footprint")
       card(
         "SWAP", 420, 34, .none,
         trailing: s.memory.map { Display.bytes($0.swapUsed) + " / " + Display.bytes($0.swapTotal) }
@@ -485,7 +496,7 @@ import TinyStatsCore
       let storageHeight: CGFloat = 106
       card(
         "STORAGE", 0, storageHeight, .tiles(volumes, columns: volumes.count),
-        note: "Startup first · All readings shows every volume · APFS may share space")
+        note: "APFS volumes may share space · See All readings")
       card(
         "DISK ACTIVITY", storageHeight + 8, 238 - storageHeight,
         plot(
@@ -827,7 +838,10 @@ import TinyStatsCore
       secondLabel: labels.1,
       firstValue: text(first), secondValue: second.map(text) ?? "", percent: percent,
       mirrored: module == .network || module == .disks,
-      firstColor: SystemStyle.accent, secondColor: SystemStyle.secondaryAccent,
+      firstColor: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
+      secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent,
+      firstRole: module == .network ? .secondary : .primary,
+      secondRole: module == .network ? .primary : .secondary,
       time: .init(
         module == .cpu ? projection.bucketCenters : projection.buckets.map(\.last),
         intervals: projection.buckets.map {
@@ -1018,7 +1032,7 @@ import TinyStatsCore
     return segments
   }
   func drawMiniHistory(
-    _ plot: Plot, in area: NSRect, upperBound: Double? = nil, filled: Bool = true
+    _ plot: Plot, in area: NSRect, upperBound: Double? = nil, filled: Bool? = nil
   ) {
     NSColor.quaternaryLabelColor.withAlphaComponent(0.3).setFill()
     NSRect(x: area.minX, y: area.maxY - 0.5, width: area.width, height: 0.5).fill()
@@ -1039,13 +1053,14 @@ import TinyStatsCore
       fill.line(to: NSPoint(x: first.x, y: baseline))
       fill.close()
       plot.firstColor.withAlphaComponent(0.2).setFill()
-      if filled { fill.fill() }
+      if filled ?? !plot.firstRole.dashed { fill.fill() }
       plot.firstColor.setStroke()
-      line.lineWidth = 1.2
+      if plot.firstRole.dashed { line.setLineDash([4, 3], count: 2, phase: 0) }
+      line.lineWidth = 1.5
       line.stroke()
       if points.count == 1 {
-        plot.firstColor.setFill()
-        NSBezierPath(ovalIn: NSRect(x: first.x - 1, y: first.y - 1, width: 2, height: 2)).fill()
+        let dot = NSBezierPath(ovalIn: NSRect(x: first.x - 2, y: first.y - 2, width: 4, height: 4))
+        plot.firstRole.legendMarker.draw(in: dot.bounds, color: plot.firstColor)
       }
     }
   }
@@ -1425,7 +1440,7 @@ import TinyStatsCore
           width: area.width * (paired ? 0.5 : 1), height: 26), color: .labelColor,
         alignment: .left)
       drawSeriesLegend(
-        plot.firstLabel, marker: .first, color: firstColor,
+        plot.firstLabel, marker: plot.firstRole.legendMarker, color: firstColor,
         rect: NSRect(
           x: area.minX, y: area.minY + 26,
           width: area.width / 2, height: 14), size: 10)
@@ -1438,7 +1453,7 @@ import TinyStatsCore
             width: area.width / 2, height: 26), color: .labelColor,
           alignment: .right)
         drawSeriesLegend(
-          plot.secondLabel, marker: .second, color: secondColor,
+          plot.secondLabel, marker: plot.secondRole.legendMarker, color: secondColor,
           rect: NSRect(
             x: area.midX, y: area.minY + 26,
             width: area.width / 2, height: 14), size: 10,
@@ -1460,13 +1475,15 @@ import TinyStatsCore
       }
     } else {
       drawSeriesLegend(
-        "\(plot.firstLabel)  \(plot.firstValue)", marker: .first, color: firstColor,
+        "\(plot.firstLabel)  \(plot.firstValue)", marker: plot.firstRole.legendMarker,
+        color: firstColor,
         rect: NSRect(
           x: area.minX, y: area.minY, width: area.width * (paired ? 0.5 : 1), height: 18),
         size: 12, weight: .medium)
       if paired {
         drawSeriesLegend(
-          "\(plot.secondLabel)  \(plot.secondValue)", marker: .second, color: secondColor,
+          "\(plot.secondLabel)  \(plot.secondValue)", marker: plot.secondRole.legendMarker,
+          color: secondColor,
           rect: NSRect(x: area.midX, y: area.minY, width: area.width / 2, height: 18),
           size: 12, weight: .medium, alignment: .right)
       }
@@ -1556,7 +1573,8 @@ import TinyStatsCore
       if !plot.secondLabel.isEmpty {
         var second = plot
         second.first = plot.second
-        second.firstColor = SystemStyle.secondaryAccent
+        second.firstColor = plot.secondColor
+        second.firstRole = plot.secondRole
         second.percent = false
         drawMiniHistory(second, in: graph, upperBound: layout.maximum)
       }

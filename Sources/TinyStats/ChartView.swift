@@ -1,11 +1,20 @@
 import AppKit
 import TinyStatsCore
 
+/// Styling follows metric identity, never paint order or the presence of other readings.
+enum ChartSeriesRole {
+  case primary, secondary
+  var dashed: Bool { self == .secondary }
+  var legendMarker: SummaryDashboardView.SeriesLegendMarker { self == .primary ? .first : .second }
+  var legendGlyph: String { self == .primary ? "● " : "○ " }
+}
+
 @MainActor final class ChartView: ChartHoverView {
   struct Series {
     var name: String
     var color: NSColor
     var values: [Double?]
+    var role: ChartSeriesRole = .primary
   }
   var series: [Series] = [] {
     didSet {
@@ -122,7 +131,8 @@ import TinyStatsCore
         hasData = true
       }
       line.color.setStroke()
-      path.lineWidth = 1.6
+      if line.role.dashed { path.setLineDash([4, 3], count: 2, phase: 0) }
+      path.lineWidth = 1.5
       path.lineJoinStyle = .round
       path.stroke()
     }
@@ -130,13 +140,14 @@ import TinyStatsCore
     var x = 0.0
     for line in series {
       let label =
-        "● " + line.name
+        line.role.legendGlyph + line.name
         + (fitsDataRange ? " · " + valueFormat.string(line.values.last.flatMap { $0 }) : "")
-      let string = label as NSString
-      string.draw(
-        at: NSPoint(x: x, y: bounds.height - 13),
-        withAttributes: [.font: font, .foregroundColor: line.color])
-      x += string.size(withAttributes: [.font: font]).width + 14
+      let string = NSMutableAttributedString(
+        string: label, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+      string.addAttribute(
+        .foregroundColor, value: line.color, range: NSRange(location: 0, length: 1))
+      string.draw(at: NSPoint(x: x, y: bounds.height - 13))
+      x += string.size().width + 14
     }
     if fitsDataRange {
       let attrs: [NSAttributedString.Key: Any] = [

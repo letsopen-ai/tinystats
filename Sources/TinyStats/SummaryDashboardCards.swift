@@ -27,6 +27,7 @@ extension SummaryDashboardView {
     var fraction: Double? = nil
     var color: NSColor = SystemStyle.accent
     var secondFraction: Double? = nil
+    var secondColor: NSColor = SystemStyle.secondaryAccent
     var accessibilityValue: String? = nil
   }
   struct Gauge {
@@ -229,12 +230,12 @@ extension SummaryDashboardView {
           row.fraction,
           rect: NSRect(
             x: valueStart + 2, y: y + pairedLayout.meterY,
-            width: barWidth - 4, height: 2), color: SystemStyle.secondaryAccent)
+            width: barWidth - 4, height: 2), color: row.color)
         meter(
           row.secondFraction,
           rect: NSRect(
             x: area.minX + area.width * 0.73 + 2,
-            y: y + pairedLayout.meterY, width: barWidth - 4, height: 2), color: SystemStyle.accent)
+            y: y + pairedLayout.meterY, width: barWidth - 4, height: 2), color: row.secondColor)
       }
       let textHeight = paired ? pairedLayout.textHeight : max(12, height)
       text(
@@ -375,8 +376,8 @@ extension SummaryDashboardView {
     let segments: [(String, UInt64, NSColor)] = [
       ("App · estimate", c.app, SystemStyle.accent),
       ("Wired", c.wired, SystemStyle.secondaryAccent),
-      ("Compressed", c.compressed, SystemStyle.tertiaryAccent),
-      ("Available · incl. cache", c.available, .systemGray),
+      ("Compressed", c.compressed, SystemStyle.neutralSeries),
+      ("Available · incl. cache", c.available, SystemStyle.availableSeries),
     ]
     if usesPopoverLayout {
       SegmentedBarView.draw(
@@ -387,7 +388,13 @@ extension SummaryDashboardView {
       for (index, segment) in segments.enumerated() {
         let y = area.minY + 30 + CGFloat(index) * 23
         segment.2.setFill()
-        NSBezierPath(ovalIn: .init(x: area.minX, y: y + 4, width: 7, height: 7)).fill()
+        let marker = NSBezierPath(ovalIn: .init(x: area.minX, y: y + 4, width: 7, height: 7))
+        marker.fill()
+        if index == 3 {
+          NSColor.secondaryLabelColor.setStroke()
+          marker.lineWidth = 1
+          marker.stroke()
+        }
         text(
           segment.0,
           rect: .init(x: area.minX + 14, y: y, width: area.width * 0.65 - 14, height: 18), size: 12)
@@ -434,7 +441,13 @@ extension SummaryDashboardView {
     for (index, segment) in segments.enumerated() {
       let y = area.minY + 10 + CGFloat(index) * 32
       segment.2.setFill()
-      NSBezierPath(ovalIn: .init(x: x, y: y + 4, width: 9, height: 9)).fill()
+      let marker = NSBezierPath(ovalIn: .init(x: x, y: y + 4, width: 9, height: 9))
+      marker.fill()
+      if index == 3 {
+        NSColor.secondaryLabelColor.setStroke()
+        marker.lineWidth = 1
+        marker.stroke()
+      }
       text(segment.0, rect: .init(x: x + 17, y: y, width: area.maxX - x - 95, height: 20), size: 12)
       text(
         Display.bytes(segment.1, precise: true),

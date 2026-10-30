@@ -189,7 +189,7 @@ import Testing
               expectedUser = plot.firstColor.usingColorSpace(.deviceRGB) ?? .clear
               expectedSystem = plot.secondColor.usingColorSpace(.deviceRGB) ?? .clear
             }
-            // Both components follow the accent; tints composite over the neutral platter.
+            // Both opaque components follow the shared accent pair.
             let userAlpha = expectedUser.alphaComponent
             let systemAlpha = expectedSystem.alphaComponent
             #expect(

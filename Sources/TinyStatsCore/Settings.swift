@@ -134,7 +134,23 @@ public struct Settings: Codable, Equatable, Sendable {
     interval = (try? container.decode(Double.self, forKey: .interval)) ?? fallback.interval
     // Migrate legacy combined buttons: native per-readout identity gives reliable routing.
     separateItems = true
-    readouts = (try? container.decode([Module].self, forKey: .readouts)) ?? fallback.readouts
+    // Keep every recognized choice in order, even if a future/damaged entry is present.
+    // An explicitly malformed list must not enable the default set of extra readouts.
+    if container.contains(.readouts) {
+      readouts = []
+      if var entries = try? container.nestedUnkeyedContainer(forKey: .readouts) {
+        while !entries.isAtEnd {
+          guard let entry = try? entries.superDecoder() else { break }
+          if let raw = try? String(from: entry), let module = Module(rawValue: raw),
+            module != .overview, !readouts.contains(module)
+          {
+            readouts.append(module)
+          }
+        }
+      }
+    } else {
+      readouts = fallback.readouts
+    }
     networkInterface =
       (try? container.decode(String.self, forKey: .networkInterface)) ?? fallback.networkInterface
     networkTrafficRevision =

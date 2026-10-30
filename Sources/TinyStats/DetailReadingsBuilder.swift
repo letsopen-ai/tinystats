@@ -51,7 +51,7 @@ enum DetailReadingsBuilder {
       result.value =
         s.startupVolume.map { Display.bytes($0.available) + " free" }
         ?? "Startup volume unavailable"
-      result.subtitle = "Startup volume headline · all local volumes below · 30s refresh"
+      result.subtitle = "Startup volume · Refreshes every 30s"
     case .network:
       result.value = "↓ " + Display.rate(s.download)
       result.subtitle =
@@ -102,15 +102,21 @@ enum DetailReadingsBuilder {
           sensor.formatted(fahrenheit: settings.fahrenheit))
       }
     }
-    func series(_ name: String, _ key: KeyPath<HistoryPoint, Double?>, _ color: NSColor) {
+    func series(
+      _ name: String, _ key: KeyPath<HistoryPoint, Double?>, _ color: NSColor,
+      role: ChartSeriesRole = .primary
+    ) {
       result.series.append(
-        .init(name: name, color: color, values: history.map { $0[keyPath: key] }))
+        .init(name: name, color: color, values: history.map { $0[keyPath: key] }, role: role))
     }
     func processes(_ type: Module) {
       section(
         type == .cpu
           ? "TOP CPU · BARS = MAC CAPACITY"
-          : type == .memory ? "TOP MEMORY · PHYSICAL FOOTPRINT" : "TOP DISK I/O · READ + WRITE")
+          : type == .memory ? "TOP MEMORY" : "TOP DISK I/O · READ + WRITE")
+      if type == .memory {
+        result.rows[result.rows.count - 1].accessibilityLabel = "Top memory · physical footprint"
+      }
       let list = s.processes.sorted { a, b in
         switch type {
         case .cpu: return (a.cpu ?? 0) > (b.cpu ?? 0)
@@ -146,7 +152,7 @@ enum DetailReadingsBuilder {
     switch module {
     case .overview:
       series("CPU", \.cpu, SystemStyle.accent)
-      series("Memory", \.memory, SystemStyle.accent)
+      series("Memory", \.memory, SystemStyle.secondaryAccent, role: .secondary)
       utilization("CPU", s.cpu?.usage, SystemStyle.accent)
       utilization("GPU", s.gpus.compactMap(\.usage).max(), SystemStyle.secondaryAccent)
       utilization(
@@ -192,15 +198,15 @@ enum DetailReadingsBuilder {
       }
       processes(.cpu)
     case .gpu:
-      series("GPU", \.gpu, SystemStyle.secondaryAccent)
+      series("GPU", \.gpu, SystemStyle.accent)
       if s.gpus.isEmpty { row("Driver does not expose GPU telemetry", "Unavailable") }
       for gpu in s.gpus {
         section(gpu.name)
-        utilization("Driver utilization", gpu.usage, SystemStyle.secondaryAccent)
+        utilization("Driver utilization", gpu.usage, SystemStyle.accent)
         row("Shader core count", gpu.coreCount.map(String.init) ?? "Unavailable")
         row("Per-core utilization", "No verified per-core counter")
         utilization("Renderer utilization", gpu.rendererUsage, SystemStyle.accent)
-        utilization("Tiler utilization", gpu.tilerUsage, SystemStyle.accent)
+        utilization("Tiler utilization", gpu.tilerUsage, SystemStyle.secondaryAccent)
         row("Allocated GPU memory", gpu.memory.map(Display.bytes) ?? "Unavailable")
       }
       row("Counter source", "IOAccelerator driver")
@@ -228,7 +234,7 @@ enum DetailReadingsBuilder {
       if let m = s.memory {
         memoryAmount("Active", m.active, m.total, SystemStyle.accent)
         memoryAmount("Wired", m.wired, m.total, SystemStyle.secondaryAccent)
-        memoryAmount("Compressed", m.compressed, m.total, SystemStyle.accent)
+        memoryAmount("Compressed", m.compressed, m.total, SystemStyle.neutralSeries)
         memoryAmount("Inactive · reclaimable", m.inactive, m.total, SystemStyle.secondaryAccent)
         memoryAmount("Purgeable · reclaimable", m.purgeable, m.total, .systemGray)
         memoryAmount("Free (includes speculative)", m.free, m.total, SystemStyle.accent)
@@ -238,7 +244,7 @@ enum DetailReadingsBuilder {
       processes(.memory)
     case .disks:
       series("Read B/s", \.diskRead, SystemStyle.accent)
-      series("Write B/s", \.diskWrite, SystemStyle.secondaryAccent)
+      series("Write B/s", \.diskWrite, SystemStyle.secondaryAccent, role: .secondary)
       result.upperBound = nil
       for volume in s.volumes {
         section(volume.name)
@@ -290,7 +296,7 @@ enum DetailReadingsBuilder {
       processes(.disks)
     case .network:
       series("Download B/s", \.download, SystemStyle.accent)
-      series("Upload B/s", \.upload, SystemStyle.secondaryAccent)
+      series("Upload B/s", \.upload, SystemStyle.secondaryAccent, role: .secondary)
       result.upperBound = nil
       row("Counting", "One selected interface")
       if let checked = s.networkDetailsSampledAt {

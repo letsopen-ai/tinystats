@@ -36,6 +36,10 @@ import Testing
   view.update(snapshot, history: [], settings: Settings(), module: .overview)
   #expect(try tile("CPU").value.value == "0%")
   #expect(try tile("Memory").segments?.compactMap(\.fraction) == [0.35, 0.2, 0.1])
+  #expect(
+    try tile("Memory").segments?.map(\.color) == [
+      SystemStyle.accent, SystemStyle.secondaryAccent, SystemStyle.neutralSeries,
+    ])
   #expect(try tile("Memory").composition.contains("available including cache 350 B"))
   #expect(try tile("Startup").segments?.first?.fraction == 0.6)
   #expect(try tile("Startup").value.value == "400 B")
@@ -95,7 +99,7 @@ import Testing
   #expect(plot.domain == Date(timeIntervalSince1970: 598)...Date(timeIntervalSince1970: 898))
   #expect(plot.times.count == 151 && plot.first.count == 151 && plot.second.count == 151)
   #expect(plot.first[101] == nil && plot.second[102] == 0)
-  #expect(plot.firstColor == SystemStyle.accent && plot.secondColor == .secondaryLabelColor)
+  #expect(plot.firstColor == SystemStyle.accent && plot.secondColor == SystemStyle.secondaryAccent)
   #expect(plot.drawsTrace && !plot.mirrored)
   let segments = SummaryDashboardView.historySegments(plot)
   #expect(segments.count == 2)

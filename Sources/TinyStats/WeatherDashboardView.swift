@@ -624,7 +624,7 @@ enum SolarEventPresentation {
         let x = 12 + CGFloat(index) * (rect.width - 24) / 2
         symbol(
           kind.rawValue, .init(x: x, y: rect.minY + 29, width: 16, height: 16),
-          color: SystemStyle.secondaryAccent
+          color: SystemStyle.accent
         )
         let times = day.events.filter { $0.kind == kind }.map {
           dateLabel(SolarEventPresentation.minute($0.date, in: timeZone), style: .clock)
@@ -650,7 +650,7 @@ enum SolarEventPresentation {
         .init(
           x: solarTrack.minX + solarTrack.width * left, y: solarTrack.minY,
           width: min(solarTrack.width * (1 - left), max(1, solarTrack.width * width)),
-          height: solarTrack.height), SystemStyle.secondaryAccent)
+          height: solarTrack.height), SystemStyle.accent)
     }
     let now = solarNow.timeIntervalSince(day.interval.start) / day.interval.duration
     if (0..<1).contains(now) {
@@ -692,10 +692,10 @@ enum SolarEventPresentation {
     let path = NSBezierPath()
     path.move(to: center)
     path.line(to: end)
-    SystemStyle.secondaryAccent.setStroke()
+    SystemStyle.accent.setStroke()
     path.lineWidth = 2
     path.stroke()
-    SystemStyle.secondaryAccent.setFill()
+    SystemStyle.accent.setFill()
     NSBezierPath(ovalIn: .init(x: end.x - 2, y: end.y - 2, width: 4, height: 4)).fill()
   }
   private func panel(_ rect: NSRect) {
