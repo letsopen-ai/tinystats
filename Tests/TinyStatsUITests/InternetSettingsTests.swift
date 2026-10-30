@@ -20,7 +20,9 @@ import TinyStatsCore
   }
   let content = try #require(preferences.window?.contentView)
   let control = try #require(
-    descendants(content).compactMap { $0 as? NSButton }.first { $0.title == "Use Fahrenheit" })
+    descendants(content).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Use Fahrenheit"
+    })
   let action = try #require(control.action)
   control.state = .on
   #expect(NSApplication.shared.sendAction(action, to: control.target, from: control))
@@ -63,7 +65,9 @@ import TinyStatsCore
       $0.accessibilityLabel() == "Expected HTTP status"
     })
   let enable = try #require(
-    views.compactMap { $0 as? NSButton }.first { $0.title == "Enable HTTPS response check" })
+    views.compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Enable HTTPS response check"
+    })
   let save = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "Save" })
   #expect(!endpoint.isEnabled && !status.isEnabled)
   preset.selectItem(at: 1)
@@ -102,7 +106,7 @@ import TinyStatsCore
   defer { controller.close() }
   let views = internetViews(try #require(controller.window?.contentView))
   let toggle = try #require(
-    views.compactMap { $0 as? NSButton }.first { $0.title == "Enable ICMP ping" })
+    views.compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "Enable ICMP ping" })
   let destination = try #require(
     views.compactMap { $0 as? NSTextField }.first {
       $0.accessibilityLabel() == "ICMP destination IP address"
@@ -143,14 +147,16 @@ import TinyStatsCore
   #expect(visible.intersects(document.bounds))
   #expect(visible.minY >= document.bounds.minY && visible.maxY <= document.bounds.maxY)
   let toggle = try #require(
-    internetViews(content).compactMap { $0 as? NSButton }.first { $0.title == "Enable ICMP ping" })
+    internetViews(content).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Enable ICMP ping"
+    })
   toggle.state = .on
   try internetAction(toggle)
   let disclosure = try #require(
     internetViews(content).compactMap { $0 as? NSTextField }.first {
       $0.stringValue.contains("Local destinations may request Local Network permission")
     })
-  #expect(scroll.documentVisibleRect.contains(disclosure.frame))
+  #expect(scroll.documentVisibleRect.contains(disclosure.convert(disclosure.bounds, to: document)))
 }
 
 @Test @MainActor func turningOffAnInvalidPingDraftCanSaveWithoutEnablingTraffic() throws {
@@ -158,7 +164,7 @@ import TinyStatsCore
   defer { controller.close() }
   let views = internetViews(try #require(controller.window?.contentView))
   let toggle = try #require(
-    views.compactMap { $0 as? NSButton }.first { $0.title == "Enable ICMP ping" })
+    views.compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "Enable ICMP ping" })
   let destination = try #require(
     views.compactMap { $0 as? NSTextField }.first {
       $0.accessibilityLabel() == "ICMP destination IP address"

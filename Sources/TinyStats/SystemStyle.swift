@@ -138,31 +138,60 @@ enum SystemStyle {
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override func draw(_ dirtyRect: NSRect) {
-    NSColor.controlBackgroundColor.setFill()
+    let fill =
+      SystemStyle.isDark(effectiveAppearance)
+      ? NSColor.white.withAlphaComponent(0.08) : NSColor.textBackgroundColor
+    fill.setFill()
     NSBezierPath(
-      roundedRect: bounds, xRadius: SystemStyle.Radius.group, yRadius: SystemStyle.Radius.group
+      roundedRect: bounds.insetBy(dx: 0.25, dy: 0.25), xRadius: SystemStyle.Radius.group,
+      yRadius: SystemStyle.Radius.group
     ).fill()
+    NSColor.separatorColor.withAlphaComponent(0.35).setStroke()
+    let outline = NSBezierPath(
+      roundedRect: bounds.insetBy(dx: 0.25, dy: 0.25), xRadius: SystemStyle.Radius.group,
+      yRadius: SystemStyle.Radius.group)
+    outline.lineWidth = 0.5
+    outline.stroke()
   }
 }
 
 @MainActor final class SystemFormRow: SystemStyledView {
   var showsSeparator = false
-  init(label: String, control: NSView) {
+  init(label title: String, control: NSView, minimumHeight: CGFloat = SystemStyle.Space.row) {
     super.init(frame: .zero)
-    let label = NSTextField(labelWithString: label)
-    label.font = .systemFont(ofSize: SystemStyle.TypeSize.body)
-    for child in [label, control] {
-      child.translatesAutoresizingMaskIntoConstraints = false
-      addSubview(child)
-      child.centerYAnchor.constraint(equalTo: centerYAnchor).isActive = true
-    }
+    control.translatesAutoresizingMaskIntoConstraints = false
+    control.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+    addSubview(control)
+    let preferredHeight = heightAnchor.constraint(equalToConstant: minimumHeight)
+    preferredHeight.priority = .defaultLow
     NSLayoutConstraint.activate([
-      heightAnchor.constraint(greaterThanOrEqualToConstant: SystemStyle.Space.row),
-      label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: SystemStyle.Space.inset),
-      control.trailingAnchor.constraint(
-        equalTo: trailingAnchor, constant: -SystemStyle.Space.inset),
-      label.trailingAnchor.constraint(lessThanOrEqualTo: control.leadingAnchor, constant: -12),
+      preferredHeight,
+      heightAnchor.constraint(greaterThanOrEqualToConstant: minimumHeight),
+      control.centerYAnchor.constraint(equalTo: centerYAnchor),
+      control.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 6),
+      control.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -6),
+      control.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
     ])
+    if title.isEmpty {
+      if control is NSButton {
+        control.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 12)
+          .isActive = true
+      } else {
+        control.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12).isActive = true
+      }
+    } else {
+      let label = NSTextField(wrappingLabelWithString: title)
+      label.font = .systemFont(ofSize: SystemStyle.TypeSize.body)
+      label.translatesAutoresizingMaskIntoConstraints = false
+      addSubview(label)
+      NSLayoutConstraint.activate([
+        label.centerYAnchor.constraint(equalTo: centerYAnchor),
+        label.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 6),
+        label.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -6),
+        label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+        label.trailingAnchor.constraint(equalTo: control.leadingAnchor, constant: -12),
+      ])
+    }
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override func draw(_ dirtyRect: NSRect) {

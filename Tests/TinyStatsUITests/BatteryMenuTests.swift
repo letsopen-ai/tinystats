@@ -115,7 +115,7 @@ func batteryFormatEditorPreviewsExamplesWithoutSavingFakeReadingsOrEnablingReado
     NSApp.windows.first { $0.title == "Battery Menu Bar Format" && $0.isVisible })
   let editorRoot = try #require(window.contentView)
   let customize = try #require(
-    batteryViews(editorRoot).compactMap { $0 as? NSButton }.first {
+    batteryViews(editorRoot).compactMap { $0 as? SystemSettingSwitch }.first {
       $0.title == "Use different displays for each power state"
     })
   customize.state = .on

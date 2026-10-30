@@ -45,7 +45,9 @@ import TinyStatsCore
   }
   let content = try #require(preferences.window?.contentView)
   let fahrenheit = try #require(
-    descendants(content).compactMap { $0 as? NSButton }.first { $0.title == "Use Fahrenheit" })
+    descendants(content).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Use Fahrenheit"
+    })
   let action = try #require(fahrenheit.action)
   fahrenheit.state = .on
   #expect(NSApplication.shared.sendAction(action, to: fahrenheit.target, from: fahrenheit))

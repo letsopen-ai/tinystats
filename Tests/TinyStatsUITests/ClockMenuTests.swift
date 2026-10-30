@@ -130,7 +130,9 @@ private func clockDate(_ text: String) -> Date { ISO8601DateFormatter().date(fro
   editor.showWindow(nil)
   let root = try #require(editor.window?.contentView)
   let checkbox = try #require(
-    clockViews(root).compactMap { $0 as? NSButton }.first { $0.title == "Use custom clock formats" }
+    clockViews(root).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Use custom clock formats"
+    }
   )
   checkbox.state = .on
   try clockAction(checkbox)
@@ -172,7 +174,9 @@ private func clockDate(_ text: String) -> Date { ISO8601DateFormatter().date(fro
   editor.showWindow(nil)
   let root = try #require(editor.window?.contentView)
   let custom = try #require(
-    clockViews(root).compactMap { $0 as? NSButton }.first { $0.title == "Use custom clock formats" }
+    clockViews(root).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.title == "Use custom clock formats"
+    }
   )
   custom.state = .on
   try clockAction(custom)
@@ -287,7 +291,7 @@ private func clockDate(_ text: String) -> Date { ISO8601DateFormatter().date(fro
       as? ClockMenuController)
   let child = try #require(editor.window?.contentView)
   let checkbox = try #require(
-    clockViews(child).compactMap { $0 as? NSButton }.first {
+    clockViews(child).compactMap { $0 as? SystemSettingSwitch }.first {
       $0.title == "Use custom clock formats"
     })
   checkbox.state = .on

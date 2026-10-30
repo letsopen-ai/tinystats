@@ -38,6 +38,7 @@ final class WorldClockController: NSWindowController, NSWindowDelegate, NSTextFi
     super.init(window: window)
     window.delegate = self
     window.appearance = settings.theme.nativeAppearance
+    window.contentView = SystemSettingsBackgroundView(frame: window.contentView?.bounds ?? .zero)
     guard let root = window.contentView else { return }
     func add(_ view: NSView, _ x: Int, _ y: Int, _ width: Int, _ height: Int = 26) {
       view.frame = .init(x: x, y: y, width: width, height: height)
@@ -90,6 +91,19 @@ final class WorldClockController: NSWindowController, NSWindowDelegate, NSTextFi
     save.action = #selector(saveDraft)
     save.bezelStyle = .rounded
     add(save, 428, 20, 128)
+    let form = SystemSettingsForm.self
+    scroll.heightAnchor.constraint(equalToConstant: 164).isActive = true
+    _ = SystemSettingsForm(
+      in: root,
+      views: [
+        form.text("World clocks · detail table preview", heading: true),
+        form.group([form.row("", scroll, height: 180)]),
+        form.text("Display format", heading: true),
+        form.group([
+          form.row("Format", format, width: 350), form.row("Preset", presets, width: 350),
+          form.row("Add token", form.controls([tokens, insert], widths: [250, 92])),
+        ]), message, form.actions([revert, save]),
+      ])
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override func showWindow(_ sender: Any?) {

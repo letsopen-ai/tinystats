@@ -14,8 +14,8 @@ final class ClockMenuController: NSWindowController, NSWindowDelegate, NSTextFie
   private var barHeight = NSStatusBar.system.thickness
   private var paused = false
   private let preview = MenuBarPreviewView(frame: .zero), scroll = NSScrollView()
-  private let custom = NSButton(
-    checkboxWithTitle: "Use custom clock formats", target: nil, action: nil)
+  private let custom = SystemSettingSwitch(
+    title: "Use custom clock formats", target: nil, action: nil)
   private let clocks = NSPopUpButton(), zones = NSPopUpButton(), presets = NSPopUpButton()
   private let tokens = NSPopUpButton(), targetLine = NSPopUpButton()
   private let name = NSTextField(), zone = NSTextField(), first = NSTextField(),
@@ -55,6 +55,7 @@ final class ClockMenuController: NSWindowController, NSWindowDelegate, NSTextFie
     super.init(window: window)
     window.delegate = self
     window.appearance = settings.theme.nativeAppearance
+    window.contentView = SystemSettingsBackgroundView(frame: window.contentView?.bounds ?? .zero)
     guard let root = window.contentView else { return }
     func add(_ view: NSView, _ x: Int, _ y: Int, _ width: Int, _ height: Int = 26) {
       view.frame = .init(x: x, y: y, width: width, height: height)
@@ -148,6 +149,31 @@ final class ClockMenuController: NSWindowController, NSWindowDelegate, NSTextFie
     save.action = #selector(saveDraft)
     save.bezelStyle = .rounded
     add(save, 566, 24, 130)
+    let form = SystemSettingsForm.self
+    scroll.heightAnchor.constraint(equalToConstant: 50).isActive = true
+    _ = SystemSettingsForm(
+      in: root,
+      views: [
+        form.text("Preview", heading: true), form.group([form.row("", scroll, height: 64)]),
+        form.text("Clock displays", heading: true),
+        form.group([
+          form.row(custom.title, custom),
+          form.row(
+            "Clock",
+            form.controls(
+              [clocks, addClock, removeClock, left, right], widths: [260, 32, 32, 32, 32])),
+          form.row("Clock name", name, width: 440),
+          form.row("Time zone", form.controls([zone, zones], widths: [260, 172])),
+          form.row("First line", first, width: 440),
+          form.row("Second line", second, width: 440),
+        ]),
+        form.text("Format helpers", heading: true),
+        form.group([
+          form.row("Preset", presets, width: 440),
+          form.row(
+            "Add token", form.controls([tokens, targetLine, insert], widths: [216, 120, 88])),
+        ]), hint, message, form.actions([revert, save]),
+      ])
     custom.state = settings.clockMenu.custom ? .on : .off
     synchronizeFields()
   }

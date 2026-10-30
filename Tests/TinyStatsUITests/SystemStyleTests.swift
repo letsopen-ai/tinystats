@@ -215,3 +215,98 @@ import Testing
     }
   }
 }
+
+@Test @MainActor func systemSettingsFormsRenderInLightAndDarkWithoutEnablingFeatures() throws {
+  _ = NSApplication.shared
+  for theme in [AppTheme.light, .dark] {
+    var settings = Settings()
+    settings.theme = theme
+    settings.persistHistory = false
+    settings.sensorKey = "missing-sensor"
+    settings.readouts = [.cpu, .memory, .network, .disks, .sensors, .weather]
+    settings.styles = ["cpu": .ring, "memory": .horizontal, "weather": .icon]
+    var snapshot = Snapshot()
+    snapshot.cpu = .init(usage: 23, cores: [23], load: [])
+    snapshot.memory = .init(
+      total: 100, active: 59, inactive: 0, wired: 0, compressed: 0,
+      free: 41, speculative: 0, purgeable: 0, swapUsed: 0, swapTotal: 0, pressure: 1)
+    snapshot.download = 1_200_000
+    snapshot.upload = 48_000
+    let controller = PreferencesController(
+      settings: settings, interfaces: [], snapshot: snapshot, history: [])
+    defer { controller.close() }
+    var changes = 0
+    controller.onChange = { _ in changes += 1 }
+    let root = try #require(controller.window?.contentView)
+    for page in [PreferencesController.Page.general, .menuBar] {
+      controller.selectPage(page)
+      root.layoutSubtreeIfNeeded()
+      let views = systemDescendants(root)
+      #expect(views.contains { $0 is SystemFormSection })
+      #expect(views.contains { $0 is NSSwitch })
+      let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+      root.cacheDisplay(in: root.bounds, to: bitmap)
+      #expect(bitmap.pixelsWide >= 740 && bitmap.pixelsHigh >= 660)
+      if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try #require(bitmap.representation(using: .png, properties: [:])).write(
+          to: url.appendingPathComponent("settings-\(page.identifier)-\(theme.rawValue).png"))
+      }
+    }
+    #expect(changes == 0)
+    controller.selectPage(.general)
+    let switches = systemDescendants(root).compactMap { $0 as? SystemSettingSwitch }
+    #expect(switches.first { $0.title == "Keep history between launches" }?.state == .off)
+    controller.selectPage(.menuBar)
+    let sensor = systemDescendants(root).compactMap { $0 as? NSPopUpButton }.first {
+      $0.accessibilityLabel() == "Menu bar sensor"
+    }
+    #expect(sensor?.titleOfSelectedItem == "missing-sensor · unavailable")
+  }
+}
+
+@Test @MainActor func systemFeatureEditorsUseGroupedFormsAndKeepDraftsLocal() throws {
+  _ = NSApplication.shared
+  for theme in [AppTheme.light, .dark] {
+    var settings = Settings()
+    settings.theme = theme
+    let rules = RulesController(rules: [.init()], snapshot: Snapshot())
+    let internet = InternetSettingsController(connectivity: false, publicIP: false)
+    let weather = WeatherSettingsController(settings: settings.weather)
+    let calendar = CalendarSettingsController(enabled: false, selectedIDs: [])
+    let controllers: [(String, NSWindowController)] = [
+      ("rules", rules), ("internet", internet), ("weather", weather), ("calendar", calendar),
+      ("battery", BatteryMenuController(settings: settings, snapshot: Snapshot(), history: [])),
+      ("clock", ClockMenuController(settings: settings, date: .distantPast)),
+      ("world-clock", WorldClockController(settings: settings, date: .distantPast)),
+    ]
+    var writes = 0
+    rules.onSave = { _ in writes += 1 }
+    internet.onChange = { _, _, _, _ in writes += 1 }
+    weather.onChange = { _ in writes += 1 }
+    calendar.onChange = { _, _ in writes += 1 }
+    calendar.onPermission = { writes += 1 }
+    for (name, controller) in controllers {
+      defer { controller.close() }
+      controller.window?.appearance = theme.nativeAppearance
+      let root = try #require(controller.window?.contentView)
+      root.layoutSubtreeIfNeeded()
+      let views = systemDescendants(root)
+      #expect(views.contains { $0 is SystemFormSection })
+      #expect(views.contains { $0 is SystemSettingsForm })
+      for group in views.compactMap({ $0 as? SystemFormSection }) {
+        #expect(!group.hasAmbiguousLayout)
+      }
+      if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+        root.cacheDisplay(in: root.bounds, to: bitmap)
+        try #require(bitmap.representation(using: .png, properties: [:])).write(
+          to: url.appendingPathComponent("settings-\(name)-\(theme.rawValue).png"))
+      }
+    }
+    #expect(writes == 0)
+  }
+}
