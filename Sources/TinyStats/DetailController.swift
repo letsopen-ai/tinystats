@@ -646,6 +646,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let s = snapshot
     navigation?.updateSelection(selected)
     titleLabel.stringValue = selected.title + (paused ? " · Paused" : "")
+    titleLabel.setAccessibilityLabel(nil)
     titleLabel.font = .systemFont(
       ofSize: selected == .network && paused ? 11 : 13, weight: .semibold)
     if selected == .weather, weatherCityPicker == nil {
@@ -801,7 +802,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       chart.emptyMessage =
         presentation.available ? "No readings yet" : "No sensor readings to chart"
       chart.caption = "Read-only · history while this window is open · hover for values"
-      titleLabel.stringValue = presentation.title
+      titleLabel.stringValue = SystemStyle.sectionTitle(presentation.title)
+      titleLabel.setAccessibilityLabel(presentation.title)
       rows = presentation.rows
     case .weather:
       let weather = s.weather.filtered(settings: settings.weather, suspended: paused)

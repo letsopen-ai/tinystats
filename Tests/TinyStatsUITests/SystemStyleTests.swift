@@ -135,9 +135,11 @@ import Testing
   controller.isPopoverPresentation = true
   var snapshot = Snapshot()
   snapshot.cpu = .init(
-    usage: 23, cores: [31, 28, 22, nil, 0, 12, 52, 39, 9, 4], load: [1.84, 2.1, 2.31],
+    usage: 23, cores: [31, 28, 22, nil, 0, 12, 52, 39, 9, 4, 18, 27, 36, 45, 54, 63],
+    load: [1.84, 2.1, 2.31],
     coreKinds: [
       .efficiency, .efficiency, .efficiency, .efficiency, .efficiency, .efficiency, .performance,
+      .performance, .performance, .performance, .performance, .performance, .performance,
       .performance, .performance, .performance,
     ], user: 15, system: 8)
   snapshot.memory = .init(
@@ -178,7 +180,16 @@ import Testing
   controller.view.setFrameSize(SystemStyle.popoverSize)
   for module in Module.allCases {
     controller.selected = module
-    controller.update(snapshot, history: history)
+    var sample = snapshot
+    if module == .battery {
+      sample.batteries = [
+        .init(
+          name: "Internal battery", percent: 63, charging: false, externalPower: false,
+          minutesRemaining: 754, cycles: 1234, health: 87, watts: -123.4)
+      ]
+      sample.sensors.append(.init(key: "TB0T", name: "Battery", kind: .temperature, value: 31))
+    }
+    controller.update(sample, history: history)
     for name in [NSAppearance.Name.aqua, .darkAqua] {
       controller.view.appearance = NSAppearance(named: name)
       controller.view.layoutSubtreeIfNeeded()
