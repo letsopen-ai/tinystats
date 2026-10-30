@@ -23,7 +23,7 @@ import Testing
   let chart = try #require(root.subviews.compactMap { $0 as? ChartView }.first)
   let table = try #require(
     root.subviews.compactMap { $0 as? NSScrollView }.first?.documentView as? NSTableView)
-  #expect(!search.isHidden && !chart.isHidden && table.numberOfRows == 8)
+  #expect(!search.isHidden && !chart.isHidden && table.numberOfRows == 9)
   let readingButtons = root.subviews.compactMap { $0 as? NSButton }.filter {
     $0.title == "All readings" || $0.title == "Summary"
   }
@@ -232,4 +232,46 @@ import Testing
     labels().contains {
       $0.contains("SMC scan limit: 128") && !$0.contains("Paused")
     })
+}
+
+@Test @MainActor func selectingHottestGPUKeepsItsRowSelectionAndKeyboardAnchor() throws {
+  let table = NSTableView()
+  let detail = DetailController(table: table)
+  var snapshot = Snapshot()
+  snapshot.sensorsSampledAt = 10
+  snapshot.sensors = [
+    .init(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 45),
+    .init(key: "TCGC", name: "GPU temperature", kind: .temperature, value: 55),
+    .init(key: "F0Ac", name: "Fan", kind: .fan, value: 1200),
+  ]
+  detail.update(snapshot, history: [])
+  detail.selected = .sensors
+  detail.loadViewIfNeeded()
+  let window = NSWindow(
+    contentRect: detail.view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
+  window.contentView = detail.view
+  defer {
+    window.contentView = nil
+    window.close()
+  }
+  window.makeFirstResponder(table)
+  let gpu = try #require(
+    (0..<table.numberOfRows).first {
+      (detail.tableView(table, viewFor: table.tableColumns[0], row: $0) as? NSTextField)?
+        .stringValue == "Hottest GPU sensor"
+    })
+  let count = table.numberOfRows
+  table.selectRowIndexes(IndexSet(integer: gpu), byExtendingSelection: false)
+  detail.tableViewSelectionDidChange(
+    .init(name: NSTableView.selectionDidChangeNotification, object: table))
+  #expect(table.numberOfRows == count && table.selectedRow == gpu)
+  #expect(window.firstResponder === table)
+  #expect(
+    (detail.tableView(table, viewFor: table.tableColumns[0], row: gpu) as? NSTextField)?.stringValue
+      == "Hottest GPU sensor")
+  snapshot.sensorsSampledAt = 15
+  snapshot.sensors[1].value = 58
+  detail.update(snapshot, history: [])
+  #expect(table.numberOfRows == count && table.selectedRow == gpu)
 }

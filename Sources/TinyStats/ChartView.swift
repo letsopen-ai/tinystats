@@ -168,7 +168,7 @@ enum ChartSeriesRole {
         .foregroundColor: NSColor.secondaryLabelColor,
       ]
       for (value, y) in [(domain.upper, area.maxY - 11), (domain.lower, area.minY)] {
-        (valueFormat.string(value) as NSString).draw(
+        (valueFormat.axisString(value) as NSString).draw(
           in: .init(x: 0, y: y, width: 64, height: 13), withAttributes: attrs)
       }
       if showsSummaryDecorations {

@@ -11,6 +11,8 @@ final class DetailNavigationCoordinator: NSObject {
   let sidebar = NSView()
   let sidebarMaterial: GlassSurface
   private let advancedLabel = NSTextField(labelWithString: "Advanced")
+  private let brand = NSTextField(labelWithString: "TinyStats")
+  private var controls: [NSView] = []
   var onSelectModule: ((Module) -> Void)?
   var onSettingsPage: ((PreferencesController.Page) -> Void)?
   private var moduleButtons: [Module: NSButton] = [:]
@@ -26,7 +28,6 @@ final class DetailNavigationCoordinator: NSObject {
     sidebarMaterial.autoresizingMask = [.width, .height]
     sidebar.frame = .init(x: 0, y: 0, width: 132, height: 560)
     sidebarMaterial.frame = sidebar.bounds
-    let brand = NSTextField(labelWithString: "TinyStats")
     brand.font = .systemFont(ofSize: 15, weight: .bold)
     sidebar.addSubview(brand)
     brand.frame = .init(x: 15, y: 520, width: 106, height: 23)
@@ -74,6 +75,16 @@ final class DetailNavigationCoordinator: NSObject {
       sidebar.addSubview(button)
       settingsButtons[page] = button
     }
+    controls = sidebar.subviews.filter { $0 !== sidebarMaterial }
+    sidebarMaterial.onTreatmentChange = { [weak self] in self?.updateControlHost() }
+    updateControlHost()
+  }
+
+  private func updateControlHost() {
+    let host = sidebarMaterial.legacyContentView ?? sidebar
+    for control in controls where control.superview !== host { host.addSubview(control) }
+    layout(in: sidebar.superview?.bounds ?? .init(x: 0, y: 0, width: 700, height: 560))
+    sidebar.superview?.needsDisplay = true
   }
 
   @objc private func selectModule(_ sender: NSButton) {
@@ -122,16 +133,16 @@ final class DetailNavigationCoordinator: NSObject {
   }
 
   func layout(in bounds: NSRect) {
-    sidebar.frame.size.height = bounds.height
-    if let brand = sidebar.subviews.compactMap({ $0 as? NSTextField }).first {
-      brand.frame.origin.y = bounds.height - 40
-    }
+    let inset: CGFloat = sidebarMaterial.treatment == .legacy ? 0 : 8
+    sidebar.frame = .init(x: inset, y: inset, width: 132, height: max(0, bounds.height - inset * 2))
+    let height = sidebar.bounds.height
+    brand.frame.origin.y = height - 40
     for (index, module) in Self.mainModules.enumerated() {
-      moduleButtons[module]?.frame.origin.y = bounds.height - 83 - CGFloat(index * 35)
+      moduleButtons[module]?.frame.origin.y = height - 83 - CGFloat(index * 35)
     }
-    advancedLabel.frame = .init(x: 17, y: bounds.height - 382, width: 100, height: 15)
+    advancedLabel.frame = .init(x: 17, y: height - 382, width: 100, height: 15)
     for (index, module) in Self.advancedModules.enumerated() {
-      moduleButtons[module]?.frame.origin.y = bounds.height - 418 - CGFloat(index * 35)
+      moduleButtons[module]?.frame.origin.y = height - 418 - CGFloat(index * 35)
     }
   }
 }

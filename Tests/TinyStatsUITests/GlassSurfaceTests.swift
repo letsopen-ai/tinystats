@@ -116,10 +116,12 @@ import Testing
   for area in [editor.strip, editor.palette] {
     area.layoutSubtreeIfNeeded()
     let container = try #require(area.glass.subviews.first as? NSGlassEffectContainerView)
-    #expect(container.spacing == 8)
+    #expect(container.spacing == 2)
     let content = try #require(container.contentView)
     #expect(content.subviews.count == area.chips.count)
-    for (shape, chip) in zip(content.subviews, area.chips) {
+    for chip in area.chips {
+      let shape = try #require(
+        content.subviews.first { $0.identifier?.rawValue == chip.module.rawValue })
       #expect(shape is NSGlassEffectView && shape.frame == chip.frame)
       #expect(chip.superview === area && chip.acceptsFirstResponder)
       #expect(area.glass.hitTest(chip.frame.origin) == nil)

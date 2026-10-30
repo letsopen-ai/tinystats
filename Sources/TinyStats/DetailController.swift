@@ -132,7 +132,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let readingsButton = MenuActionRow()
   override func loadView() {
     view = MainContentView(frame: NSRect(x: 0, y: 0, width: 700, height: 560))
-    view.clipsToBounds = true
+    (view as? MainContentView)?.glassEnvironment = { [weak self] in
+      self?.glassEnvironment() ?? .current
+    }
+    view.clipsToBounds = glassEnvironment().treatment == .glass
     (view as? MainContentView)?.onStyleChange = { [weak self] in self?.refreshAppearanceCells() }
     view.setAccessibilityElement(true)
     view.setAccessibilityRole(.group)
@@ -154,6 +157,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     pauseButton.title = paused ? "Resume" : "Pause"
     let navigation = DetailNavigationCoordinator(environment: glassEnvironment)
     self.navigation = navigation
+    (view as? MainContentView)?.sidebarFrame = { [weak navigation] in
+      navigation?.sidebar.frame ?? .zero
+    }
     view.addSubview(navigation.sidebar, positioned: .below, relativeTo: popoverMaterial)
     navigation.onSelectModule = { [weak self] in self?.selected = $0 }
     navigation.onSettingsPage = { [weak self] in self?.onSettingsPage?($0) }
@@ -1200,11 +1206,14 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     pauseButton.toolTip = pauseButton.title + "\n" + information
     pauseButton.setAccessibilityHelp(information)
     (view as? MainContentView)?.sampleInformation = information
+    view.setAccessibilityLabel("\(selected.title) details")
   }
 }
 
-@MainActor private final class MainContentView: SystemStyledView {
+@MainActor final class MainContentView: SystemStyledView {
   var usesPopoverMaterial = false { didSet { needsDisplay = true } }
+  var glassEnvironment: () -> GlassSurface.Environment = { .current }
+  var sidebarFrame: () -> NSRect = { .zero }
   var onStyleChange: (() -> Void)?
   private lazy var sampleElement: NSAccessibilityElement = {
     let element = NSAccessibilityElement()
@@ -1217,7 +1226,6 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   var sampleInformation = "" {
     didSet {
       sampleElement.setAccessibilityValue(sampleInformation)
-      sampleElement.setAccessibilityHelp(sampleInformation)
     }
   }
   override func accessibilityChildren() -> [Any]? {
@@ -1230,21 +1238,26 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   }
   override func systemStyleDidChange() {
     super.systemStyleDidChange()
+    clipsToBounds = glassEnvironment().treatment == .glass
     onStyleChange?()
   }
   override var isOpaque: Bool {
-    !usesPopoverMaterial && !GlassSurface.Environment.current.supportsGlass
+    !usesPopoverMaterial && glassEnvironment().treatment != .glass
   }
   override func draw(_ dirtyRect: NSRect) {
     guard !usesPopoverMaterial else { return }
     NSColor.windowBackgroundColor.setFill()
-    // Let the sidebar sample the window backdrop on 26+. Content remains neutral/solid.
-    let content =
-      GlassSurface.Environment.current.supportsGlass
-      ? bounds.intersection(
-        .init(x: 132, y: 0, width: max(0, bounds.width - 132), height: bounds.height))
-      : bounds
-    content.intersection(dirtyRect).fill()
+    let background = NSBezierPath(rect: bounds)
+    if glassEnvironment().treatment == .glass {
+      // Continue the neutral content around the floating sidebar, leaving only its
+      // rounded interior available to the compositor's backdrop sampling.
+      background.append(
+        NSBezierPath(
+          roundedRect: sidebarFrame(),
+          xRadius: GlassSurface.sidebarCornerRadius, yRadius: GlassSurface.sidebarCornerRadius))
+      background.windingRule = .evenOdd
+    }
+    background.fill()
   }
 }
 

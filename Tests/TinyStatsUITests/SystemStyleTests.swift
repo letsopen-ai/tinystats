@@ -183,6 +183,22 @@ import Testing
           try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
       }
       controller.view.layoutSubtreeIfNeeded()
+      // Exercise the existing insertion marker above real compositor glass, using
+      // only a private synthetic drag payload in our own fixture window.
+      var insertionDrag: ReadoutDrag?
+      if settingsPage {
+        let editor = try #require(
+          systemDescendants(controller.view).compactMap { $0 as? MenuBarCustomization }.first)
+        let cpu = try #require(editor.chips[.cpu])
+        let memory = try #require(editor.chips[.memory])
+        let drag = ReadoutDrag()
+        drag.draggingSource = cpu
+        #expect(drag.draggingPasteboard.writeObjects([editor.pasteboardItem(for: .cpu)]))
+        drag.draggingLocation = editor.strip.convert(
+          .init(x: memory.frame.minX, y: memory.frame.midY), to: nil)
+        #expect(editor.strip.draggingEntered(drag) == .move)
+        insertionDrag = drag
+      }
       window.makeKey()
       window.displayIfNeeded()
       try await Task.sleep(for: .milliseconds(450))
@@ -194,6 +210,7 @@ import Testing
       try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
         .write(to: folder.appendingPathComponent(stem + ".png"))
       try systemGalleryImage(backdrop, to: folder.appendingPathComponent(stem + "-bitmap.png"))
+      insertionDrag?.draggingPasteboard.releaseGlobally()
       controller.view.removeFromSuperview()
       preferences?.disposeEmbedded()
       preferences?.close()

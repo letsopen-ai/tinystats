@@ -117,7 +117,9 @@ enum SensorBrowserPresentation {
         rows += group.filter { friendly($0) != nil || prominentKeys.contains($0.key) }.map(
           physicalRow)
         let unnamed = group.filter { friendly($0) == nil && !prominentKeys.contains($0.key) }
-        if !unnamed.isEmpty {
+        if unnamed.count == 1, let reading = unnamed.first {
+          rows.append(physicalRow(reading))
+        } else if !unnamed.isEmpty {
           let label = summaryLabel(unnamed, component: component, fahrenheit: settings.fahrenheit)
           let spoken = label.replacingOccurrences(of: "–", with: " to ")
             .replacingOccurrences(of: " · ", with: ", ")
@@ -150,7 +152,18 @@ enum SensorBrowserPresentation {
         ?? highlightKeys.first(where: { prominent in physical.contains { $0.key == prominent.key } }
         )
         .map { .reading($0.key) }
-        ?? rows.compactMap(\.sensorIdentity).first
+        ?? rows.compactMap { row -> SensorBrowserIdentity? in
+          guard let identity = row.sensorIdentity else { return nil }
+          if !showsAll, query.isEmpty, case .reading(let key) = identity,
+            let reading = snapshot.sensor(for: key), friendly(reading) == nil,
+            !prominentKeys.contains(key)
+          {
+            // Revealing a singleton must not silently replace the existing initial
+            // focus with an unclassified reading. It remains explicitly selectable.
+            return nil
+          }
+          return identity
+        }.first
     }
     let selected = selection ?? defaultSelection
     var chosen: SensorReading?
@@ -185,13 +198,21 @@ enum SensorBrowserPresentation {
     case nil: break
     }
     if !showsAll && query.isEmpty {
-      rows.removeAll {
-        if case .hottest = $0.sensorIdentity { return $0.sensorIdentity == selected }
-        return false
+      // Keep every selectable identity and its row index stable across selection. Only
+      // suppress the repeated number; AX still describes the reading in full.
+      for index in rows.indices {
+        let identity = rows[index].sensorIdentity
+        let duplicatesHeadline =
+          identity == selected
+          || {
+            if case .hottest = selected { return identity == chosen.map { .reading($0.key) } }
+            return false
+          }()
+        if identity != nil && duplicatesHeadline {
+          rows[index].accessibilityLabel = rows[index].label + ": " + rows[index].value
+          rows[index].value = ""
+        }
       }
-      rows = rows.enumerated().filter { index, row in
-        !row.heading || (index + 1 < rows.count && !rows[index + 1].heading)
-      }.map(\.element)
     }
     return Presentation(
       selection: selected,
@@ -199,8 +220,9 @@ enum SensorBrowserPresentation {
       count: query.isEmpty
         ? "\(snapshot.sensors.count) sensors"
         : "\(physical.count) of \(snapshot.sensors.count) sensors",
-      countAccessibilityLabel:
-        "\(physical.count) of \(snapshot.sensors.count) readable sensors match the search",
+      countAccessibilityLabel: query.isEmpty
+        ? "\(snapshot.sensors.count) readable sensors"
+        : "\(physical.count) of \(snapshot.sensors.count) readable sensors match the search",
       value: chosen?.formatted(fahrenheit: settings.fahrenheit) ?? "Sensor unavailable",
       subtitle: subtitle, rows: rows,
       series: [

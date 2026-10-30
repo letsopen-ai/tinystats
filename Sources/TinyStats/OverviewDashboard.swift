@@ -87,7 +87,7 @@ extension SummaryDashboardView {
       _ label: String, _ value: String, _ detail: String, _ symbol: String,
       key: KeyPath<HistoryPoint, Double?>? = nil, percent: Bool = false,
       segments: [SegmentedBarView.Segment]? = nil, composition: String = "",
-      barCaption: String? = nil
+      barCaption: String? = nil, help: String = ""
     ) -> Card {
       .init(
         frame: .zero, title: label,
@@ -96,7 +96,8 @@ extension SummaryDashboardView {
             value: .init(
               label: label, value: value, detail: detail,
               trend: key.map { trend($0, label: label, value: value, percent: percent) }),
-            symbol: symbol, segments: segments, composition: composition, barCaption: barCaption)))
+            symbol: symbol, segments: segments, composition: composition, barCaption: barCaption)),
+        help: help)
     }
     let memory = s.memory.flatMap { $0.total > 0 ? $0 : nil }
     let volume = s.startupVolume
@@ -177,8 +178,10 @@ extension SummaryDashboardView {
         content: .plot(network)),
       tile(
         "CPU temperature", temperature,
-        "\(cpuSensors.isEmpty ? "CPU sensors unavailable" : "Hottest of \(cpuSensors.count) CPU sensors"), \(fanCaption)",
-        "thermometer.medium"),
+        cpuSensors.isEmpty
+          ? "CPU sensors unavailable"
+          : "Hottest of \(cpuSensors.count) CPU \(cpuSensors.count == 1 ? "sensor" : "sensors")",
+        "thermometer.medium", help: fanCaption),
       tile(
         battery == nil ? "System power" : "Battery",
         battery.map { Display.percent($0.percent) } ?? power.map { $0.formatted(fahrenheit: false) }
@@ -293,7 +296,7 @@ extension SummaryDashboardView {
     text(tile.value.detail, rect: detailRect, color: .secondaryLabelColor, size: 11)
     if let segments = tile.segments {
       SegmentedBarView.draw(
-        segments, in: .init(x: rect.minX + 14, y: rect.maxY - 47, width: rect.width - 28, height: 8)
+        segments, in: .init(x: rect.minX + 14, y: rect.maxY - 53, width: rect.width - 28, height: 8)
       )
       let caption = tile.barCaption ?? tile.composition
       let lines = caption.components(separatedBy: "\n").flatMap {
@@ -305,7 +308,7 @@ extension SummaryDashboardView {
           String(line),
           rect: .init(
             x: rect.minX + 14,
-            y: rect.maxY - (threeLines ? 37 : 34) + CGFloat(index) * (threeLines ? 11 : 13),
+            y: rect.maxY - (threeLines ? 43 : 34) + CGFloat(index) * (threeLines ? 11 : 13),
             width: rect.width - 28,
             height: 14), color: .secondaryLabelColor, size: 10)
       }
