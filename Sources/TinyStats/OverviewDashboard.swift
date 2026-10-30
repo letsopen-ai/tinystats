@@ -329,11 +329,11 @@ extension SummaryDashboardView {
       title, rect: .init(x: rect.midX, y: rect.minY + 12, width: rect.width / 2 - 14, height: 17),
       color: .secondaryLabelColor, size: 11, alignment: .right)
     drawSeriesLegend(
-      "↓ " + plot.firstValue, marker: .first, color: plot.firstColor,
+      "↓ " + plot.firstValue, marker: plot.firstRole.legendMarker, color: plot.firstColor,
       rect: .init(x: rect.minX + 14, y: rect.minY + 36, width: rect.width / 2 - 14, height: 18),
       size: 13, weight: .semibold)
     drawSeriesLegend(
-      "↑ " + plot.secondValue, marker: .second, color: plot.secondColor,
+      "↑ " + plot.secondValue, marker: plot.secondRole.legendMarker, color: plot.secondColor,
       rect: .init(x: rect.midX, y: rect.minY + 36, width: rect.width / 2 - 14, height: 18),
       size: 13, weight: .semibold, alignment: .right)
     let graph = Self.overviewNetworkGraph(in: rect)
@@ -355,7 +355,8 @@ extension SummaryDashboardView {
     var upload = plot
     upload.first = plot.second
     upload.firstColor = plot.secondColor
-    drawMiniHistory(upload, in: graph, upperBound: maximum, filled: false, dashed: true)
+    upload.firstRole = plot.secondRole
+    drawMiniHistory(upload, in: graph, upperBound: maximum)
     text(
       "5 minutes ago",
       rect: .init(x: graph.minX, y: rect.maxY - 20, width: graph.width / 2, height: 14),

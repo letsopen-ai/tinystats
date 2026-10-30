@@ -142,7 +142,7 @@ import Testing
 
 /// Drives the real AppKit destination methods, including hover, stale/private payload rejection,
 /// cancellation and accepted drops. No system pasteboard, mouse event injection or saved preferences.
-@MainActor private final class ReadoutDrag: NSObject, NSDraggingInfo {
+@MainActor final class ReadoutDrag: NSObject, NSDraggingInfo {
   var draggingDestinationWindow: NSWindow?
   var draggingSourceOperationMask: NSDragOperation = .move
   var draggingLocation = NSPoint.zero
@@ -322,9 +322,9 @@ import Testing
   observation.enforce(requested)
   #expect(observation.accept(nil) == nil)
   #expect(observation.accept(old) == nil)
-  // A style/appearance refresh before AppKit finishes cannot undo the Settings drag.
-  #expect(observation.accept(old) == nil)
+  // Incomplete frames break the consecutive-stability check.
   #expect(observation.accept([.cpu, .memory]) == nil)
+  #expect(observation.accept(old) == nil)
   #expect(observation.pendingEnforcedOrder == requested)
   #expect(observation.accept(requested) == requested)
   #expect(observation.pendingEnforcedOrder == nil)
@@ -377,6 +377,7 @@ import Testing
   #expect(editor.strip.chips.isEmpty && editor.palette.chips.count == 9)
   #expect(editor.palette.chips.allSatisfy { $0.frame.width > 0 && $0.frame.height == 28 })
   #expect(editor.strip.accessibilityRole() == .group)
+  #expect(editor.chips.values.allSatisfy { $0.accessibilityRole() == .group })
   #expect(editor.palette.accessibilityLabel() == "Available")
   let cpu = try #require(editor.chips[.cpu])
   cpu.appearance = NSAppearance(named: .aqua)
@@ -386,4 +387,26 @@ import Testing
   editor.palette.needsDisplay = false
   NotificationCenter.default.post(name: NSColor.systemColorsDidChangeNotification, object: nil)
   #expect(editor.palette.needsDisplay && cpu.needsDisplay)
+}
+
+@Test func stableFailedPlacementReleasesPendingWithoutReplacingSavedIntent() {
+  var observation = MenuBarOrderObservation()
+  let requested: [Module] = [.network, .cpu, .memory]
+  let placed: [Module] = [.cpu, .memory, .network]
+  let dragged: [Module] = [.memory, .cpu, .network]
+  observation.enforce(requested)
+  #expect(observation.accept(placed) == nil)
+  #expect(observation.pendingEnforcedOrder == requested)
+  #expect(observation.accept(nil) == nil)  // Partial/overflow breaks consecutive stability.
+  #expect(observation.accept(placed) == nil)
+  #expect(observation.pendingEnforcedOrder == requested)
+  #expect(observation.accept(placed) == nil)
+  #expect(observation.pendingEnforcedOrder == nil)
+  #expect(observation.accept(placed) == nil)  // Failed enforcement itself is never an edit.
+  #expect(observation.accept(dragged) == dragged)
+  observation.enforce(requested)
+  #expect(observation.accept(placed) == nil)
+  #expect(observation.accept(dragged) == nil)  // Changing frames cannot settle enforcement.
+  #expect(observation.pendingEnforcedOrder == requested)
+  #expect(observation.accept(requested) == requested)
 }

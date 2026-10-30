@@ -228,8 +228,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     summaryScroll.isHidden = !isPopoverPresentation
     footerSeparator.isHidden = !isPopoverPresentation
-    // Automatic table style adds its own side insets, inside the platter's explicit gutter.
-    table.style = isPopoverPresentation ? .fullWidth : .automatic
+    // Plain rows leave all padding to the platter gutter; fullWidth adds hidden content padding.
+    table.style = isPopoverPresentation ? .plain : .automatic
     openWindowRow.isHidden = !isPopoverPresentation
     if !isPopoverPresentation { openWindowRow.frame.origin.y = 60 }
     weatherScroll.isHidden = !isPopoverPresentation
@@ -435,9 +435,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     detailScroll?.frame = readingsPlatter.frame.insetBy(dx: 12, dy: 6)
     let tableWidth = max(0, detailScroll?.contentSize.width ?? width)
     table.frame.size.width = tableWidth
-    sizeColumn(table.tableColumns.first, to: tableWidth * 0.55)
-    sizeColumn(table.tableColumns.last, to: tableWidth * 0.45)
-    table.sizeToFit()
+    let columnWidth = max(
+      0, tableWidth - table.intercellSpacing.width * CGFloat(table.numberOfColumns))
+    sizeColumn(table.tableColumns.first, to: columnWidth * 0.55)
+    sizeColumn(table.tableColumns.last, to: columnWidth * 0.45)
+    table.tile()
     if let window = view.window {
       let keyLayout = PopoverKeyViewLayout(
         window: ObjectIdentifier(window), module: selected, allReadings: showsAllReadings,
@@ -620,7 +622,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       : .systemFont(ofSize: 12, weight: row.heading ? .semibold : .regular)
     cell.textColor = row.heading ? .secondaryLabelColor : .labelColor
     cell.alignment = isValue ? .right : .left
-    cell.lineBreakMode = isValue && isPopoverPresentation ? .byTruncatingHead : .byTruncatingTail
+    cell.lineBreakMode = .byTruncatingTail
     cell.toolTip = cell.stringValue
     if !isValue, let spoken = row.accessibilityLabel {
       cell.setAccessibilityLabel(spoken)
@@ -1071,7 +1073,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       readingsButton.setIcon("list.bullet.rectangle", fallback: "list.bullet")
     }
     pauseButton.showsAccent = paused
-    pauseButton.setIcon(paused ? "play.fill" : "pause.fill", fallback: paused ? "play" : "pause")
+    pauseButton.setIcon(paused ? "play.fill" : "pause", fallback: paused ? "play" : "pause")
   }
   private func updateFootnote() {
     if selected == .sensors
@@ -1102,12 +1104,13 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
 
 /// The bottom of a scrolling platter fades into the reserved footer gap. Layer state
 /// follows layout/appearance only; no observer, animation, event loop or timer.
-@MainActor private final class PopoverScrollView: NSScrollView {
+@MainActor final class PopoverScrollView: NSScrollView {
   private let fade = CAGradientLayer()
   var fadesBottom = false {
     didSet {
+      guard oldValue != fadesBottom else { return }
       automaticallyAdjustsContentInsets = false
-      contentInsets = .init(top: 0, left: 0, bottom: fadesBottom ? 16 : 0, right: 0)
+      contentInsets = .init(top: 0, left: 0, bottom: fadesBottom ? 36 : 0, right: 0)
       wantsLayer = fadesBottom
       layer?.mask = fadesBottom ? fade : nil
       needsLayout = true
@@ -1119,8 +1122,15 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     fade.frame = bounds
-    fade.colors = [NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor]
-    fade.locations = [0, NSNumber(value: min(1, 16 / max(1, bounds.height))), 1]
+    // A 12pt clear footer buffer removes clipped card rims; the preceding 24pt fades content.
+    fade.colors = [
+      NSColor.clear.cgColor, NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor,
+    ]
+    fade.locations = [
+      0, NSNumber(value: min(1, 12 / max(1, bounds.height))),
+      NSNumber(value: min(1, 36 / max(1, bounds.height))), 1,
+    ]
+    // NSScrollView has a flipped backing layer: normalized y=1 is the footer edge.
     fade.startPoint = .init(x: 0.5, y: 1)
     fade.endPoint = .init(x: 0.5, y: 0)
     CATransaction.commit()

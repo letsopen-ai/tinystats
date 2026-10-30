@@ -51,7 +51,7 @@ enum DetailReadingsBuilder {
       result.value =
         s.startupVolume.map { Display.bytes($0.available) + " free" }
         ?? "Startup volume unavailable"
-      result.subtitle = "Startup volume headline · all local volumes below · 30s refresh"
+      result.subtitle = "Startup volume · Refreshes every 30s"
     case .network:
       result.value = "↓ " + Display.rate(s.download)
       result.subtitle =
@@ -102,9 +102,12 @@ enum DetailReadingsBuilder {
           sensor.formatted(fahrenheit: settings.fahrenheit))
       }
     }
-    func series(_ name: String, _ key: KeyPath<HistoryPoint, Double?>, _ color: NSColor) {
+    func series(
+      _ name: String, _ key: KeyPath<HistoryPoint, Double?>, _ color: NSColor,
+      role: ChartSeriesRole = .primary
+    ) {
       result.series.append(
-        .init(name: name, color: color, values: history.map { $0[keyPath: key] }))
+        .init(name: name, color: color, values: history.map { $0[keyPath: key] }, role: role))
     }
     func processes(_ type: Module) {
       section(
@@ -146,7 +149,7 @@ enum DetailReadingsBuilder {
     switch module {
     case .overview:
       series("CPU", \.cpu, SystemStyle.accent)
-      series("Memory", \.memory, SystemStyle.secondaryAccent)
+      series("Memory", \.memory, SystemStyle.secondaryAccent, role: .secondary)
       utilization("CPU", s.cpu?.usage, SystemStyle.accent)
       utilization("GPU", s.gpus.compactMap(\.usage).max(), SystemStyle.secondaryAccent)
       utilization(
@@ -238,7 +241,7 @@ enum DetailReadingsBuilder {
       processes(.memory)
     case .disks:
       series("Read B/s", \.diskRead, SystemStyle.accent)
-      series("Write B/s", \.diskWrite, SystemStyle.secondaryAccent)
+      series("Write B/s", \.diskWrite, SystemStyle.secondaryAccent, role: .secondary)
       result.upperBound = nil
       for volume in s.volumes {
         section(volume.name)
@@ -290,7 +293,7 @@ enum DetailReadingsBuilder {
       processes(.disks)
     case .network:
       series("Download B/s", \.download, SystemStyle.accent)
-      series("Upload B/s", \.upload, SystemStyle.secondaryAccent)
+      series("Upload B/s", \.upload, SystemStyle.secondaryAccent, role: .secondary)
       result.upperBound = nil
       row("Counting", "One selected interface")
       if let checked = s.networkDetailsSampledAt {

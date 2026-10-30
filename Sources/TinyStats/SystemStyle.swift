@@ -66,7 +66,7 @@ enum SystemStyle {
     }
     return (color(pair.primary), color(pair.secondary))
   }
-  // Dynamic NSColor providers can resolve off-main. Two entries cover light/dark without
+  // Dynamic NSColor providers can resolve off-main. Four entries cover mixed light/dark accents without
   // retaining appearance objects; the pure derivation stays independent of this drawing cache.
   private static let paletteCache = PaletteCache()
   private final class PaletteCache: @unchecked Sendable {
@@ -76,7 +76,7 @@ enum SystemStyle {
       lock.withLock {
         if let entry = entries.first(where: { $0.0 == rgb && $0.1 == dark }) { return entry.2 }
         let pair = AccentPalette.derive(from: rgb, dark: dark)
-        if entries.count == 2 { entries.removeFirst() }
+        if entries.count == 4 { entries.removeFirst() }
         entries.append((rgb, dark, pair))
         return pair
       }
@@ -342,7 +342,7 @@ enum SystemStyle {
       if isEnabled && (hovering || isHighlighted) {
         let dark = SystemStyle.isDark(effectiveAppearance)
         (dark ? NSColor.white : NSColor.black)
-          .withAlphaComponent(isHighlighted ? 0.14 : dark ? 0.12 : 0.08).setFill()
+          .withAlphaComponent(isHighlighted ? 0.14 : dark ? 0.12 : 0.10).setFill()
         NSBezierPath(
           roundedRect: bounds, xRadius: SystemStyle.Radius.control,
           yRadius: SystemStyle.Radius.control
