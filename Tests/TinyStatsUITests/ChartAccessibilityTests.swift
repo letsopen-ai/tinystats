@@ -162,8 +162,11 @@ import Testing
     (element.accessibilityValue() as? String)?.contains(
       "Newest recorded 20.0%, min 20.0%, max 20.0%")
       == true)
-  let tiles = try #require(view.cards.first?.spoken)
-  for label in ["GPU", "Memory", "Startup used"] {
+  let tiles = view.cards.filter {
+    if case .overviewTile = $0.content { return true }
+    return false
+  }.map(\.spoken).joined(separator: "\n")
+  for label in ["GPU", "Disk read", "Disk write"] {
     #expect(tiles.contains("\(label):"))
   }
   #expect(tiles.components(separatedBy: "No recorded values in this window").count - 1 == 3)

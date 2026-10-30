@@ -253,21 +253,29 @@ import Testing
         let area = card.contentRect
         let scale = CGFloat(bitmap.pixelsWide) / view.bounds.width
         let styles = TextDrawingStyles()
+        let overview = module == .overview
+        let labelSize: CGFloat = overview ? 13 : 10
         let attributes = styles.attributes(
-          color: .labelColor, size: 10, weight: .regular, alignment: .left)
-        let secondWidth = ceil(
-          (plot.secondLabel as NSString).size(withAttributes: attributes).width)
-        let firstWidth = ceil((plot.firstLabel as NSString).size(withAttributes: attributes).width)
+          color: .labelColor, size: labelSize, weight: overview ? .semibold : .regular,
+          alignment: .left)
+        let firstLabel = overview ? "↓ " + plot.firstValue : plot.firstLabel
+        let secondLabel = overview ? "↑ " + plot.secondValue : plot.secondLabel
+        let secondWidth = ceil((secondLabel as NSString).size(withAttributes: attributes).width)
+        let firstWidth = ceil((firstLabel as NSString).size(withAttributes: attributes).width)
+        let markerY = overview ? card.frame.minY + 40 : area.minY + 28.5
+        let labelY = overview ? card.frame.minY + 36 : area.minY + 26
+        let left = overview ? card.frame.minX + 14 : area.minX
+        let right = overview ? card.frame.maxX - 14 : area.maxX
         let markers = [
-          NSRect(x: area.minX, y: area.minY + 28.5, width: 7, height: 7),
-          NSRect(x: area.maxX - secondWidth - 11, y: area.minY + 28.5, width: 7, height: 7),
+          NSRect(x: left, y: markerY, width: 7, height: 7),
+          NSRect(x: right - secondWidth - 11, y: markerY, width: 7, height: 7),
         ]
         let labels = [
-          NSRect(x: markers[0].maxX + 4, y: area.minY + 26, width: firstWidth, height: 14),
-          NSRect(x: markers[1].maxX + 4, y: area.minY + 26, width: secondWidth, height: 14),
+          NSRect(x: markers[0].maxX + 4, y: labelY, width: firstWidth, height: 14),
+          NSRect(x: markers[1].maxX + 4, y: labelY, width: secondWidth, height: 14),
         ]
         let background = try legendPixel(
-          bitmap, at: .init(x: area.midX * scale, y: (area.minY + 33) * scale))
+          bitmap, at: .init(x: area.midX * scale, y: (markerY + 3.5) * scale))
         for (index, marker) in markers.enumerated() {
           #expect(area.contains(marker) && area.contains(labels[index]))
           let center = try legendPixel(

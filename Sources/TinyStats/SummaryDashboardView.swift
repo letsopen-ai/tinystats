@@ -3,7 +3,7 @@ import TinyStatsCore
 
 /// Owns module assembly, layout, accessibility lifetime, and history charts.
 /// Card presentation lives in SummaryDashboardCards.swift and draws in this same view.
-/// No layers, per-card controls, images, or timers.
+/// No layers, per-card controls or timers. Overview draws the existing app icon.
 @MainActor final class SummaryDashboardView: ChartHoverView {
   /// Availability of a statistic among valid readings, not coverage of elapsed time.
   struct ObservationCoverage {
@@ -47,6 +47,7 @@ import TinyStatsCore
     var sampleBounds: [ClosedRange<Date>] = []
     var valueFormat: ChartValueFormat = .number
     var alignsCoreHistory = false
+    var drawsTrace = false
     var coverage: [String] = []
     var firstCoverage: ObservationCoverage? = nil, secondCoverage: ObservationCoverage? = nil
     var timeline: HistoryTimeline { time.timeline }
@@ -56,6 +57,8 @@ import TinyStatsCore
 
   private(set) var cards: [Card] = []
   var usesPopoverLayout = false
+  private(set) var isOverview = false
+  var usesOverviewLayout: Bool { isOverview && !usesPopoverLayout }
   var popoverHeadline: (title: String, value: String, subtitle: String)?
   var popoverDocumentHeight: CGFloat {
     canonicalFrames.enumerated().reduce(0) { total, pair in
@@ -76,7 +79,7 @@ import TinyStatsCore
   private var scalesSummaryLayout = true
   /// Grow graphics and type together, with a cap so maximized views remain readable.
   var contentScale: CGFloat {
-    guard scalesSummaryLayout, !usesPopoverLayout else { return 1 }
+    guard scalesSummaryLayout, !usesPopoverLayout, !usesOverviewLayout else { return 1 }
     return min(1.5, max(1, sqrt(min(bounds.width / 520, bounds.height / 454))))
   }
   private var canonicalFrames: [NSRect] = []
@@ -120,6 +123,13 @@ import TinyStatsCore
   }
   private func layoutSummaryCards() {
     guard canonicalFrames.count == cards.count else { return }
+    if usesOverviewLayout {
+      for (index, frame) in Self.overviewFrames(in: bounds).enumerated()
+      where cards.indices.contains(index) {
+        cards[index].frame = frame
+      }
+      return
+    }
     if usesPopoverLayout {
       var y: CGFloat = 0
       for index in cards.indices {
@@ -179,6 +189,7 @@ import TinyStatsCore
   }
   func update(_ s: Snapshot, history: [HistoryPoint], settings: Settings, module: Module) {
     prepareTextStyles(for: module)
+    isOverview = module == .overview
     scalesSummaryLayout = true
     cards.removeAll(keepingCapacity: true)
     canonicalFrames.removeAll(keepingCapacity: true)
@@ -622,49 +633,8 @@ import TinyStatsCore
           ? "No accessory battery readings"
           : "See All readings for every reported accessory")
     default:
-      let volume = s.startupVolume
-      let quick: [Tile] = [
-        tile(
-          "CPU", Display.percent(s.cpu?.usage), SystemStyle.accent, key: \.cpu,
-          fraction: s.cpu?.usage.map { $0 / 100 }, percent: true),
-        tile(
-          "GPU", Display.percent(s.gpus.compactMap(\.usage).max()), SystemStyle.secondaryAccent,
-          key: \.gpu,
-          fraction: s.gpus.compactMap(\.usage).max().map { $0 / 100 }, percent: true),
-        tile(
-          "Memory", Display.percent(s.memory?.percent), SystemStyle.accent, key: \.memory,
-          fraction: s.memory.map { $0.percent / 100 }, percent: true),
-        tile(
-          "Startup used", Display.percent(volume?.percent),
-          SystemStyle.secondaryAccent, key: \.diskUsed,
-          fraction: volume.map { $0.percent / 100 },
-          detail: volume == nil ? "Volume unavailable" : "", percent: true),
-      ]
-      card("YOUR MAC", 0, 110, .tiles(quick, columns: 4), trailing: "Thermal: " + s.thermalState)
-      card(
-        "NETWORK", 118, 170,
-        plot(
-          \.upload, \.download, labels: ("Upload", "Download"),
-          values: (Display.rate(s.upload), Display.rate(s.download)), mirrored: true),
-        trailing: s.selectedInterface)
-      let system: [Tile] = [
-        tile(
-          "Memory pressure", s.memory?.pressureDescription ?? "No reading", SystemStyle.accent),
-        tile("Disk read", Display.rate(s.diskRead), SystemStyle.secondaryAccent, key: \.diskRead),
-        tile("Disk write", Display.rate(s.diskWrite), SystemStyle.accent, key: \.diskWrite),
-        tile(
-          "CPU temperature", temperature(s.cpuTemperature), SystemStyle.secondaryAccent,
-          key: \.temperature,
-          fraction: s.cpuTemperature.map { $0 / 100 }, detail: temperatureScale),
-        tile(
-          s.batteries.isEmpty ? "System power" : "Battery",
-          s.batteries.first.map { Display.percent($0.percent) } ?? s.sensors.first {
-            $0.key == "PSTR" && $0.kind == .power
-          }.map { $0.formatted(fahrenheit: false) } ?? "No reading",
-          SystemStyle.accent, fraction: s.batteries.first.map { $0.percent / 100 }),
-        tile("Uptime", Display.duration(s.uptime), SystemStyle.secondaryAccent),
-      ]
-      card("SYSTEM", 296, 158, .tiles(system, columns: 3))
+      cards = Self.overviewCards(s, history: recent, settings: settings)
+      canonicalFrames = Self.overviewFrames(in: .init(x: 0, y: 0, width: 520, height: 554))
     }
     layoutSummaryCards()
     setAccessibilityLabel(module.title + " summary")
@@ -861,6 +831,7 @@ import TinyStatsCore
       coverage: spokenCoverage, firstCoverage: firstCoverage, secondCoverage: secondCoverage)
     prepareTextStyles(for: module)
     scalesSummaryLayout = false
+    isOverview = false
     let kinds = module == .cpu ? projection.latestCPUCoreKinds : nil
     let plotHeight: CGFloat = kinds == nil ? bounds.height : 190
     cards = [
@@ -912,6 +883,10 @@ import TinyStatsCore
         x: original.frame.minX / zoom, y: original.frame.minY / zoom,
         width: original.frame.width / zoom, height: original.frame.height / zoom)
       SystemStyle.drawPlatter(card.frame)
+      if isOverview {
+        drawOverviewCard(card)
+        continue
+      }
       if usesPopoverLayout, original.frame.minY == 0, let headline = popoverHeadline {
         text(
           headline.title,
@@ -948,6 +923,8 @@ import TinyStatsCore
       }
       let content = card.contentRect
       switch card.content {
+      case .device(let header): drawDeviceHeader(header, in: card.frame)
+      case .overviewTile(let tile): drawOverviewTile(tile, in: card.frame)
       case .message(let message):
         text(message, rect: content, color: .secondaryLabelColor, size: 11)
       case .none: break
@@ -1014,7 +991,9 @@ import TinyStatsCore
     if !current.isEmpty { segments.append(current) }
     return segments
   }
-  func drawMiniHistory(_ plot: Plot, in area: NSRect, upperBound: Double? = nil) {
+  func drawMiniHistory(
+    _ plot: Plot, in area: NSRect, upperBound: Double? = nil, filled: Bool = true
+  ) {
     NSColor.quaternaryLabelColor.withAlphaComponent(0.3).setFill()
     NSRect(x: area.minX, y: area.maxY - 0.5, width: area.width, height: 0.5).fill()
     let segments = Self.historySegments(plot, upperBound: upperBound)
@@ -1034,7 +1013,7 @@ import TinyStatsCore
       fill.line(to: NSPoint(x: first.x, y: baseline))
       fill.close()
       plot.firstColor.withAlphaComponent(0.2).setFill()
-      fill.fill()
+      if filled { fill.fill() }
       plot.firstColor.setStroke()
       line.lineWidth = 1.2
       line.stroke()
@@ -1220,11 +1199,21 @@ import TinyStatsCore
         })
       else { return "No recorded observations" }
       let distance = abs((timeline.positions[index] ?? 0) - fraction)
-      let tolerance = max(
-        1 / max(1, Double(graph.width)), 1 / Double(max(1, timeline.indices.count - 1)))
+      let sampleTolerance =
+        plot.domain == nil
+        ? 1 / Double(max(1, timeline.indices.count - 1))
+        : (timeline.cadence?.lowerBound ?? 0) / max(1, timeline.duration)
+      let tolerance = max(1 / max(1, Double(graph.width)), sampleTolerance)
       guard distance <= tolerance else { return "No recorded observations here" }
-      return Self.hoverDate(plot.times[index]) + "\n" + plot.firstLabel + ": "
+      var result =
+        Self.hoverDate(plot.times[index]) + "\n" + plot.firstLabel + ": "
         + format.string(plot.first.indices.contains(index) ? plot.first[index] : nil)
+      if !plot.secondLabel.isEmpty {
+        result +=
+          "\n" + plot.secondLabel + ": "
+          + format.string(plot.second.indices.contains(index) ? plot.second[index] : nil)
+      }
+      return result
     }
     let scale = (window?.backingScaleFactor ?? 1) * contentScale
     let graph = Self.snappedTimeColumn(graph, scale: scale)
@@ -1273,7 +1262,11 @@ import TinyStatsCore
     let area = unscaledCard.contentRect
     switch card.content {
     case .plot(let plot):
-      return hoverPlot(plot, graph: Self.plotGraphRect(plot, area: area), point: point)
+      return hoverPlot(
+        plot,
+        graph: isOverview
+          ? Self.overviewNetworkGraph(in: frame) : Self.plotGraphRect(plot, area: area),
+        point: point, mini: isOverview)
     case .coreHistory(let matrix):
       let order = CPUCoreKind.allCases.flatMap { kind in
         matrix.kinds.indices.filter { matrix.kinds[$0] == kind }
@@ -1308,6 +1301,15 @@ import TinyStatsCore
       if column.firstMissing { text += " · Partial / missing" }
       if column.gap { text += " · Collection gap" }
       return text
+    case .overviewTile(let tile):
+      if let trend = tile.value.trend,
+        let text = hoverPlot(
+          trend, graph: Self.overviewSparkline(in: frame), point: point, mini: true)
+      {
+        return text
+      }
+      return card.spoken
+    case .device: return card.spoken
     case .tiles(let tiles, let requestedColumns):
       let columns = max(1, min(requestedColumns, tiles.count))
       let rows = (tiles.count + columns - 1) / columns

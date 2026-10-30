@@ -37,8 +37,16 @@ import Testing
     view.frame.size = .init(width: 1020, height: 744)
     for (index, card) in view.cards.enumerated() {
       #expect(card.frame.maxX <= 1020.01 && card.frame.maxY <= 744.01)
-      #expect(
-        card.frame.width > original[index].width && card.frame.height > original[index].height)
+      #expect(card.frame.width > original[index].width)
+      if module == .overview {
+        if index == 0 {
+          #expect(card.frame.height == 74 && original[index].height == 86)
+        } else {
+          #expect(card.frame.height >= original[index].height)
+        }
+      } else {
+        #expect(card.frame.height > original[index].height)
+      }
     }
     let resized = view.cards.map(\.frame)
     view.update(Snapshot(), history: [], settings: Settings(), module: module)
