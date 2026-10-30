@@ -59,7 +59,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   var selected: Module = .overview {
     didSet {
       navigation?.leaveSettings()
-      if isViewLoaded { navigation?.layout(in: view.bounds) }
+      if isViewLoaded {
+        navigation?.layout(in: view.bounds)
+        configureTableStyle()
+      }
       onMonitoringDemand?(selected)
       onSelect?(selected)
       refresh()
@@ -242,8 +245,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     summaryScroll.isHidden = !isPopoverPresentation
     footerSeparator.isHidden = !isPopoverPresentation
-    // Plain rows leave all padding to the platter gutter; fullWidth adds hidden content padding.
-    table.style = isPopoverPresentation ? .plain : .automatic
+    configureTableStyle()
     sensorSearch.usesNeutralFill = isPopoverPresentation
     openWindowRow.isHidden = !isPopoverPresentation
     if !isPopoverPresentation { openWindowRow.frame.origin.y = 60 }
@@ -286,6 +288,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   @objc private func openHistory() { onHistory?(selected) }
   func monitoringVisibilityChanged(_ visible: Bool) {
     onMonitoringDemand?(visible && !showsSettings ? selected : nil)
+  }
+  private func configureTableStyle() {
+    // Sensors own their text padding in both hosts; automatic/fullWidth add native cell gutters.
+    table.style = isPopoverPresentation || selected == .sensors ? .plain : .automatic
   }
   func showSettingsView(_ content: NSView, page: PreferencesController.Page) {
     loadViewIfNeeded()
@@ -335,7 +341,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       x: 154, y: chart.frame.minY, width: min(600, width * 0.7), height: chartHeight)
     let tableHeight = weather && chart.isHidden ? h - 247 : chart.frame.minY - 66
     detailScroll?.frame = .init(x: 150, y: 56, width: max(0, w - 168), height: max(0, tableHeight))
-    let columnsWidth = max(0, min(w - 190, (detailScroll?.contentSize.width ?? 0) - 36))
+    let columnsWidth =
+      selected == .sensors
+      ? max(0, detailScroll?.contentSize.width ?? 0)
+      : max(0, min(w - 190, (detailScroll?.contentSize.width ?? 0) - 36))
     let labelWidth: CGFloat = (selected == .network ? 240 : 280) + max(0, w - 700) * 0.55
     sizeColumn(table.tableColumns.first, to: min(columnsWidth, labelWidth))
     sizeColumn(table.tableColumns.last, to: max(0, columnsWidth - labelWidth))
@@ -587,7 +596,6 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       tableView.makeView(withIdentifier: identifier, owner: self) as? SensorBrowserRowView
       ?? SensorBrowserRowView()
     view.identifier = identifier
-    view.horizontalCellInset = isPopoverPresentation ? 12 : 4
     return view
   }
   func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
@@ -701,10 +709,12 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       }
       return cell
     }
+    let textID = selected == .sensors ? NSUserInterfaceItemIdentifier("sensor-" + id.rawValue) : id
     let cell =
-      table.makeView(withIdentifier: id, owner: self) as? NSTextField
-      ?? NSTextField(labelWithString: "")
-    cell.identifier = id
+      table.makeView(withIdentifier: textID, owner: self) as? NSTextField
+      ?? (selected == .sensors
+        ? SensorBrowserTextField(labelWithString: "") : NSTextField(labelWithString: ""))
+    cell.identifier = textID
     let isValue = id.rawValue == "value"
     cell.stringValue =
       isValue

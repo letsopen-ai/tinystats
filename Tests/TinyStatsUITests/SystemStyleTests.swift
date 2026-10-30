@@ -149,9 +149,11 @@ import Testing
     ("cpu", .cpu, true, false, 0), ("memory", .memory, true, false, 0),
     ("network", .network, true, false, 0), ("overview", .overview, true, false, 0),
     ("sensors", .sensors, true, false, 0),
-    // Keep the original eleven surfaces/names and add a paired Sensors readings capture.
+    // Preserve prior capture names; cover Sensors modes in both hosts as well.
     ("sensors-readings", .sensors, true, false, 0),
     ("main-window", .overview, false, false, 0),
+    ("main-sensors", .sensors, false, false, 0),
+    ("main-sensors-readings", .sensors, false, false, 0),
     ("settings-menu-bar", .overview, false, true, 0),
     ("solid-cpu", .cpu, true, false, 1), ("solid-main-window", .overview, false, false, 1),
     ("contrast-cpu", .cpu, true, false, 2), ("contrast-main-window", .overview, false, false, 2),
@@ -171,7 +173,7 @@ import Testing
       controller.settings.processGrouping = .bundles
       controller.isPopoverPresentation = dropdown
       controller.selected = module
-      controller.showsAllReadings = surface == "sensors-readings"
+      controller.showsAllReadings = surface.hasSuffix("sensors-readings")
       let size = dropdown ? SystemStyle.popoverSize : MainWindow.minimumSize
       controller.view.frame = .init(
         x: (1080 - size.width) / 2, y: (780 - size.height) / 2,
@@ -1374,6 +1376,27 @@ import Testing
   let detail = DetailController()
   detail.isPopoverPresentation = true
   detail.selected = .sensors
+  detail.view.setFrameSize(SystemStyle.popoverSize)
+  for all in [false, true] {
+    detail.isPopoverPresentation = false
+    detail.view.setFrameSize(MainWindow.minimumSize)
+    detail.showsAllReadings = all
+    var sample = Snapshot()
+    sample.sensors = [
+      .init(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 45),
+      .init(key: "F0Ac", name: "Fan 1", kind: .fan, value: 1200),
+    ]
+    detail.update(sample, history: [])
+    for theme in [AppTheme.light, .dark] {
+      detail.view.appearance = theme.nativeAppearance
+      detail.view.layoutSubtreeIfNeeded()
+      try systemGalleryImage(
+        detail.view,
+        to: folder.appendingPathComponent(
+          "sensors-window-\(all ? "readings" : "summary")-\(theme.rawValue).png"))
+    }
+  }
+  detail.isPopoverPresentation = true
   detail.view.setFrameSize(SystemStyle.popoverSize)
   for state in ["empty", "populated", "scan-limit"] {
     var sample = Snapshot()

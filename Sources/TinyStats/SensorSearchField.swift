@@ -13,33 +13,31 @@ import AppKit
   }
 }
 
+/// Sensors use plain labels only; process app, meter and grouping cells keep their own layout.
+@MainActor final class SensorBrowserTextField: NSTextField {
+  override class var cellClass: AnyClass? {
+    get { SensorBrowserTextFieldCell.self }
+    set { super.cellClass = newValue }
+  }
+}
+
+/// AppKit owns the field frame during tiling/reload; centre the text in every supplied frame.
+@MainActor final class SensorBrowserTextFieldCell: NSTextFieldCell {
+  override func drawingRect(forBounds rect: NSRect) -> NSRect {
+    var text = super.drawingRect(forBounds: rect.insetBy(dx: 12, dy: 0))
+    // Keep the natural height, including for larger fonts, rather than clipping to the pill.
+    let height = super.cellSize(
+      forBounds: .init(x: 0, y: 0, width: text.width, height: .greatestFiniteMagnitude)
+    ).height
+    text.origin.y = rect.midY - height / 2
+    text.size.height = height
+    return text
+  }
+}
+
 /// Plain table geometry keeps the value gutter intact, with native source-list selection ink.
 @MainActor final class SensorBrowserRowView: NSTableRowView {
-  var horizontalCellInset: CGFloat = 0 { didSet { needsLayout = true } }
   var selectionRect: NSRect { bounds.insetBy(dx: 4, dy: 1) }
-
-  override func viewDidMoveToSuperview() {
-    super.viewDidMoveToSuperview()
-    needsLayout = true
-  }
-
-  override func layout() {
-    super.layout()
-    for column in 0..<numberOfColumns {
-      guard let field = view(atColumn: column) as? NSTextField,
-        let table = superview as? NSTableView
-      else { continue }
-      let index = table.row(for: self)
-      guard index >= 0 else { continue }
-      // AppKit stretches a bare text field to the row height; its text stays top-aligned.
-      // Keep the text's intrinsic height and centre it on the same rect we highlight.
-      var frame = convert(table.frameOfCell(atColumn: column, row: index), from: table)
-        .insetBy(dx: horizontalCellInset, dy: 0)
-      frame.size.height = min(field.fittingSize.height, selectionRect.height)
-      frame.origin.y = selectionRect.midY - frame.height / 2
-      field.frame = frame
-    }
-  }
 
   override func drawSelection(in dirtyRect: NSRect) {
     guard selectionHighlightStyle != .none else { return }

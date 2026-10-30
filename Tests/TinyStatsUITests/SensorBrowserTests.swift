@@ -149,7 +149,16 @@ import Testing
   for size in [NSSize(width: 884, height: 660), NSSize(width: 1920, height: 928)] {
     window.setContentSize(size)
     detail.view.layoutSubtreeIfNeeded()
-    #expect(table.tableColumns.reduce(0) { $0 + $1.width } <= scroll.contentSize.width - 30)
+    let index = try #require(
+      (0..<table.numberOfRows).first {
+        table.view(atColumn: 1, row: $0, makeIfNecessary: true) is NSTextField
+      })
+    let field = try #require(
+      table.view(atColumn: 1, row: index, makeIfNecessary: true) as? NSTextField)
+    let cell = try #require(field.cell)
+    let text = scroll.contentView.convert(cell.drawingRect(forBounds: field.bounds), from: field)
+    // Sensors put the gutter inside the cell, so measure the text rather than unused column width.
+    #expect(abs(scroll.contentView.bounds.maxX - text.maxX - 12) <= 0.5)
   }
   window.close()
 }

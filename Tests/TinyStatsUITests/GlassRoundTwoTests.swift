@@ -223,7 +223,11 @@ func sensorsKeepNativeSearchKeyboardEligibilityAndRoundedSelectionAcrossNavigati
   #expect(table.style == .plain)
   #expect(detail.tableView(table, rowViewForRow: 0) is SensorBrowserRowView)
   detail.isPopoverPresentation = false
-  #expect(table.style == .automatic && !field.usesNeutralFill)
+  #expect(table.style == .plain && !field.usesNeutralFill)
+  detail.selected = .cpu
+  #expect(table.style == .automatic)
+  detail.selected = .sensors
+  #expect(table.style == .plain)
 }
 
 @Test @MainActor func sensorSelectionHasRoundedInsetCornersInBothAppearances() throws {
@@ -286,29 +290,86 @@ func sensorsKeepNativeSearchKeyboardEligibilityAndRoundedSelectionAcrossNavigati
             let row = try #require(
               table.rowView(atRow: index, makeIfNecessary: true) as? SensorBrowserRowView)
             row.layoutSubtreeIfNeeded()
-            let selection = row.selectionRect
-            #expect(row.isSelected)
-            #expect(selection.minY >= row.bounds.minY && selection.maxY <= row.bounds.maxY)
-            for column in 0..<table.numberOfColumns {
-              let cell = try #require(
-                table.view(atColumn: column, row: index, makeIfNecessary: true) as? NSTextField)
-              let frame = row.convert(cell.bounds, from: cell)
-              #expect(selection.contains(frame))
-              #expect(abs(selection.midY - frame.midY) <= 0.5)
-              #expect(frame.height == cell.fittingSize.height)
+            func assertTextGeometry() throws {
+              let selection = row.selectionRect
+              #expect(row.isSelected)
+              #expect(selection.minY >= row.bounds.minY && selection.maxY <= row.bounds.maxY)
+              for column in 0..<table.numberOfColumns {
+                let field = try #require(
+                  table.view(atColumn: column, row: index, makeIfNecessary: true) as? NSTextField)
+                let cell = try #require(field.cell)
+                let text = row.convert(cell.drawingRect(forBounds: field.bounds), from: field)
+                #expect(selection.contains(text))
+                #expect(abs(selection.midY - text.midY) <= 0.5)
+                #expect(abs(text.height - field.fittingSize.height) <= 0.5)
+                if column == 0 {
+                  #expect(abs(text.minX - row.bounds.minX - 12) <= 0.5)
+                  #expect(abs(text.minX - selection.minX - 8) <= 0.5)
+                } else {
+                  #expect(abs(row.bounds.maxX - text.maxX - 12) <= 0.5)
+                  #expect(abs(selection.maxX - text.maxX - 8) <= 0.5)
+                }
+              }
+              if dropdown {
+                let highlight = row.convert(selection, to: detail.view)
+                let card = try #require(
+                  detail.view.subviews.compactMap { $0 as? PlatterView }.first {
+                    !$0.isHidden && $0.frame.contains(highlight)
+                  })
+                #expect(abs(highlight.minX - card.frame.minX - 4) <= 0.5)
+                #expect(abs(card.frame.maxX - highlight.maxX - 4) <= 0.5)
+              }
             }
-            if dropdown {
-              let highlight = row.convert(selection, to: detail.view)
-              let card = try #require(
-                detail.view.subviews.compactMap { $0 as? PlatterView }.first {
-                  !$0.isHidden && $0.frame.contains(highlight)
-                })
-              #expect(abs(highlight.minX - card.frame.minX - 4) <= 0.5)
-              #expect(abs(card.frame.maxX - highlight.maxX - 4) <= 0.5)
-            }
+            try assertTextGeometry()
+            // A live tick replaces cells without changing row width or requesting row layout.
+            table.reloadData(
+              forRowIndexes: IndexSet(integer: index),
+              columnIndexes: IndexSet(integersIn: 0..<table.numberOfColumns))
+            try assertTextGeometry()
+            let width = row.frame.width
+            let first = try #require(table.tableColumns.first)
+            let last = try #require(table.tableColumns.last)
+            first.width += 16
+            last.width -= 16
+            table.tile()
+            #expect(row.frame.width == width)
+            try assertTextGeometry()
           }
         }
       }
     }
+  }
+}
+
+@Test @MainActor func sensorTextInkCentersInAppKitFramesWithoutClampingLargerFonts() throws {
+  let field = SensorBrowserTextField(labelWithString: "Hg52")
+  field.appearance = NSAppearance(named: .aqua)
+  for size in [12.0, 22.0] {
+    field.font = .systemFont(ofSize: size)
+    let naturalHeight = field.fittingSize.height
+    let cell = try #require(field.cell)
+    let short = NSRect(x: 0, y: 0, width: 180, height: 25)
+    let text = cell.drawingRect(forBounds: short)
+    #expect(text.height == naturalHeight)
+    #expect(text.midY == short.midY)
+    var inkCenters: [CGFloat] = []
+    var inkHeights: [CGFloat] = []
+    for extra in [8.0, 28.0] {
+      // Simulate AppKit assigning the complete cell frame; no row layout participates.
+      field.frame = .init(x: 0, y: 0, width: 180, height: naturalHeight + extra)
+      let bitmap = try roundTwoBitmap(field)
+      let scale = CGFloat(bitmap.pixelsHigh) / field.bounds.height
+      let inkRows = (0..<bitmap.pixelsHigh).filter { y in
+        (0..<bitmap.pixelsWide).contains { x in
+          (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05
+        }
+      }
+      let first = try #require(inkRows.first)
+      let last = try #require(inkRows.last)
+      inkCenters.append(CGFloat(first + last + 1) / (2 * scale))
+      inkHeights.append(CGFloat(last - first + 1) / scale)
+    }
+    #expect(abs(inkCenters[1] - inkCenters[0] - 10) <= 0.5)
+    #expect(inkHeights[0] == inkHeights[1])
   }
 }
