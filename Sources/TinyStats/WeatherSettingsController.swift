@@ -31,6 +31,7 @@ import TinyStatsCore
     window.center()
     super.init(window: window)
     window.delegate = self
+    window.contentView = SystemSettingsBackgroundView(frame: window.contentView?.bounds ?? .zero)
     guard let content = window.contentView else { return }
     func add(_ view: NSView, _ x: Int, _ y: Int, _ width: Int, _ height: Int) {
       view.frame = .init(x: x, y: y, width: width, height: height)
@@ -108,6 +109,21 @@ import TinyStatsCore
     terms.isBordered = false
     terms.contentTintColor = .linkColor
     add(terms, 365, 15, 232, 28)
+    let form = SystemSettingsForm.self
+    _ = SystemSettingsForm(
+      in: content,
+      views: [
+        intro, form.text("Location", heading: true),
+        form.group([
+          form.row("Source", source, width: 330),
+          form.row("Location name", name, width: 330),
+          form.row("Latitude (−90…90)", latitude, width: 330),
+          form.row("Longitude (−180…180)", longitude, width: 330),
+          form.row("Forecast time zone", zone, width: 330),
+          form.row("", apply),
+        ]), citiesStatus, message, privacy, status,
+        form.group([form.row("", attribution), form.row("", terms)]),
+      ])
     updateFieldAvailability()
     savedDraft = draft
   }

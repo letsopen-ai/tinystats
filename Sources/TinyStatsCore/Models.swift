@@ -255,6 +255,7 @@ public struct HistoryPoint: Sendable {
 }
 public struct Snapshot: Sendable {
   public var timestamp = Date(), uptime: Double = 0
+  public var device = DeviceIdentity()
   public var cpu: CPUReading?, memory: MemoryReading?
   public var frequencies: [FrequencyReading] = []
   public var gpus: [GPUReading] = [], interfaces: [InterfaceReading] = [],

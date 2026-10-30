@@ -20,8 +20,7 @@ import UniformTypeIdentifiers
   private let graphScroll = NSScrollView(frame: .zero)
   private var minimumGraphHeight: CGFloat = 0
   private let status = NSTextField(wrappingLabelWithString: "No readings yet")
-  private let keepButton = NSButton(
-    checkboxWithTitle: "Keep history between launches", target: nil, action: nil)
+  private let keepButton = SystemSettingSwitch(title: "Keep history between launches")
   private let clearButton = NSButton(title: "Clear history…", target: nil, action: nil)
   private let storageLabel = NSTextField(wrappingLabelWithString: "")
   private let persistenceAvailable: Bool
@@ -43,6 +42,7 @@ import UniformTypeIdentifiers
     window.appearance = settings.theme.nativeAppearance
     super.init(window: window)
     window.delegate = self
+    window.contentView = SystemSettingsBackgroundView(frame: window.contentView?.bounds ?? .zero)
     guard let root = window.contentView else { return }
     modulePicker.addItems(withTitles: Self.modules.map(\.title))
     modulePicker.selectItem(at: Self.modules.firstIndex(of: self.module) ?? 0)
@@ -92,7 +92,12 @@ import UniformTypeIdentifiers
     keepButton.frame = .init(x: 20, y: 65, width: 360, height: 24)
     keepButton.toolTip =
       "Save only numeric system history locally, up to 28 days. No processes, addresses, locations or account events. Turning this off pauses saving and keeps the existing checkpoint until you explicitly Clear history. Timestamps and gaps can reveal activity. Per-core checkpoints require TinyStats 0.31 or later; scalar-only checkpoints require 0.28 or later. Turn saving off before launching an older version; it cannot read the new checkpoint, which remains until Clear."
-    root.addSubview(keepButton)
+    let storageGroup = SystemFormSection(rows: [
+      SystemSettingsForm.row(keepButton.title, keepButton)
+    ])
+    storageGroup.frame = .init(x: 20, y: 60, width: 520, height: 36)
+    storageGroup.autoresizingMask = [.width, .maxYMargin]
+    root.addSubview(storageGroup)
     storageLabel.frame = .init(x: 24, y: 36, width: 512, height: 28)
     storageLabel.autoresizingMask = [.width, .maxYMargin]
     storageLabel.font = .systemFont(ofSize: 11)

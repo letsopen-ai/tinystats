@@ -131,7 +131,7 @@ enum SolarEventPresentation {
     parts += upcoming.map(pointDescription)
     if !upcoming.isEmpty {
       parts.append(
-        "Orange bars show relative temperature. Blue bars show millimetres of precipitation over each labelled forecast period; periods may overlap and must not be summed. Missing amounts or periods have no bar; zero has no filled bar. Positive bars have a one-pixel minimum."
+        "Lighter accent bars show relative temperature. Full accent bars show millimetres of precipitation over each labelled forecast period; periods may overlap and must not be summed. Missing amounts or periods have no bar; zero has no filled bar. Positive bars have a one-pixel minimum."
       )
     }
     parts += days.map { day in
@@ -156,18 +156,18 @@ enum SolarEventPresentation {
     [
       .init(
         label: "Humidity", value: percent(current?.humidity), fraction: fraction(current?.humidity),
-        color: .systemBlue),
+        color: SystemStyle.accent),
       .init(
         label: "Cloud cover", value: percent(current?.cloudCover),
         fraction: fraction(current?.cloudCover), color: .systemGray),
       .init(
         label: "Wind",
         value: current?.windMetersPerSecond.map { String(format: "%.1f m/s", $0) } ?? "—",
-        fraction: nil, color: .systemTeal),
+        fraction: nil, color: SystemStyle.secondaryAccent),
       .init(
         label: "Pressure",
         value: current?.pressureHPa.map { String(format: "%.0f hPa", $0) } ?? "—", fraction: nil,
-        color: .systemPurple),
+        color: SystemStyle.accent),
     ]
   }
   private func fraction(_ value: Double?) -> Double? {
@@ -230,9 +230,19 @@ enum SolarEventPresentation {
       "\(dateLabel(point.date, style: .forecast)): \(point.condition), \(temperature(point.celsius)); precipitation \(precipitation.description)\(precipitation.hours.map { " over the next \($0)h" } ?? ", interval unavailable")"
   }
   // Fixed reading sizes stay legible; remaining height goes to the range chart.
-  var conditionFrame: NSRect { .init(x: 0, y: 0, width: bounds.width, height: 120) }
-  var upcomingFrame: NSRect { .init(x: 0, y: 128, width: bounds.width, height: 146) }
+  var conditionFrame: NSRect {
+    .init(x: 0, y: 0, width: bounds.width, height: bounds.width < 400 ? 200 : 120)
+  }
+  var upcomingFrame: NSRect {
+    .init(
+      x: 0, y: bounds.width < 400 ? 208 : 128, width: bounds.width,
+      height: bounds.width < 400 ? 40 + CGFloat(upcoming.count) * 30 : 146)
+  }
   var dailyFrame: NSRect {
+    if bounds.width < 400 {
+      return .init(
+        x: 0, y: upcomingFrame.maxY + 8, width: bounds.width, height: 40 + CGFloat(days.count) * 23)
+    }
     let x = showsSolar ? solarFrame.maxX + 8 : 0
     return .init(x: x, y: 282, width: max(0, bounds.width - x), height: max(0, bounds.height - 304))
   }
@@ -248,9 +258,13 @@ enum SolarEventPresentation {
   private var compactDays: Bool { dailyFrame.height < 100 }
   private var dayHeight: CGFloat { compactDays ? 16 : 23 }
   var visibleDays: Int {
-    min(days.count, max(0, Int((dailyFrame.height - (compactDays ? 38 : 49)) / dayHeight)))
+    if bounds.width < 400 { return days.count }
+    return min(days.count, max(0, Int((dailyFrame.height - (compactDays ? 38 : 49)) / dayHeight)))
   }
   func upcomingCell(_ index: Int) -> NSRect {
+    if bounds.width < 400 {
+      return .init(x: 0, y: 242 + CGFloat(index) * 30, width: bounds.width, height: 30)
+    }
     let width = (bounds.width - 24) / CGFloat(max(1, upcoming.count))
     return .init(
       x: 12 + CGFloat(index) * width, y: upcomingFrame.minY + 29, width: width, height: 98)
@@ -261,12 +275,21 @@ enum SolarEventPresentation {
   }
   func upcomingTimeLabel(_ index: Int) -> String { dateLabels.compactTime(upcoming[index].date) }
   func dayRow(_ index: Int) -> NSRect {
-    .init(
+    if bounds.width < 400 {
+      return .init(
+        x: 12, y: dailyFrame.minY + 34 + CGFloat(index) * 23, width: bounds.width - 24, height: 23)
+    }
+    return .init(
       x: dailyFrame.minX + 12,
       y: dailyFrame.minY + (compactDays ? 24 : 28) + CGFloat(index) * dayHeight,
       width: dailyFrame.width - 24, height: dayHeight)
   }
   override func hoverText(at point: NSPoint) -> String? {
+    if bounds.width < 400, solarDay != nil,
+      NSRect(x: 0, y: dailyFrame.maxY + 8, width: bounds.width, height: 92).contains(point)
+    {
+      return solarDescription
+    }
     if showsSolar, let day = solarDay, solarFrame.contains(point) {
       if solarTrack.insetBy(dx: 0, dy: -6).contains(point), solarTrack.width > 0 {
         let fraction = min(1, max(0, (point.x - solarTrack.minX) / solarTrack.width))
@@ -296,6 +319,10 @@ enum SolarEventPresentation {
   }
   override func draw(_ dirtyRect: NSRect) {
     guard bounds.width >= 300, bounds.height >= 300 else { return }
+    if bounds.width < 400 {
+      drawPopover()
+      return
+    }
     if current == nil && upcoming.isEmpty && days.isEmpty && solarDay == nil {
       panel(.init(x: 0, y: 0, width: bounds.width, height: 116))
       symbol("cloud", .init(x: 16, y: 23, width: 46, height: 46), color: .secondaryLabelColor)
@@ -311,11 +338,11 @@ enum SolarEventPresentation {
     }
     panel(conditionFrame)
     text(
-      "NOW · MODEL FORECAST", .init(x: 12, y: 9, width: bounds.width - 24, height: 16), size: 10,
+      "Now · model forecast", .init(x: 12, y: 9, width: bounds.width - 24, height: 16), size: 10,
       color: .secondaryLabelColor)
     symbol(
       current?.systemSymbol ?? "questionmark.circle", .init(x: 13, y: 34, width: 40, height: 40),
-      color: .systemOrange)
+      color: SystemStyle.secondaryAccent)
     text(
       temperature(current?.celsius), .init(x: 61, y: 29, width: 150, height: 35), size: 29,
       weight: .medium)
@@ -360,7 +387,7 @@ enum SolarEventPresentation {
       color: .secondaryLabelColor)
     panel(upcomingFrame)
     text(
-      "NEXT MODEL TIMES", .init(x: 12, y: 138, width: 160, height: 15), size: 10,
+      "Next model times", .init(x: 12, y: 138, width: 160, height: 15), size: 10,
       color: .secondaryLabelColor)
     text(
       timeZone.identifier, .init(x: 177, y: 138, width: bounds.width - 189, height: 15), size: 10,
@@ -384,18 +411,18 @@ enum SolarEventPresentation {
           alignment: .center, wrapping: true)
         symbol(
           point.systemSymbol, .init(x: cell.midX - 7, y: cell.minY + 26, width: 14, height: 14),
-          color: .systemOrange)
+          color: SystemStyle.secondaryAccent)
         let height = point.celsius.flatMap {
           $0.isFinite ? 5 + 17 * ($0 - low) / max(1, high - low) : nil
         }
         if let height {
           capsule(
             .init(x: cell.midX - 9, y: cell.minY + 65 - height, width: 7, height: height),
-            .systemOrange)
+            SystemStyle.secondaryAccent)
         }
         let rain = Precipitation(point)
         if let bar = precipitationBar(index, maximum: rainMaximum, scale: scale), bar.height > 0 {
-          capsule(bar, .systemBlue)
+          capsule(bar, SystemStyle.accent)
         }
         text(
           temperature(point.celsius),
@@ -404,12 +431,12 @@ enum SolarEventPresentation {
         text(
           rain.label,
           .init(x: cell.minX, y: cell.minY + 84, width: cell.width, height: 13), size: 9,
-          color: (rain.plottedAmount ?? 0) > 0 ? .systemBlue : .secondaryLabelColor,
+          color: (rain.plottedAmount ?? 0) > 0 ? SystemStyle.accent : .secondaryLabelColor,
           alignment: .center)
       }
     }
     text(
-      "Orange: relative temperature · blue: "
+      "Light: temperature · full: "
         + (precipitationMaximum.map {
           "0–\(String(format: $0 > 0 && $0 < 0.1 ? "%.3g" : "%.1f", $0)) mm / period (may overlap)"
         } ?? "precipitation unavailable"),
@@ -418,7 +445,7 @@ enum SolarEventPresentation {
     if dailyFrame.height >= 49 {
       panel(dailyFrame)
       text(
-        "DAILY SAMPLED LOW / HIGH",
+        "Daily sampled low / high",
         .init(
           x: dailyFrame.minX + 12, y: dailyFrame.minY + 9, width: dailyFrame.width - 24, height: 15),
         size: 10,
@@ -435,7 +462,7 @@ enum SolarEventPresentation {
         text(
           temperature(day.low), .init(x: row.minX + 57, y: row.minY + 2, width: 45, height: 18),
           size: 11,
-          color: .systemBlue, alignment: .right)
+          color: SystemStyle.accent, alignment: .right)
         let track = NSRect(
           x: row.minX + 110, y: row.minY + 8, width: max(1, row.width - 163), height: 6)
         capsule(track, .quaternaryLabelColor)
@@ -443,12 +470,13 @@ enum SolarEventPresentation {
           let start = track.minX + track.width * (a - low) / max(1, high - low)
           let end = track.minX + track.width * (b - low) / max(1, high - low)
           capsule(
-            .init(x: start, y: track.minY, width: max(3, end - start), height: 6), .systemOrange)
+            .init(x: start, y: track.minY, width: max(3, end - start), height: 6),
+            SystemStyle.secondaryAccent)
         }
         text(
           temperature(day.high),
           .init(x: row.maxX - 45, y: row.minY + 2, width: 45, height: 18), size: 11,
-          color: .systemOrange, alignment: .right)
+          color: SystemStyle.secondaryAccent, alignment: .right)
       }
       text(
         days.isEmpty
@@ -463,6 +491,99 @@ enum SolarEventPresentation {
         color: .secondaryLabelColor)
     }
     drawSolarDay()
+    attribution()
+  }
+  var popoverDocumentHeight: CGFloat {
+    200 + 8 + 40 + CGFloat(upcoming.count) * 30 + 8 + 40 + CGFloat(days.count) * 23
+      + (solarDay == nil ? 0 : 100) + 30
+  }
+  /// Forecast times remain individual readable rows in a narrow dropdown.
+  private func drawPopover() {
+    let width = bounds.width
+    panel(.init(x: 0, y: 0, width: width, height: 200))
+    text(
+      "Now · model forecast", .init(x: 12, y: 10, width: width - 24, height: 18), size: 12,
+      color: .secondaryLabelColor)
+    symbol(
+      current?.systemSymbol ?? "cloud", .init(x: width - 54, y: 38, width: 36, height: 36),
+      color: SystemStyle.accent)
+    text(
+      temperature(current?.celsius), .init(x: 12, y: 37, width: width - 80, height: 38), size: 30,
+      weight: .semibold)
+    text(current?.condition ?? status, .init(x: 12, y: 80, width: width - 24, height: 20), size: 13)
+    let cellWidth = (width - 24) / 2
+    for (index, metric) in metrics.enumerated() {
+      let x = 12 + CGFloat(index % 2) * cellWidth
+      let y = 108 + CGFloat(index / 2) * 34
+      text(
+        metric.label, .init(x: x, y: y, width: cellWidth, height: 13), size: 10,
+        color: .secondaryLabelColor)
+      text(
+        metric.value, .init(x: x, y: y + 14, width: cellWidth, height: 18), size: 14,
+        weight: .medium)
+    }
+    text(
+      status, .init(x: 12, y: 180, width: width - 24, height: 14), size: 9,
+      color: .secondaryLabelColor)
+    if current == nil && upcoming.isEmpty && days.isEmpty && solarDay == nil {
+      attribution()
+      return
+    }
+    let forecastY: CGFloat = 208
+    let forecastHeight = 40 + CGFloat(upcoming.count) * 30
+    panel(.init(x: 0, y: forecastY, width: width, height: forecastHeight))
+    text(
+      "Next model times", .init(x: 12, y: forecastY + 10, width: width - 24, height: 18), size: 12,
+      color: .secondaryLabelColor)
+    for (index, point) in upcoming.enumerated() {
+      let row = upcomingCell(index)
+      text(
+        dateLabels.compactTime(point.date), .init(x: 12, y: row.minY + 6, width: 56, height: 18),
+        size: 11)
+      symbol(
+        point.systemSymbol, .init(x: 74, y: row.minY + 6, width: 16, height: 16),
+        color: SystemStyle.accent)
+      text(
+        temperature(point.celsius), .init(x: 100, y: row.minY + 6, width: 66, height: 18), size: 14,
+        weight: .medium)
+      text(
+        Precipitation(point).label + " mm",
+        .init(x: 170, y: row.minY + 6, width: width - 182, height: 18), size: 11,
+        color: .secondaryLabelColor, alignment: .right)
+      NSColor.separatorColor.setFill()
+      NSRect(x: 12, y: row.maxY - 0.5, width: width - 24, height: 0.5).fill()
+    }
+    let dailyY = forecastY + forecastHeight + 8
+    let dailyHeight = 40 + CGFloat(days.count) * 23
+    panel(.init(x: 0, y: dailyY, width: width, height: dailyHeight))
+    text(
+      "Sampled low / high · may be partial",
+      .init(x: 12, y: dailyY + 10, width: width - 24, height: 18), size: 12,
+      color: .secondaryLabelColor)
+    for (index, day) in days.enumerated() {
+      let y = dailyY + 34 + CGFloat(index) * 23
+      text(
+        dateLabel(day.date, style: .shortDay), .init(x: 12, y: y, width: 70, height: 20), size: 12)
+      text(
+        temperature(day.low) + " / " + temperature(day.high),
+        .init(x: 90, y: y, width: width - 102, height: 20), size: 13, alignment: .right)
+    }
+    if let day = solarDay {
+      let y = dailyY + dailyHeight + 8
+      panel(.init(x: 0, y: y, width: width, height: 92))
+      text(
+        "Estimated daylight", .init(x: 12, y: y + 10, width: width - 24, height: 18), size: 12,
+        color: .secondaryLabelColor)
+      text(
+        duration(day.daylightDuration), .init(x: 12, y: y + 32, width: width - 24, height: 32),
+        size: 26, weight: .semibold)
+      text(
+        day.events.map {
+          $0.kind.rawValue + " "
+            + dateLabel(SolarEventPresentation.minute($0.date, in: timeZone), style: .clock)
+        }.joined(separator: " · "), .init(x: 12, y: y + 70, width: width - 24, height: 16),
+        size: 10, color: .secondaryLabelColor)
+    }
     attribution()
   }
   var solarDescription: String {
@@ -481,7 +602,7 @@ enum SolarEventPresentation {
     case .sunDownAllDay: state = "Sun below the apparent horizon throughout this civil day"
     }
     return "\(state). Daylight \(duration(day.daylightDuration)) in \(timeZone.identifier). "
-      + "This civil day is \(duration(day.interval.duration)); orange is estimated daylight, unfilled intervals have the sun below the apparent horizon. "
+      + "This civil day is \(duration(day.interval.duration)); the accent fill is estimated daylight, unfilled intervals have the sun below the apparent horizon. "
       + "Times and duration are independently rounded to the nearest minute. Very short intervals have a minimum visible width; use numerical times and duration for precision. "
       + "Now \(dateLabel(solarNow, style: .clockZone)). Local NOAA-based calculation, not a forecast. "
       + "Approximate level, unobstructed horizon; terrain and actual atmospheric refraction can change observed times."
@@ -495,14 +616,15 @@ enum SolarEventPresentation {
     let rect = solarFrame
     panel(rect)
     text(
-      "EST. DAYLIGHT · \(duration(day.daylightDuration))",
+      "Est. daylight · \(duration(day.daylightDuration))",
       .init(x: 12, y: rect.minY + 9, width: rect.width - 24, height: 14), size: 10,
       color: .secondaryLabelColor)
     if day.state == .crossings {
       for (index, kind) in [SolarDay.Kind.sunrise, .sunset].enumerated() {
         let x = 12 + CGFloat(index) * (rect.width - 24) / 2
         symbol(
-          kind.rawValue, .init(x: x, y: rect.minY + 29, width: 16, height: 16), color: .systemOrange
+          kind.rawValue, .init(x: x, y: rect.minY + 29, width: 16, height: 16),
+          color: SystemStyle.secondaryAccent
         )
         let times = day.events.filter { $0.kind == kind }.map {
           dateLabel(SolarEventPresentation.minute($0.date, in: timeZone), style: .clock)
@@ -528,7 +650,7 @@ enum SolarEventPresentation {
         .init(
           x: solarTrack.minX + solarTrack.width * left, y: solarTrack.minY,
           width: min(solarTrack.width * (1 - left), max(1, solarTrack.width * width)),
-          height: solarTrack.height), .systemOrange)
+          height: solarTrack.height), SystemStyle.secondaryAccent)
     }
     let now = solarNow.timeIntervalSince(day.interval.start) / day.interval.duration
     if (0..<1).contains(now) {
@@ -570,19 +692,14 @@ enum SolarEventPresentation {
     let path = NSBezierPath()
     path.move(to: center)
     path.line(to: end)
-    NSColor.systemTeal.setStroke()
+    SystemStyle.secondaryAccent.setStroke()
     path.lineWidth = 2
     path.stroke()
-    NSColor.systemTeal.setFill()
+    SystemStyle.secondaryAccent.setFill()
     NSBezierPath(ovalIn: .init(x: end.x - 2, y: end.y - 2, width: 4, height: 4)).fill()
   }
   private func panel(_ rect: NSRect) {
-    let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10)
-    NSColor.controlBackgroundColor.withAlphaComponent(0.55).setFill()
-    path.fill()
-    NSColor.separatorColor.setStroke()
-    path.lineWidth = 1
-    path.stroke()
+    SystemStyle.drawPlatter(rect)
   }
   private func capsule(_ rect: NSRect, _ color: NSColor) {
     guard rect.width > 0 else { return }

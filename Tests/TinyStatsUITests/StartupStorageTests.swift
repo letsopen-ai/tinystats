@@ -18,15 +18,25 @@ import Testing
   #expect(readout.values == [expected] && point.diskUsed == expected)
   let overview = SummaryDashboardView(frame: .init(x: 0, y: 0, width: 520, height: 454))
   overview.update(snapshot, history: [point], settings: settings, module: .overview)
-  guard case .tiles(let tiles, _) = overview.cards.first?.content else {
-    Issue.record("Missing overview tiles")
+  let card = try #require(
+    overview.cards.first {
+      if case .overviewTile(let tile) = $0.content { return tile.symbol == "internaldrive" }
+      return false
+    })
+  guard case .overviewTile(let storage) = card.content else {
+    Issue.record("Missing overview capacity")
     return
   }
-  let storage = try #require(
-    tiles.first { $0.label == "Startup used" })
-  #expect(storage.value == Display.percent(expected))
-  #expect(storage.fraction == expected.map { $0 / 100 } && storage.trend?.first == [expected])
-  #expect(storage.detail == (expected == nil ? "Volume unavailable" : ""))
+  #expect(
+    storage.value.value == snapshot.startupVolume.map { Display.bytes(min($0.available, $0.total)) }
+      ?? "—")
+  #expect(storage.segments?.first?.fraction == expected.map { $0 / 100 })
+  #expect(
+    storage.composition == expected.map { Display.percent($0) + " used" }
+      ?? "Storage capacity unavailable")
+  #expect(
+    storage.value.detail == snapshot.startupVolume.map { "available of " + Display.bytes($0.total) }
+      ?? "Volume unavailable")
   let disks = SummaryDashboardView(frame: .init(x: 0, y: 0, width: 520, height: 454))
   disks.update(snapshot, history: [point], settings: settings, module: .disks)
   guard case .tiles(let capacity, _) = disks.cards.first?.content else {

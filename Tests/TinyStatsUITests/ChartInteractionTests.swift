@@ -175,10 +175,10 @@ import Testing
         })
     }
   }
-  #expect(CPUCoreKind.efficiency.chartColor == NSColor.systemPink)
-  #expect(CPUCoreKind.performance.chartColor == NSColor.systemBlue)
+  #expect(CPUCoreKind.efficiency.chartColor == SystemStyle.secondaryAccent)
+  #expect(CPUCoreKind.performance.chartColor == SystemStyle.accent)
   #expect(
-    CPUCoreKind.unknown.chartColor == NSColor.systemTeal
+    CPUCoreKind.unknown.chartColor == NSColor.secondaryLabelColor
       && CPUCoreKind.unknown.chartTitle == "Unclassified")
 }
 

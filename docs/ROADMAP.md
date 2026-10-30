@@ -11,6 +11,12 @@ TinyStats is an early-stage project working toward a lean, native alternative to
 - Local network details (addresses, routes, DNS, Wi-Fi radio data) and kernel TCP/UDP per-process traffic with executable-bundle grouping.
 - Opt-in alert rules, opt-in Internet checks (HTTPS, public IP, ICMP ping) and opt-in MET Norway Weather. Weather is off by default for new installs and current location requires OS permission.
 
+## System redesign validation
+
+- Shared System tokens, accent menu graphics and platter dropdowns are implemented. Overview now uses the approved device/state header, value platters, segmented memory/storage and a five-minute network trace.
+- Step 3 is implemented: inset grouped forms across General/Menu Bar and all existing feature editors, native switches, picture presets and an appearance-aware preview strip. History and Welcome reuse the shared neutral tokens. Settings render fixtures cover light/dark; no fan-control pane is introduced.
+- Before release, complete the full final-tree local gate and native light/dark, non-blue accent, resize and physical input checks; offscreen fixture renders do not replace those checks.
+
 ## Before a signed public release
 
 See the [distribution checklist](DISTRIBUTION.md). The main open items are:

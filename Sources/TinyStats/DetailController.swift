@@ -18,6 +18,22 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     self.init(nibName: nil, bundle: nil)
     self.table = table
   }
+  var isPopoverPresentation = false {
+    didSet {
+      guard isViewLoaded else { return }
+      configurePresentation()
+      refresh()
+    }
+  }
+  var onOpenInWindow: (() -> Void)?
+  private let headlinePlatter = PlatterView()
+  private let readingsPlatter = PlatterView()
+  private let tracePlatter = PlatterView()
+  private let popoverMaterial = NSVisualEffectView()
+  private let summaryScroll = NSScrollView()
+  private let weatherScroll = NSScrollView()
+  private let openWindowRow = MenuActionRow()
+  private let footerSeparator = NSBox()
   var onCalendarDate: ((Date) -> Void)?
   var onCalendarSettings: (() -> Void)?
   var calendarSnapshot = CalendarAgendaSnapshot()
@@ -82,7 +98,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let chart = ChartView(frame: .zero)
   private var table = NSTableView()
   private var calendar: MonthCalendarView?
-  private let pauseButton = NSButton(title: "Pause", target: nil, action: nil)
+  private let pauseButton = MenuActionRow()
   private let clockFormatter = DateFormatter()
   private var weatherDateLabels: WeatherDateLabels?
   private var clockDate: Date?
@@ -97,18 +113,38 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private lazy var solarCalculator = SolarDayCalculator()
   private var summary: SummaryDashboardView?
   private var detailScroll: NSScrollView?
-  private let historyButton = NSButton(title: "History…", target: nil, action: nil)
-  private let readingsButton = NSButton(title: "All readings", target: nil, action: nil)
+  private let historyButton = MenuActionRow()
+  private let readingsButton = MenuActionRow()
   override func loadView() {
     view = MainContentView(frame: NSRect(x: 0, y: 0, width: 700, height: 560))
+    popoverMaterial.material = .popover
+    popoverMaterial.blendingMode = .behindWindow
+    popoverMaterial.state = .active
+    view.addSubview(popoverMaterial)
+    for platter in [headlinePlatter, readingsPlatter, tracePlatter] { view.addSubview(platter) }
+    summaryScroll.drawsBackground = false
+    summaryScroll.hasVerticalScroller = true
+    summaryScroll.autohidesScrollers = true
+    weatherScroll.drawsBackground = false
+    weatherScroll.hasVerticalScroller = true
+    weatherScroll.autohidesScrollers = true
+    openWindowRow.target = self
+    openWindowRow.action = #selector(openInWindow)
+    view.addSubview(openWindowRow)
+    footerSeparator.boxType = .separator
+    view.addSubview(footerSeparator)
+    historyButton.title = "History…"
+    readingsButton.title = "All readings"
+    pauseButton.title = paused ? "Resume" : "Pause"
     let navigation = DetailNavigationCoordinator()
     self.navigation = navigation
-    view.addSubview(navigation.sidebar)
+    view.addSubview(navigation.sidebar, positioned: .below, relativeTo: popoverMaterial)
     navigation.onSelectModule = { [weak self] in self?.selected = $0 }
     navigation.onSettingsPage = { [weak self] in self?.onSettingsPage?($0) }
     titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
     titleLabel.textColor = .secondaryLabelColor
-    valueLabel.font = .monospacedDigitSystemFont(ofSize: 30, weight: .medium)
+    valueLabel.font = .monospacedDigitSystemFont(
+      ofSize: SystemStyle.TypeSize.value, weight: .semibold)
     subtitleLabel.font = .systemFont(ofSize: 12)
     subtitleLabel.textColor = .secondaryLabelColor
     subtitleLabel.lineBreakMode = .byTruncatingTail
@@ -121,6 +157,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     scroll.drawsBackground = false
     add(scroll, x: 150, y: 56, w: 532, h: 244)
     detailScroll = scroll
+    view.addSubview(summaryScroll)
+    view.addSubview(weatherScroll)
     let labelColumn = NSTableColumn(identifier: .init("label"))
     labelColumn.width = 280
     let valueColumn = NSTableColumn(identifier: .init("value"))
@@ -165,8 +203,46 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     add(sensorSearch, x: 300, y: 516, w: 376, h: 26)
     sensorSearch.isHidden = true
     navigation.layout(in: view.bounds)
+    configurePresentation()
     refresh()
   }
+  private func configurePresentation() {
+    navigation?.sidebar.isHidden = isPopoverPresentation
+    (view as? MainContentView)?.usesPopoverMaterial = isPopoverPresentation
+    popoverMaterial.isHidden = !isPopoverPresentation
+    for platter in [headlinePlatter, readingsPlatter, tracePlatter] {
+      platter.isHidden = !isPopoverPresentation
+    }
+    summaryScroll.isHidden = !isPopoverPresentation
+    footerSeparator.isHidden = !isPopoverPresentation
+    openWindowRow.isHidden = !isPopoverPresentation
+    if !isPopoverPresentation { openWindowRow.frame.origin.y = 60 }
+    weatherScroll.isHidden = !isPopoverPresentation
+    if let weatherDashboard {
+      if isPopoverPresentation {
+        weatherScroll.documentView = weatherDashboard
+      } else {
+        weatherScroll.documentView = nil
+        view.addSubview(weatherDashboard)
+      }
+    }
+    summary?.usesPopoverLayout = isPopoverPresentation
+    if let summary {
+      if isPopoverPresentation {
+        summaryScroll.documentView = summary
+      } else {
+        summaryScroll.documentView = nil
+        view.addSubview(summary)
+      }
+    }
+    for button in [historyButton, readingsButton, pauseButton] {
+      button.isBordered = !isPopoverPresentation
+      button.bezelStyle = isPopoverPresentation ? .recessed : .rounded
+      button.alignment = isPopoverPresentation ? .left : .center
+      button.font = .systemFont(ofSize: isPopoverPresentation ? 13 : 12)
+    }
+  }
+  @objc private func openInWindow() { onOpenInWindow?() }
   private func add(_ child: NSView, x: Int, y: Int, w: Int, h: Int) {
     child.frame = NSRect(x: x, y: y, width: w, height: h)
     view.addSubview(child)
@@ -191,14 +267,20 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let h = view.bounds.height
     guard w > 0, h > 0 else { return }
     navigation?.layout(in: view.bounds)
+    if isPopoverPresentation && !showsSettings {
+      layoutPopover()
+      return
+    }
     if showsSettings {
       navigation?.layoutSettings(in: view.bounds)
       return
     }
     let width = max(0, w - 180)
-    titleLabel.frame.origin.y = h - 42
+    titleLabel.frame.origin = .init(x: 154, y: h - 42)
     readingsButton.frame.origin = .init(x: w - 132, y: h - 44)
-    historyButton.frame.origin = .init(x: w - 227, y: h - 44)
+    historyButton.frame = .init(
+      x: w - (selected == .overview ? 120 : 227), y: h - 44, width: selected == .overview ? 92 : 90,
+      height: selected == .overview ? 28 : 26)
     sensorSearch.frame = .init(x: 300, y: h - 44, width: max(0, w - 442), height: 26)
     networkGrouping?.frame.origin.y = h - 44
     weatherCityPicker?.frame = .init(x: 250, y: h - 44, width: max(0, w - 395), height: 26)
@@ -210,7 +292,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let chartHeight = (selected == .sensors ? 156.0 : 126.0) + max(0, h - 560) * 0.3
     chart.frame = .init(
       x: 156, y: h - (weather ? 191 : 124) - chartHeight, width: width, height: chartHeight)
-    summary?.frame = .init(x: 154, y: 56, width: width, height: max(0, h - 106))
+    summary?.frame = .init(
+      x: 154, y: selected == .overview ? 40 : 56, width: width,
+      height: max(0, h - (selected == .overview ? 96 : 106)))
     calendar?.frame = .init(
       x: 154, y: chart.frame.minY, width: min(600, width * 0.7), height: chartHeight)
     let tableHeight = weather && chart.isHidden ? h - 247 : chart.frame.minY - 66
@@ -219,8 +303,114 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let labelWidth: CGFloat = (selected == .network ? 240 : 280) + max(0, w - 700) * 0.55
     sizeColumn(table.tableColumns.first, to: min(columnsWidth, labelWidth))
     sizeColumn(table.tableColumns.last, to: max(0, columnsWidth - labelWidth))
-    footnoteLabel.frame.size.width = max(0, w - 345)
-    pauseButton.frame.origin.x = w - 100
+    footnoteLabel.frame = .init(
+      x: 156, y: selected == .overview ? 12 : 27,
+      width: selected == .overview ? width : max(0, w - 345), height: 18)
+    pauseButton.frame = .init(
+      x: w - (selected == .overview ? 216 : 100), y: selected == .overview ? h - 44 : 18,
+      width: selected == .overview ? 90 : 72, height: 28)
+    titleLabel.textColor = selected == .overview ? .labelColor : .secondaryLabelColor
+    if selected == .overview {
+      titleLabel.font = .systemFont(ofSize: 15, weight: .bold)
+      titleLabel.textColor = .labelColor
+      pauseButton.image = NSImage(
+        systemSymbolName: paused ? "play" : "pause", accessibilityDescription: nil)
+      historyButton.image = NSImage(
+        systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil)
+      pauseButton.imagePosition = .imageLeading
+      historyButton.imagePosition = .imageLeading
+    } else {
+      pauseButton.image = nil
+      historyButton.image = nil
+    }
+  }
+  /// A narrow material surface; the document scrolls, actions keep their full-width hit targets.
+  private func layoutPopover() {
+    let w = view.bounds.width
+    let h = view.bounds.height
+    let inset = SystemStyle.Space.popoverInset
+    let x = inset + SystemStyle.Space.inset
+    let width = max(0, w - 2 * inset)
+    popoverMaterial.frame = view.bounds
+    navigation?.sidebar.isHidden = true
+    openWindowRow.title = "Open \(selected.title) in TinyStats"
+    let actions = [historyButton, openWindowRow, readingsButton, pauseButton].filter {
+      !$0.isHidden
+    }
+    for (index, action) in actions.reversed().enumerated() {
+      action.frame = .init(
+        x: inset + 4, y: inset + CGFloat(index) * 26, width: width - 8, height: 26)
+    }
+    let bottom = inset + CGFloat(actions.count) * 26 + 24
+    footerSeparator.frame = .init(x: inset + 4, y: bottom - 24, width: width - 8, height: 1)
+    footnoteLabel.frame = .init(x: x, y: bottom - 20, width: width - 24, height: 14)
+    footnoteLabel.toolTip = footnoteLabel.stringValue
+    titleLabel.frame = .init(x: x, y: h - 39, width: width - 24, height: 20)
+    valueLabel.frame = .init(x: x, y: h - 80, width: width - 24, height: 38)
+    subtitleLabel.frame = .init(x: x, y: h - 101, width: width - 24, height: 18)
+    headlinePlatter.frame = .init(x: inset, y: h - 110, width: width, height: 100)
+    headlinePlatter.isHidden = selected == .weather && !showsAllReadings
+    let compact =
+      SummaryDashboardView.supports(selected) && (selected == .overview || !showsAllReadings)
+    if compact {
+      headlinePlatter.isHidden = true
+      titleLabel.isHidden = true
+      valueLabel.isHidden = true
+      subtitleLabel.isHidden = true
+    }
+    if selected == .weather && !showsAllReadings { titleLabel.isHidden = true }
+    var top = h - (compact ? 10 : 118)
+    if selected == .sensors || selected == .network {
+      top -= 32
+      sensorSearch.frame = .init(x: inset, y: top + 4, width: width, height: 26)
+      networkGrouping?.frame = .init(x: inset, y: top + 4, width: width, height: 26)
+    }
+    if selected == .weather {
+      weatherCityPicker?.frame = .init(x: inset, y: h - 40, width: width, height: 26)
+      weatherControls?.frame = .init(x: inset, y: h - 166, width: width, height: 120)
+      if let controls = weatherControls {
+        let buttons = controls.subviews.compactMap { $0 as? NSButton }
+        for (index, button) in buttons.enumerated() {
+          button.frame = .init(x: 0, y: 94 - CGFloat(index) * 26, width: width, height: 26)
+        }
+        controls.subviews.compactMap { $0 as? NSTextField }.first?.frame = .init(
+          x: 0, y: 0, width: width, height: 42)
+      }
+      top = h - 174
+      if showsAllReadings {
+        headlinePlatter.isHidden = false
+        headlinePlatter.frame.origin.y = top - 100
+        titleLabel.frame.origin.y = top - 28
+        valueLabel.frame.origin.y = top - 66
+        subtitleLabel.frame.origin.y = top - 89
+        top -= 108
+      }
+    }
+    summaryScroll.isHidden = summary?.isHidden != false
+    summaryScroll.frame = .init(x: inset, y: bottom, width: width, height: max(0, top - bottom))
+    if let summary, !summary.isHidden {
+      summary.frame.size.width = summaryScroll.contentSize.width
+      summary.frame.size.height = summary.popoverDocumentHeight
+    }
+    weatherScroll.isHidden = weatherDashboard?.isHidden != false
+    weatherScroll.frame = .init(x: inset, y: bottom, width: width, height: max(0, top - bottom))
+    weatherDashboard?.frame = .init(
+      x: 0, y: 0, width: weatherScroll.contentSize.width,
+      height: weatherDashboard?.popoverDocumentHeight ?? 760)
+    let hasTrace = !chart.isHidden || selected == .clock
+    let traceHeight: CGFloat = selected == .sensors ? 156 : selected == .clock ? 148 : 126
+    tracePlatter.isHidden = !hasTrace
+    tracePlatter.frame = .init(x: inset, y: top - traceHeight, width: width, height: traceHeight)
+    chart.frame = tracePlatter.frame.insetBy(dx: 12, dy: 8)
+    calendar?.frame = tracePlatter.frame.insetBy(dx: 8, dy: 4)
+    let tableTop = hasTrace ? tracePlatter.frame.minY - 8 : top
+    readingsPlatter.isHidden = detailScroll?.isHidden != false
+    readingsPlatter.frame = .init(
+      x: inset, y: bottom, width: width, height: max(0, tableTop - bottom))
+    detailScroll?.frame = readingsPlatter.frame.insetBy(dx: 8, dy: 6)
+    let tableWidth = max(0, (detailScroll?.contentSize.width ?? width) - 10)
+    sizeColumn(table.tableColumns.first, to: tableWidth * 0.55)
+    sizeColumn(table.tableColumns.last, to: tableWidth * 0.45)
   }
   private func sizeColumn(_ column: NSTableColumn?, to width: CGFloat) {
     guard let column, column.width != width else { return }
@@ -383,7 +573,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       ?? NSTextField(labelWithString: "")
     cell.identifier = id
     let isValue = id.rawValue == "value"
-    cell.stringValue = isValue ? row.value : row.label
+    cell.stringValue =
+      isValue ? row.value : row.heading ? SystemStyle.sectionTitle(row.label) : row.label
     cell.font =
       isValue
       ? .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
@@ -395,7 +586,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     if !isValue, let spoken = row.accessibilityLabel {
       cell.setAccessibilityLabel(spoken)
     } else {
-      cell.setAccessibilityLabel(cell.stringValue)
+      cell.setAccessibilityLabel(isValue ? row.value : row.label)
     }
     return cell
   }
@@ -454,7 +645,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     pauseButton.isHidden = false
     let s = snapshot
     navigation?.updateSelection(selected)
-    titleLabel.stringValue = selected.title.uppercased() + (paused ? " · PAUSED" : "")
+    titleLabel.stringValue = selected.title + (paused ? " · Paused" : "")
+    titleLabel.setAccessibilityLabel(nil)
     titleLabel.font = .systemFont(
       ofSize: selected == .network && paused ? 11 : 13, weight: .semibold)
     if selected == .weather, weatherCityPicker == nil {
@@ -487,7 +679,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
           ? (showsAllReadings ? "Show summary" : "Show all readings and SMC keys")
           : showsAllReadings ? "Show summary" : "Show all readings")
     titleLabel.frame.size.width =
-      selected == .network ? 128 : selected == .weather ? 90 : selected == .sensors ? 142 : 300
+      selected == .overview && !isPopoverPresentation
+      ? max(0, view.bounds.width - 390)
+      : selected == .network ? 128 : selected == .weather ? 90 : selected == .sensors ? 142 : 300
     if selected == .weather { updateWeatherChoices() }
     chart.isHidden = selected == .clock
     if selected == .clock, calendar == nil {
@@ -508,8 +702,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     weatherDashboard?.isHidden = !weatherSummary
     let compact =
       SummaryDashboardView.supports(selected) && (selected == .overview || !showsAllReadings)
-    valueLabel.isHidden = compact || weatherSummary
-    subtitleLabel.isHidden = compact || weatherSummary
+    valueLabel.isHidden = (compact && !isPopoverPresentation) || weatherSummary
+    subtitleLabel.isHidden = (compact && !isPopoverPresentation) || weatherSummary
     chart.isHidden = compact || weatherSummary || selected == .clock
     detailScroll?.isHidden = compact || weatherSummary
     summary?.isHidden = !compact
@@ -518,6 +712,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         let dashboard = WeatherDashboardView(frame: .zero, solarCalculator: solarCalculator)
         view.addSubview(dashboard)
         weatherDashboard = dashboard
+        if isPopoverPresentation { weatherScroll.documentView = dashboard }
       }
       weatherDashboard?.update(
         s, settings: settings, paused: paused, sourceStatus: weatherSourceStatus)
@@ -535,6 +730,15 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         let dashboard = SummaryDashboardView(frame: .zero)
         add(dashboard, x: 154, y: 56, w: 520, h: 454)
         summary = dashboard
+        dashboard.usesPopoverLayout = isPopoverPresentation
+        if isPopoverPresentation { summaryScroll.documentView = dashboard }
+      }
+      if isPopoverPresentation,
+        let headline = DetailReadingsBuilder.headline(module: selected, snapshot: s)
+      {
+        valueLabel.stringValue = headline.value
+        subtitleLabel.stringValue = headline.subtitle
+        summary?.popoverHeadline = (selected.title, headline.value, headline.subtitle)
       }
       summary?.update(s, history: history, settings: settings, module: selected)
       if !rows.isEmpty {
@@ -598,7 +802,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       chart.emptyMessage =
         presentation.available ? "No readings yet" : "No sensor readings to chart"
       chart.caption = "Read-only · history while this window is open · hover for values"
-      titleLabel.stringValue = presentation.title
+      titleLabel.stringValue = SystemStyle.sectionTitle(presentation.title)
+      titleLabel.setAccessibilityLabel(presentation.title)
       rows = presentation.rows
     case .weather:
       let weather = s.weather.filtered(settings: settings.weather, suspended: paused)
@@ -657,7 +862,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         }
       }
       if let current {
-        utilization("Humidity", current.humidity, .systemBlue)
+        utilization("Humidity", current.humidity, SystemStyle.accent)
         utilization("Cloud cover", current.cloudCover, .systemGray)
         row("Wind from", WindDirectionPresentation(current.windFromDegrees)?.value ?? "—")
         row("Wind", current.windMetersPerSecond.map { String(format: "%.1f m/s", $0) } ?? "—")
@@ -703,7 +908,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
           "Next 48h forecast · \(weatherZone.identifier) · time → · \(settings.fahrenheit ? "°F" : "°C")"
         lines = [
           .init(
-            name: "Forecast temperature", color: .systemOrange,
+            name: "Forecast temperature", color: SystemStyle.secondaryAccent,
             values: upcoming.map { point in
               point.celsius.map { settings.fahrenheit ? $0 * 1.8 + 32 : $0 }
             })
@@ -798,7 +1003,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       row("Time zones", "Edit in Settings")
     }
     if selected != .overview {
-      valueLabel.font = .monospacedDigitSystemFont(ofSize: 30, weight: .medium)
+      valueLabel.font = .monospacedDigitSystemFont(
+        ofSize: SystemStyle.TypeSize.value, weight: .semibold)
     }
     subtitleLabel.toolTip = subtitleLabel.stringValue
     subtitleLabel.setAccessibilityLabel(subtitleLabel.stringValue)
@@ -824,9 +1030,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   }
 }
 
-@MainActor private final class MainContentView: NSView {
-  override var isOpaque: Bool { true }
+@MainActor private final class MainContentView: SystemStyledView {
+  var usesPopoverMaterial = false { didSet { needsDisplay = true } }
+  override var isOpaque: Bool { !usesPopoverMaterial }
   override func draw(_ dirtyRect: NSRect) {
+    guard !usesPopoverMaterial else { return }
     NSColor.windowBackgroundColor.setFill()
     dirtyRect.fill()
   }

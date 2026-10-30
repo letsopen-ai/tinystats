@@ -180,7 +180,7 @@ import Testing
   let root = try #require(controller.window?.contentView)
   func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
   let keep = try #require(
-    descendants(root).compactMap { $0 as? NSButton }.first {
+    descendants(root).compactMap { $0 as? SystemSettingSwitch }.first {
       $0.title == "Keep history between launches"
     })
   var changes: [Bool] = []

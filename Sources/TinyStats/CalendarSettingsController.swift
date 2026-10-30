@@ -14,8 +14,8 @@ import TinyStatsCore
   private var selectedIDs: [String]?
   private var snapshot = CalendarAgendaSnapshot()
   private var checks: [String: NSButton] = [:]
-  private let toggle = NSButton(
-    checkboxWithTitle: "Show calendar events in Date & Time", target: nil, action: nil)
+  private let toggle = SystemSettingSwitch(
+    title: "Show calendar events in Date & Time", target: nil, action: nil)
   private let status = NSTextField(wrappingLabelWithString: "")
   private let permission = NSButton(title: "Allow Calendar Access…", target: nil, action: nil)
   private let all = NSButton(
@@ -38,6 +38,7 @@ import TinyStatsCore
     window.center()
     super.init(window: window)
     window.delegate = self
+    window.contentView = SystemSettingsBackgroundView(frame: window.contentView?.bounds ?? .zero)
     guard let content = window.contentView else { return }
     func add(_ view: NSView, _ frame: NSRect) {
       view.frame = frame
@@ -90,6 +91,22 @@ import TinyStatsCore
     summary.font = .systemFont(ofSize: 11)
     summary.textColor = .secondaryLabelColor
     add(summary, .init(x: 22, y: 15, width: 484, height: 43))
+    let form = SystemSettingsForm.self
+    preview.heightAnchor.constraint(equalToConstant: 130).isActive = true
+    preview.widthAnchor.constraint(equalToConstant: 300).isActive = true
+    scroll.heightAnchor.constraint(equalToConstant: 160).isActive = true
+    _ = SystemSettingsForm(
+      in: content,
+      views: [
+        form.text("Week layout", heading: true),
+        form.group([
+          form.row("First day of week", weekStart, width: 270),
+          form.row("Preview", preview, height: 146),
+        ]), previewNote, form.text("Calendar events", heading: true),
+        form.group([
+          form.row(toggle.title, toggle), form.row("Access", permission),
+        ]), privacy, status, form.group([form.row("", all)]), scroll, summary,
+      ])
     update(.init(), requesting: false)
     window.center()
   }
@@ -153,17 +170,13 @@ import TinyStatsCore
         : "macOS calls reading permission Full Access. TinyStats uses it only to read events. Changes apply immediately."
   }
   private func updateListVisibility(_ visible: Bool) {
-    guard visible != showsCalendarList, let window, let root = window.contentView,
+    guard visible != showsCalendarList, let window,
       let calendarScroll
     else { return }
     showsCalendarList = visible
     calendarScroll.isHidden = !visible
     // Keep the layout controls in place on screen; grow downward only when there
     // are calendars to choose, rather than reserving an empty permission-gated list.
-    let delta: CGFloat = visible ? 160 : -160
-    for child in root.subviews where child !== calendarScroll && child !== summary {
-      child.frame.origin.y += delta
-    }
     let top = window.frame.maxY
     window.setContentSize(.init(width: 530, height: visible ? 640 : 480))
     var bottom = top - window.frame.height

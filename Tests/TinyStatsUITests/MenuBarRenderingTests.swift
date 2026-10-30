@@ -427,7 +427,7 @@ import Testing
   try png(gallery).write(to: output.deletingPathExtension().appendingPathExtension("detail.png"))
 }
 
-@Test @MainActor func calendarAndDialFollowHostTextColor() throws {
+@Test @MainActor func calendarAndDialFollowHostAccentWithLabelColoredText() throws {
   let dial = try #require(ClockDialReading(hour: 11, minute: 42))
   for name in [NSAppearance.Name.aqua, .darkAqua] {
     for part: ClockMenuLine.Part in [.calendar(26), .dial(dial)] {
@@ -439,28 +439,23 @@ import Testing
       view.readouts = [reading]
       view.frame = .init(x: 0, y: 0, width: view.preferredWidth, height: 24)
       let rep = try bitmap(view)
-      var white = 0
-      var dark = 0
+      let expected = try #require(
+        MenuBarPalette.resolve(view.effectiveAppearance).graphic(.clock).usingColorSpace(.deviceRGB)
+      )
+      var accentPixels = 0
       for y in 0..<rep.pixelsHigh {
         for x in 0..<rep.pixelsWide {
           let color = try #require(rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
-          if color.alphaComponent > 0.99,
-            max(color.redComponent, color.greenComponent, color.blueComponent) < 0.5
-          {
-            dark += 1
-          }
           if color.alphaComponent > 0.9,
-            min(color.redComponent, color.greenComponent, color.blueComponent) > 0.97
+            abs(color.redComponent - expected.redComponent) < 0.05,
+            abs(color.greenComponent - expected.greenComponent) < 0.05,
+            abs(color.blueComponent - expected.blueComponent) < 0.05
           {
-            white += 1
+            accentPixels += 1
           }
         }
       }
-      if name == .darkAqua {
-        #expect(white > 15 && dark == 0)
-      } else {
-        #expect(dark > 15 && white == 0)
-      }
+      #expect(accentPixels > 15)
     }
   }
 }

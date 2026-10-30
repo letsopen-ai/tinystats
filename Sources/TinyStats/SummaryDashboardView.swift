@@ -3,7 +3,7 @@ import TinyStatsCore
 
 /// Owns module assembly, layout, accessibility lifetime, and history charts.
 /// Card presentation lives in SummaryDashboardCards.swift and draws in this same view.
-/// No layers, per-card controls, images, or timers.
+/// No layers, per-card controls or timers. Overview draws the existing app icon.
 @MainActor final class SummaryDashboardView: ChartHoverView {
   /// Availability of a statistic among valid readings, not coverage of elapsed time.
   struct ObservationCoverage {
@@ -21,7 +21,7 @@ import TinyStatsCore
     var firstLabel: String, secondLabel: String
     var firstValue: String, secondValue: String
     var percent: Bool, mirrored: Bool
-    var firstColor: NSColor = .systemPink, secondColor: NSColor = .systemBlue
+    var firstColor: NSColor = SystemStyle.accent, secondColor: NSColor = SystemStyle.secondaryAccent
     /// Immutable inputs and their derived positions move together; no width/statistic cache.
     struct TimeAxis {
       let times: [Date]
@@ -47,6 +47,7 @@ import TinyStatsCore
     var sampleBounds: [ClosedRange<Date>] = []
     var valueFormat: ChartValueFormat = .number
     var alignsCoreHistory = false
+    var drawsTrace = false
     var coverage: [String] = []
     var firstCoverage: ObservationCoverage? = nil, secondCoverage: ObservationCoverage? = nil
     var timeline: HistoryTimeline { time.timeline }
@@ -54,11 +55,57 @@ import TinyStatsCore
     var xFractions: [Double?] { timeline.positions }
   }
 
+  /// Trace and bar modes disclose the same observed time span and availability.
+  /// The trace's unsigned range uses the exact maximum passed to its renderer.
+  struct PlotCaptions {
+    let emptyMessage: String?
+    let span: String
+    let scale: String
+    init(_ plot: Plot, layout: HistoryBarLayout, trace: Bool) {
+      emptyMessage =
+        layout.hasData
+        ? nil
+        : layout.timeline.indices.isEmpty
+          ? "No readings yet" : "No readings to show for this period"
+      let count = layout.timeline.indices.count
+      let noun =
+        plot.bucketSeconds == nil
+        ? (count == 1 ? "sample" : "samples") : (count == 1 ? "bucket" : "buckets")
+      span = "\(plot.historySpan ?? layout.timeline.span) · \(count) \(noun)"
+      scale =
+        plot.percent
+        ? "0–100%"
+        : !layout.hasData
+          ? "Scale unavailable"
+          : (trace ? "Scale 0–" : "Scale ± ") + Display.rate(layout.maximum)
+    }
+  }
+
   private(set) var cards: [Card] = []
+  var usesPopoverLayout = false
+  private(set) var isOverview = false
+  var usesOverviewLayout: Bool { isOverview && !usesPopoverLayout }
+  var popoverHeadline: (title: String, value: String, subtitle: String)?
+  var popoverDocumentHeight: CGFloat {
+    canonicalFrames.enumerated().reduce(0) { total, pair in
+      total + popoverCardHeight(cards[pair.offset], canonical: pair.element)
+        + (pair.offset == 0 && popoverHeadline != nil ? 27 : 0) + 8
+    }
+  }
+  private func popoverCardHeight(_ card: Card, canonical: NSRect) -> CGFloat {
+    switch card.content {
+    case .rows(let rows):
+      return max(
+        canonical.height, 38 + CGFloat(min(7, rows.count)) * 25 + (card.note.isEmpty ? 0 : 17))
+    case .memory: return 204
+    case .tiles(_, let columns): return max(canonical.height, columns > 2 ? 150 : 134)
+    default: return canonical.height
+    }
+  }
   private var scalesSummaryLayout = true
   /// Grow graphics and type together, with a cap so maximized views remain readable.
   var contentScale: CGFloat {
-    guard scalesSummaryLayout else { return 1 }
+    guard scalesSummaryLayout, !usesPopoverLayout, !usesOverviewLayout else { return 1 }
     return min(1.5, max(1, sqrt(min(bounds.width / 520, bounds.height / 454))))
   }
   private var canonicalFrames: [NSRect] = []
@@ -70,8 +117,8 @@ import TinyStatsCore
       textStyles.reset()
     }
   }
-  override func viewDidChangeEffectiveAppearance() {
-    super.viewDidChangeEffectiveAppearance()
+  override func systemStyleDidChange() {
+    super.systemStyleDidChange()
     textStyles.reset()
   }
   private func isExpandable(_ card: Card) -> Bool {
@@ -102,6 +149,25 @@ import TinyStatsCore
   }
   private func layoutSummaryCards() {
     guard canonicalFrames.count == cards.count else { return }
+    if usesOverviewLayout {
+      for (index, frame) in Self.overviewFrames(in: bounds).enumerated()
+      where cards.indices.contains(index) {
+        cards[index].frame = frame
+      }
+      return
+    }
+    if usesPopoverLayout {
+      var y: CGFloat = 0
+      for index in cards.indices {
+        let header = index == 0 && popoverHeadline != nil
+        cards[index].headerHeight = header ? 58 : 31
+        let height =
+          popoverCardHeight(cards[index], canonical: canonicalFrames[index]) + (header ? 27 : 0)
+        cards[index].frame = .init(x: 0, y: y, width: bounds.width, height: height)
+        y += height + SystemStyle.Space.gap
+      }
+      return
+    }
     let scale = contentScale
     let flexible = Set(
       cards.indices.filter { isExpandable(cards[$0]) }.map { canonicalFrames[$0].minY })
@@ -149,6 +215,7 @@ import TinyStatsCore
   }
   func update(_ s: Snapshot, history: [HistoryPoint], settings: Settings, module: Module) {
     prepareTextStyles(for: module)
+    isOverview = module == .overview
     scalesSummaryLayout = true
     cards.removeAll(keepingCapacity: true)
     canonicalFrames.removeAll(keepingCapacity: true)
@@ -176,10 +243,7 @@ import TinyStatsCore
           first: recent.map { $0[keyPath: first] }, second: recent.map { $0[keyPath: second] },
           firstLabel: labels.0, secondLabel: labels.1, firstValue: values.0, secondValue: values.1,
           percent: percent, mirrored: mirrored,
-          firstColor: !percent
-            ? .systemPink
-            : module == .memory ? .systemPurple : module == .battery ? .systemGreen : .systemBlue,
-          secondColor: percent ? .systemPink : .systemBlue,
+          firstColor: SystemStyle.accent, secondColor: SystemStyle.secondaryAccent,
           time: .init(recent.map(\.time), intervals: recent.map(\.sampleInterval)),
           valueFormat: percent ? .percent : .rate))
     }
@@ -218,7 +282,8 @@ import TinyStatsCore
       return names.indices.map { index in
         Reading(
           label: names[index], value: Display.rate(first[index]),
-          second: Display.rate(second[index]), fraction: fractions[index], color: .systemPink,
+          second: Display.rate(second[index]), fraction: fractions[index],
+          color: SystemStyle.secondaryAccent,
           secondFraction: fractions[index + first.count])
       }
     }
@@ -246,13 +311,13 @@ import TinyStatsCore
       return [
         Gauge(
           label: "Device", value: Display.percent(gpu?.usage), percent: gpu?.usage,
-          color: .systemBlue),
+          color: SystemStyle.accent),
         Gauge(
           label: "Renderer", value: Display.percent(gpu?.rendererUsage),
-          percent: gpu?.rendererUsage, color: .systemPink),
+          percent: gpu?.rendererUsage, color: SystemStyle.secondaryAccent),
         Gauge(
           label: "Tiler", value: Display.percent(gpu?.tilerUsage), percent: gpu?.tilerUsage,
-          color: .systemTeal),
+          color: SystemStyle.secondaryAccent),
       ]
     }
     func trafficRows() -> [Reading] {
@@ -272,13 +337,15 @@ import TinyStatsCore
       var readings: [Reading] = [
         .init(
           label: "Hottest temperature",
-          value: temperature(hottest?.value), color: .systemOrange)
+          value: temperature(hottest?.value), color: SystemStyle.secondaryAccent)
       ]
       let fans = s.sensors.filter {
         $0.kind == .fan && ($0.fanOwner == component || $0.fanOwner == nil)
       }
       readings += fans.prefix(3).map {
-        .init(label: $0.name, value: $0.formatted(fahrenheit: false), color: .systemTeal)
+        .init(
+          label: $0.name, value: $0.formatted(fahrenheit: false), color: SystemStyle.secondaryAccent
+        )
       }
       if fans.isEmpty { readings.append(.init(label: "Fan speed", value: "Unavailable")) }
       return readings
@@ -339,11 +406,12 @@ import TinyStatsCore
         tile(
           "GPU cores", selectedGPU?.coreCount.map(String.init) ?? "—", .systemGray,
           detail: "Hardware count"),
-        tile("Active frequency", frequency("GPU"), .systemBlue),
+        tile("Active frequency", frequency("GPU"), SystemStyle.accent),
         tile(
-          "Hottest GPU sensor", temperature(sensor(.gpu, .temperature)), .systemOrange,
+          "Hottest GPU sensor", temperature(sensor(.gpu, .temperature)),
+          SystemStyle.secondaryAccent,
           fraction: sensor(.gpu, .temperature).map { $0 / 100 }, detail: temperatureScale),
-        tile("Allocated memory", selectedGPU?.memory.map(Display.bytes) ?? "—", .systemPurple),
+        tile("Allocated memory", selectedGPU?.memory.map(Display.bytes) ?? "—", SystemStyle.accent),
       ]
       card(
         "HARDWARE", 164, 134, .tiles(hardware, columns: 2),
@@ -360,7 +428,7 @@ import TinyStatsCore
             ? "\(process.name) (\(process.pid))" : process.name,
           value: GPUProcessTimeSnapshot.formatted(process.millisecondsPerSecond),
           fraction: fraction,
-          color: .systemTeal,
+          color: SystemStyle.secondaryAccent,
           accessibilityValue: process.millisecondsPerSecond.map {
             String(format: "%.1f milliseconds of GPU time per second", $0)
           } ?? "Unavailable")
@@ -390,7 +458,7 @@ import TinyStatsCore
       let rows = zip(processes, fractions).map { process, fraction in
         Reading(
           label: processName(process), value: Display.bytes(process.memory),
-          fraction: fraction, color: .systemPurple)
+          fraction: fraction, color: SystemStyle.accent)
       }
       card(
         "TOP PROCESSES", 288, 124, rows.isEmpty ? .none : .rows(rows),
@@ -403,7 +471,7 @@ import TinyStatsCore
       func capacityTile(_ volume: VolumeReading, startup: Bool = false) -> Tile {
         tile(
           volume.name + (startup && volume.name != "Startup disk" ? " · Startup" : ""),
-          Display.bytes(volume.available) + " free", .systemOrange,
+          Display.bytes(volume.available) + " free", SystemStyle.secondaryAccent,
           fraction: volume.total > 0 ? volume.percent / 100 : nil,
           detail: (volume.total > 0 ? Display.percent(volume.percent) + " used · " : "")
             + Display.bytes(volume.total) + " capacity")
@@ -411,7 +479,7 @@ import TinyStatsCore
       let startup = s.startupVolume
       var volumes = [
         startup.map { capacityTile($0, startup: true) }
-          ?? tile("Startup", "—", .systemOrange, detail: "Volume unavailable")
+          ?? tile("Startup", "—", SystemStyle.secondaryAccent, detail: "Volume unavailable")
       ]
       volumes += s.volumes.lazy.filter { $0.path != "/" }.prefix(1).map { capacityTile($0) }
       let storageHeight: CGFloat = 106
@@ -434,7 +502,7 @@ import TinyStatsCore
         "TOP PROCESSES", 254, 146, rows.isEmpty ? .none : .rows(rows), trailing: "Read / Write",
         note: processes.isEmpty
           ? "No readable process I/O intervals yet · access varies by process"
-          : "Paired bars / largest visible rate · pink read / blue write")
+          : "Paired bars / largest visible rate · filled read / outlined write")
       card(
         "DRIVE HEALTH", 408, 46, .none,
         trailing: s.storageHealth.refreshing
@@ -512,10 +580,10 @@ import TinyStatsCore
           .gauges([
             .init(
               label: "Charge", value: Display.percent(battery.percent), percent: battery.percent,
-              color: .systemGreen),
+              color: SystemStyle.accent),
             .init(
               label: "Health", value: Display.percent(battery.health), percent: battery.health,
-              color: .systemTeal),
+              color: SystemStyle.secondaryAccent),
           ]),
           trailing: BatteryMenuState.state(for: battery).title)
         card(
@@ -525,15 +593,17 @@ import TinyStatsCore
               tile(
                 "Remaining",
                 battery.minutesRemaining.map { "\($0 / 60)h \($0 % 60)m" }
-                  ?? "—", .systemGreen),
+                  ?? "—", SystemStyle.accent),
               tile(
                 "Battery power · signed",
                 battery.watts.map { String(format: "%.1f W", $0) }
-                  ?? "—", .systemOrange),
-              tile("Cycle count", battery.cycles.map(String.init) ?? "—", .systemTeal),
+                  ?? "—", SystemStyle.secondaryAccent),
               tile(
-                "Battery temperature", temperature(sensor(.battery, .temperature)), .systemOrange),
-            ], columns: 4))
+                "Cycle count", battery.cycles.map(String.init) ?? "—", SystemStyle.secondaryAccent),
+              tile(
+                "Battery temperature", temperature(sensor(.battery, .temperature)),
+                SystemStyle.secondaryAccent),
+            ], columns: usesPopoverLayout ? 2 : 4))
       } else {
         card(
           "POWER SOURCE", 0, 54, .none, trailing: "AC · No internal battery")
@@ -555,13 +625,15 @@ import TinyStatsCore
       if powerHeight < 144 && shownPower.count > 2 {
         powerContent = .rows(
           shownPower.map {
-            .init(label: $0.name, value: $0.formatted(fahrenheit: false), color: .systemOrange)
+            .init(
+              label: $0.name, value: $0.formatted(fahrenheit: false),
+              color: SystemStyle.secondaryAccent)
           })
       } else {
         powerContent = .tiles(
           shownPower.map { reading in
             tile(
-              reading.name, reading.formatted(fahrenheit: false), .systemOrange,
+              reading.name, reading.formatted(fahrenheit: false), SystemStyle.secondaryAccent,
               detail: reading.key.hasPrefix("ioreport:")
                 ? "macOS model estimate" : "Hardware sensor")
           }, columns: min(2, max(1, shownPower.count)))
@@ -581,53 +653,14 @@ import TinyStatsCore
             s.peripherals.prefix(4).map {
               .init(
                 label: $0.name, value: Display.percent($0.percent), percent: $0.percent,
-                color: .systemGreen)
+                color: SystemStyle.accent)
             }),
         note: s.peripherals.isEmpty
           ? "No accessory battery readings"
           : "See All readings for every reported accessory")
     default:
-      let volume = s.startupVolume
-      let quick: [Tile] = [
-        tile(
-          "CPU", Display.percent(s.cpu?.usage), .systemBlue, key: \.cpu,
-          fraction: s.cpu?.usage.map { $0 / 100 }, percent: true),
-        tile(
-          "GPU", Display.percent(s.gpus.compactMap(\.usage).max()), .systemTeal, key: \.gpu,
-          fraction: s.gpus.compactMap(\.usage).max().map { $0 / 100 }, percent: true),
-        tile(
-          "Memory", Display.percent(s.memory?.percent), .systemPurple, key: \.memory,
-          fraction: s.memory.map { $0.percent / 100 }, percent: true),
-        tile(
-          "Startup used", Display.percent(volume?.percent),
-          .systemOrange, key: \.diskUsed,
-          fraction: volume.map { $0.percent / 100 },
-          detail: volume == nil ? "Volume unavailable" : "", percent: true),
-      ]
-      card("YOUR MAC", 0, 110, .tiles(quick, columns: 4), trailing: "Thermal: " + s.thermalState)
-      card(
-        "NETWORK", 118, 170,
-        plot(
-          \.upload, \.download, labels: ("Upload", "Download"),
-          values: (Display.rate(s.upload), Display.rate(s.download)), mirrored: true),
-        trailing: s.selectedInterface)
-      let system: [Tile] = [
-        tile(
-          "Memory pressure", s.memory?.pressureDescription ?? "No reading", .systemPurple),
-        tile("Disk read", Display.rate(s.diskRead), .systemPink, key: \.diskRead),
-        tile("Disk write", Display.rate(s.diskWrite), .systemBlue, key: \.diskWrite),
-        tile(
-          "CPU temperature", temperature(s.cpuTemperature), .systemOrange, key: \.temperature,
-          fraction: s.cpuTemperature.map { $0 / 100 }, detail: temperatureScale),
-        tile(
-          s.batteries.isEmpty ? "System power" : "Battery",
-          s.batteries.first.map { Display.percent($0.percent) } ?? s.sensors.first {
-            $0.key == "PSTR" && $0.kind == .power
-          }.map { $0.formatted(fahrenheit: false) } ?? "No reading",
-          .systemGreen, fraction: s.batteries.first.map { $0.percent / 100 }),
-        tile("Uptime", Display.duration(s.uptime), .systemTeal),
-      ]
-      card("SYSTEM", 296, 158, .tiles(system, columns: 3))
+      cards = Self.overviewCards(s, history: recent, settings: settings)
+      canonicalFrames = Self.overviewFrames(in: .init(x: 0, y: 0, width: 520, height: 554))
     }
     layoutSummaryCards()
     setAccessibilityLabel(module.title + " summary")
@@ -794,8 +827,7 @@ import TinyStatsCore
       secondLabel: labels.1,
       firstValue: text(first), secondValue: second.map(text) ?? "", percent: percent,
       mirrored: module == .network || module == .disks,
-      firstColor: module == .cpu ? .systemBlue : .systemPink,
-      secondColor: module == .cpu ? .systemPink : .systemBlue,
+      firstColor: SystemStyle.accent, secondColor: SystemStyle.secondaryAccent,
       time: .init(
         module == .cpu ? projection.bucketCenters : projection.buckets.map(\.last),
         intervals: projection.buckets.map {
@@ -825,6 +857,7 @@ import TinyStatsCore
       coverage: spokenCoverage, firstCoverage: firstCoverage, secondCoverage: secondCoverage)
     prepareTextStyles(for: module)
     scalesSummaryLayout = false
+    isOverview = false
     let kinds = module == .cpu ? projection.latestCPUCoreKinds : nil
     let plotHeight: CGFloat = kinds == nil ? bounds.height : 190
     cards = [
@@ -875,22 +908,49 @@ import TinyStatsCore
       card.frame = .init(
         x: original.frame.minX / zoom, y: original.frame.minY / zoom,
         width: original.frame.width / zoom, height: original.frame.height / zoom)
-      NSColor.controlBackgroundColor.setFill()
-      NSBezierPath(roundedRect: card.frame, xRadius: 10, yRadius: 10).fill()
-      text(
-        card.title,
-        rect: .init(
-          x: card.frame.minX + 12, y: card.frame.minY + 9,
-          width: card.frame.width * 0.55 - 12, height: 16), color: .controlAccentColor, size: 11,
-        weight: .semibold)
-      text(
-        card.trailing,
-        rect: .init(
-          x: card.frame.midX, y: card.frame.minY + 9,
-          width: card.frame.width / 2 - 12, height: 16), size: 11, weight: .medium,
-        alignment: .right)
+      SystemStyle.drawPlatter(card.frame)
+      if isOverview {
+        drawOverviewCard(card)
+        continue
+      }
+      if usesPopoverLayout, original.frame.minY == 0, let headline = popoverHeadline {
+        text(
+          headline.title,
+          rect: .init(
+            x: card.frame.minX + 12, y: card.frame.minY + 12, width: card.frame.width * 0.38 - 12,
+            height: 20), size: 13, weight: .semibold)
+        text(
+          headline.value,
+          rect: .init(
+            x: card.frame.minX + card.frame.width * 0.38, y: card.frame.minY + 6,
+            width: card.frame.width * 0.62 - 12, height: 34),
+          size: headline.value.count > 16 ? 17 : 26, weight: .semibold, alignment: .right)
+        text(
+          headline.subtitle,
+          rect: .init(
+            x: card.frame.minX + 12, y: card.frame.minY + 37, width: card.frame.width - 24,
+            height: 16), color: .secondaryLabelColor, size: 11)
+      } else {
+        text(
+          SystemStyle.sectionTitle(card.title),
+          rect: .init(
+            x: card.frame.minX + 12, y: card.frame.minY + 9,
+            width: card.frame.width * (usesPopoverLayout ? 0.62 : 0.55) - 12, height: 16),
+          color: .secondaryLabelColor, size: 12,
+          weight: .semibold)
+        text(
+          card.trailing,
+          rect: .init(
+            x: card.frame.minX + card.frame.width * (usesPopoverLayout ? 0.62 : 0.5),
+            y: card.frame.minY + 9,
+            width: card.frame.width * (usesPopoverLayout ? 0.38 : 0.5) - 12, height: 16), size: 11,
+          weight: .medium,
+          alignment: .right)
+      }
       let content = card.contentRect
       switch card.content {
+      case .device(let header): drawDeviceHeader(header, in: card.frame)
+      case .overviewTile(let tile): drawOverviewTile(tile, in: card.frame)
       case .message(let message):
         text(message, rect: content, color: .secondaryLabelColor, size: 11)
       case .none: break
@@ -957,10 +1017,12 @@ import TinyStatsCore
     if !current.isEmpty { segments.append(current) }
     return segments
   }
-  func drawMiniHistory(_ plot: Plot, in area: NSRect) {
+  func drawMiniHistory(
+    _ plot: Plot, in area: NSRect, upperBound: Double? = nil, filled: Bool = true
+  ) {
     NSColor.quaternaryLabelColor.withAlphaComponent(0.3).setFill()
     NSRect(x: area.minX, y: area.maxY - 0.5, width: area.width, height: 0.5).fill()
-    let segments = Self.historySegments(plot)
+    let segments = Self.historySegments(plot, upperBound: upperBound)
     let baseline = area.maxY
     for segment in segments {
       let points = segment.map {
@@ -977,7 +1039,7 @@ import TinyStatsCore
       fill.line(to: NSPoint(x: first.x, y: baseline))
       fill.close()
       plot.firstColor.withAlphaComponent(0.2).setFill()
-      fill.fill()
+      if filled { fill.fill() }
       plot.firstColor.setStroke()
       line.lineWidth = 1.2
       line.stroke()
@@ -1163,11 +1225,21 @@ import TinyStatsCore
         })
       else { return "No recorded observations" }
       let distance = abs((timeline.positions[index] ?? 0) - fraction)
-      let tolerance = max(
-        1 / max(1, Double(graph.width)), 1 / Double(max(1, timeline.indices.count - 1)))
+      let sampleTolerance =
+        plot.domain == nil
+        ? 1 / Double(max(1, timeline.indices.count - 1))
+        : (timeline.cadence?.lowerBound ?? 0) / max(1, timeline.duration)
+      let tolerance = max(1 / max(1, Double(graph.width)), sampleTolerance)
       guard distance <= tolerance else { return "No recorded observations here" }
-      return Self.hoverDate(plot.times[index]) + "\n" + plot.firstLabel + ": "
+      var result =
+        Self.hoverDate(plot.times[index]) + "\n" + plot.firstLabel + ": "
         + format.string(plot.first.indices.contains(index) ? plot.first[index] : nil)
+      if !plot.secondLabel.isEmpty {
+        result +=
+          "\n" + plot.secondLabel + ": "
+          + format.string(plot.second.indices.contains(index) ? plot.second[index] : nil)
+      }
+      return result
     }
     let scale = (window?.backingScaleFactor ?? 1) * contentScale
     let graph = Self.snappedTimeColumn(graph, scale: scale)
@@ -1216,7 +1288,11 @@ import TinyStatsCore
     let area = unscaledCard.contentRect
     switch card.content {
     case .plot(let plot):
-      return hoverPlot(plot, graph: Self.plotGraphRect(plot, area: area), point: point)
+      return hoverPlot(
+        plot,
+        graph: isOverview
+          ? Self.overviewNetworkGraph(in: frame) : Self.plotGraphRect(plot, area: area),
+        point: point, mini: isOverview)
     case .coreHistory(let matrix):
       let order = CPUCoreKind.allCases.flatMap { kind in
         matrix.kinds.indices.filter { matrix.kinds[$0] == kind }
@@ -1251,6 +1327,15 @@ import TinyStatsCore
       if column.firstMissing { text += " · Partial / missing" }
       if column.gap { text += " · Collection gap" }
       return text
+    case .overviewTile(let tile):
+      if let trend = tile.value.trend,
+        let text = hoverPlot(
+          trend, graph: Self.overviewSparkline(in: frame), point: point, mini: true)
+      {
+        return text
+      }
+      return card.spoken
+    case .device: return card.spoken
     case .tiles(let tiles, let requestedColumns):
       let columns = max(1, min(requestedColumns, tiles.count))
       let rows = (tiles.count + columns - 1) / columns
@@ -1271,7 +1356,11 @@ import TinyStatsCore
       }
       return nil
     case .cores(let cpu):
-      guard let cell = Self.coreCells(cpu, area: area).first(where: { $0.1.contains(point) }) else {
+      guard
+        let cell = Self.coreCells(cpu, area: area, capsules: usesPopoverLayout).first(where: {
+          $0.1.contains(point)
+        })
+      else {
         return nil
       }
       return cpu.kind(at: cell.0).chartTitle + " core: "
@@ -1333,7 +1422,7 @@ import TinyStatsCore
         coverage: plot.firstCoverage,
         rect: NSRect(
           x: area.minX, y: area.minY,
-          width: area.width * (paired ? 0.5 : 1), height: 26), color: firstColor,
+          width: area.width * (paired ? 0.5 : 1), height: 26), color: .labelColor,
         alignment: .left)
       drawSeriesLegend(
         plot.firstLabel, marker: .first, color: firstColor,
@@ -1346,7 +1435,7 @@ import TinyStatsCore
           coverage: plot.secondCoverage,
           rect: NSRect(
             x: area.midX, y: area.minY,
-            width: area.width / 2, height: 26), color: secondColor,
+            width: area.width / 2, height: 26), color: .labelColor,
           alignment: .right)
         drawSeriesLegend(
           plot.secondLabel, marker: .second, color: secondColor,
@@ -1454,76 +1543,92 @@ import TinyStatsCore
       marker.withAlphaComponent(0.85).setFill()
       bands.fill()
     }
-    let firstBars = NSBezierPath()
-    let secondBars = NSBezierPath()
-    let missing = NSBezierPath()
-    func barHeight(_ value: Double?) -> CGFloat {
-      guard let value, value > 0 else { return 0 }
-      return min(
-        height, max(pixel, floor(CGFloat(min(1, value / layout.maximum)) * height * scale) / scale))
+    if usesPopoverLayout {
+      var first = plot
+      if textStyleModule == .cpu {
+        first.first = zip(plot.first, plot.second).map { a, b in
+          guard let a, let b else { return nil }
+          return a + b
+        }
+      }
+      first.percent = false
+      drawMiniHistory(first, in: graph, upperBound: layout.maximum)
+      if !plot.secondLabel.isEmpty {
+        var second = plot
+        second.first = plot.second
+        second.firstColor = SystemStyle.secondaryAccent
+        second.percent = false
+        drawMiniHistory(second, in: graph, upperBound: layout.maximum)
+      }
+    } else {
+      let firstBars = NSBezierPath()
+      let secondBars = NSBezierPath()
+      let missing = NSBezierPath()
+      func barHeight(_ value: Double?) -> CGFloat {
+        guard let value, value > 0 else { return 0 }
+        return min(
+          height,
+          max(pixel, floor(CGFloat(min(1, value / layout.maximum)) * height * scale) / scale))
+      }
+      for column in layout.columns {
+        let x = left + layout.x(column)
+        let a = barHeight(column.first)
+        let b = barHeight(column.second)
+        if a > 0 {
+          firstBars.appendRect(NSRect(x: x, y: baseline - a, width: layout.barWidth, height: a))
+        }
+        if b > 0 {
+          let available = plot.mirrored ? b : min(b, max(0, height - a))
+          secondBars.appendRect(
+            NSRect(
+              x: x,
+              y: plot.mirrored ? baseline : baseline - a - available,
+              width: layout.barWidth, height: available))
+        }
+        if column.firstMissing {
+          missing.appendRect(
+            NSRect(
+              x: x, y: max(graph.minY, baseline - 3 * pixel),
+              width: layout.barWidth, height: pixel))
+        }
+        if column.secondMissing {
+          missing.appendRect(
+            NSRect(
+              x: x,
+              y: plot.mirrored
+                ? min(graph.maxY - pixel, baseline + 2 * pixel)
+                : max(graph.minY, baseline - 5 * pixel), width: layout.barWidth, height: pixel))
+        }
+      }
+      firstColor.setFill()
+      firstBars.fill()
+      secondColor.setFill()
+      secondBars.fill()
+      NSColor.secondaryLabelColor.setFill()
+      missing.fill()
+      let gaps = NSBezierPath()
+      for gap in layout.timeline.gaps {
+        let y = max(graph.minY + pixel, baseline - 3 * pixel)
+        gaps.move(to: NSPoint(x: left + (right - left) * gap.lowerBound, y: y))
+        gaps.line(to: NSPoint(x: left + (right - left) * gap.upperBound, y: y))
+      }
+      gaps.setLineDash([pixel, 2 * pixel], count: 2, phase: 0)
+      gaps.lineWidth = pixel
+      NSColor.secondaryLabelColor.setStroke()
+      gaps.stroke()
     }
-    for column in layout.columns {
-      let x = left + layout.x(column)
-      let a = barHeight(column.first)
-      let b = barHeight(column.second)
-      if a > 0 {
-        firstBars.appendRect(NSRect(x: x, y: baseline - a, width: layout.barWidth, height: a))
-      }
-      if b > 0 {
-        let available = plot.mirrored ? b : min(b, max(0, height - a))
-        secondBars.appendRect(
-          NSRect(
-            x: x,
-            y: plot.mirrored ? baseline : baseline - a - available,
-            width: layout.barWidth, height: available))
-      }
-      if column.firstMissing {
-        missing.appendRect(
-          NSRect(
-            x: x, y: max(graph.minY, baseline - 3 * pixel),
-            width: layout.barWidth, height: pixel))
-      }
-      if column.secondMissing {
-        missing.appendRect(
-          NSRect(
-            x: x,
-            y: plot.mirrored
-              ? min(graph.maxY - pixel, baseline + 2 * pixel)
-              : max(graph.minY, baseline - 5 * pixel), width: layout.barWidth, height: pixel))
-      }
-    }
-    firstColor.setFill()
-    firstBars.fill()
-    secondColor.setFill()
-    secondBars.fill()
-    NSColor.secondaryLabelColor.setFill()
-    missing.fill()
-    let gaps = NSBezierPath()
-    for gap in layout.timeline.gaps {
-      let y = max(graph.minY + pixel, baseline - 3 * pixel)
-      gaps.move(to: NSPoint(x: left + (right - left) * gap.lowerBound, y: y))
-      gaps.line(to: NSPoint(x: left + (right - left) * gap.upperBound, y: y))
-    }
-    gaps.setLineDash([pixel, 2 * pixel], count: 2, phase: 0)
-    gaps.lineWidth = pixel
-    NSColor.secondaryLabelColor.setStroke()
-    gaps.stroke()
-    if !layout.hasData {
+    let captions = PlotCaptions(plot, layout: layout, trace: usesPopoverLayout)
+    if let message = captions.emptyMessage {
       text(
-        layout.timeline.indices.isEmpty
-          ? "No readings yet" : "No readings to show for this period",
+        message,
         rect: graph, color: .secondaryLabelColor, size: 10)
     }
-    let scaleText =
-      plot.percent
-      ? "0–100%"
-      : layout.hasData ? "Scale ± " + Display.rate(layout.maximum) : "Scale unavailable"
     text(
-      "\(plot.historySpan ?? layout.timeline.span) · \(layout.timeline.indices.count) \(plot.bucketSeconds == nil ? (layout.timeline.indices.count == 1 ? "sample" : "samples") : (layout.timeline.indices.count == 1 ? "bucket" : "buckets"))",
+      captions.span,
       rect: NSRect(x: area.minX, y: area.maxY - 25, width: area.width / 2, height: 13),
       color: .secondaryLabelColor, size: 9)
     text(
-      scaleText,
+      captions.scale,
       rect: NSRect(x: area.midX, y: area.maxY - 25, width: area.width / 2, height: 13),
       color: .secondaryLabelColor, size: 9, alignment: .right)
     let reset = layout.timeline.reset ? " · timeline reset" : ""

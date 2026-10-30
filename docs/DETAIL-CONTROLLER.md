@@ -22,3 +22,12 @@ The shared timer, serial worker, collectors, permission providers and persisted 
 Weather and Calendar retain their specialized interactive formatting in `DetailController`; issue #18 extracts Sensors formatting into `SensorBrowserPresentation`. Further separation can follow their individual lifetimes in later focused changes; it does not require changing this presentation/navigation boundary.
 
 Regression coverage lives in `Tests/TinyStatsUITests/DetailPresentationTests.swift`: unavailable headlines/history gaps, idle meters and process bounds, native sidebar actions/shortcuts/Settings demand, deferred view loading, and controller/coordinator release with a retained native sidebar. Existing native suites cover table/component values, window resizing, Settings page release, editor Save/Cancel, Weather/Calendar permission boundaries and worker demand transitions.
+
+## System dropdown presentation
+
+`DetailController.isPopoverPresentation` selects the narrow material/platters layout. The default is the monitoring-window layout, including the System Overview grid, for window hosts and fixtures. `AppDelegate` sets the flag before loading a status-item detail, and clears it when promoting that same controller to a persistent window. The Open [module] in TinyStats action uses `onOpenInWindow`; it shares the existing window promotion/lifetime path without opening a Settings page.
+
+Summary and Weather documents move into native scroll views only for dropdown presentation. Summary headlines use the lightweight `DetailReadingsBuilder.headline` formatter; they do not construct the hidden diagnostic rows. The All readings table, sensor search, date selection, History and Pause callbacks keep their existing ownership. Hiding/closing still uses the existing demand and popover dismissal rules. Appearance/system-colour redraws belong to shared presentation views and introduce no sampler activity.
+
+
+Overview's existing Pause/Resume and History buttons move into its toolbar, with their callbacks unchanged; other pages keep their existing action placement. Returning from Overview resets those frames and icons. The summary remains the same immediate-mode view and keeps its early return, bounded histories, hover inspection and reused accessibility children. Sidebar section headings display Advanced and Settings in secondary system text; module enum order, shortcuts and accessibility identities remain stable.
