@@ -153,7 +153,17 @@ func moduleIdentityPairsResolveAppearancesAndRetainContrast(_ module: Module) th
         #expect(actual.alphaComponent == 1)
       }
     }
-    #expect(abs(primary.lab.lightness - secondary.lab.lightness) >= 0.13)
+    // Light inks are bounded above by 3:1 contrast on #D5D5D5. Requiring ΔL 0.13
+    // forced amber/indigo companions back to brown/navy. Retain a nonzero lightness
+    // cue plus the unchanged full protan/deutan ΔE guard and solid/dashed markers.
+    // Dark palettes retain the original ΔL guard. See Dopamine fix round 1 notes.
+    #expect(abs(primary.lab.lightness - secondary.lab.lightness) >= (dark ? 0.13 : 0.025))
+    appearance.performAsCurrentDrawingAppearance {
+      for glass in [false, true] {
+        let trace = SystemStyle.chartTraceColor(palette.secondary, role: .secondary, glass: glass)
+        #expect(trace.usingColorSpace(.sRGB) == palette.secondary.usingColorSpace(.sRGB))
+      }
+    }
     for matrix in [protanopia, deuteranopia] {
       #expect(simulate(primary, matrix).lab.distance(to: simulate(secondary, matrix).lab) >= 0.12)
     }
