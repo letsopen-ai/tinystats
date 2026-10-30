@@ -282,6 +282,14 @@ extension SummaryDashboardView {
   static func overviewSparkline(in rect: NSRect) -> NSRect {
     .init(x: rect.minX, y: rect.maxY - 34, width: rect.width, height: 34)
   }
+  static func overviewMemoryBar(in rect: NSRect) -> NSRect {
+    .init(x: rect.minX + 14, y: rect.minY + 80, width: rect.width - 28, height: 8)
+  }
+  static func overviewMemoryCaption(in rect: NSRect) -> NSRect {
+    let bar = overviewMemoryBar(in: rect)
+    // Six points after the bar: two more than the previous tight four-point gap.
+    return .init(x: bar.minX, y: bar.maxY + 6, width: bar.width, height: 14)
+  }
   func drawOverviewTile(_ tile: OverviewTile, in rect: NSRect) {
     drawOverviewSymbol(tile.symbol, label: tile.value.label, in: rect)
     let large = rect.height >= 120
@@ -290,13 +298,22 @@ extension SummaryDashboardView {
       in: .init(
         x: rect.minX + 14, y: rect.minY + (large ? 41 : 31), width: rect.width - 28,
         height: large ? 37 : 28), size: large ? 30 : 22)
-    let detailRect = NSRect(
-      x: rect.minX + 14, y: rect.minY + (large ? 81 : 59), width: rect.width - 28,
-      height: large ? 29 : max(0, rect.height - 61))
+    let compactMemory = usesPopoverLayout && tile.symbol == "memorychip"
+    let detailRect =
+      compactMemory
+      ? Self.overviewMemoryCaption(in: rect)
+      : NSRect(
+        x: rect.minX + 14,
+        y: rect.minY + (large ? 81 : 59),
+        width: rect.width - 28,
+        height: large ? 29 : max(0, rect.height - 61))
     text(tile.value.detail, rect: detailRect, color: .secondaryLabelColor, size: 11)
     if let segments = tile.segments {
       SegmentedBarView.draw(
-        segments, in: .init(x: rect.minX + 14, y: rect.maxY - 53, width: rect.width - 28, height: 8)
+        segments,
+        in: compactMemory
+          ? Self.overviewMemoryBar(in: rect)
+          : .init(x: rect.minX + 14, y: rect.maxY - 53, width: rect.width - 28, height: 8)
       )
       let caption = tile.barCaption ?? tile.composition
       let lines = caption.components(separatedBy: "\n").flatMap {

@@ -209,7 +209,14 @@ extension SummaryDashboardView {
       meterY = max(0, height - 3)
     }
   }
-  func drawRows(_ rows: ArraySlice<Reading>, in area: NSRect) {
+  /// Single-value rows share a fixed trailing value column; Apps counts sit directly beside it.
+  static let rowValueWidth: CGFloat = 76
+  static func appCountRect(valueStart: CGFloat, y: CGFloat) -> NSRect {
+    .init(
+      x: valueStart - ProcessAppLabelCell.countWidth - 3, y: y,
+      width: ProcessAppLabelCell.countWidth, height: 16)
+  }
+  func drawRows(_ rows: ArraySlice<Reading>, in area: NSRect, processColumns: Bool = false) {
     guard !rows.isEmpty else {
       if area.height >= 14 {
         text("No readings to show", rect: area, color: .secondaryLabelColor, size: 11)
@@ -255,7 +262,9 @@ extension SummaryDashboardView {
       let valueStart =
         fitsApp
         ? area.maxX - firstWidth - secondWidth
-        : area.minX + area.width * (paired ? 0.43 : 0.56)
+        : paired
+          ? area.minX + area.width * 0.43
+          : processColumns ? area.maxX - Self.rowValueWidth : area.minX + area.width * 0.56
       let secondStart = fitsApp ? area.maxX - secondWidth : area.minX + area.width * 0.73
       if paired {
         let barWidth = secondStart - valueStart
@@ -287,9 +296,7 @@ extension SummaryDashboardView {
           hints: nil)
         text(
           "\(row.processCount)",
-          rect: .init(
-            x: valueStart - ProcessAppLabelCell.countWidth - 3, y: textY,
-            width: ProcessAppLabelCell.countWidth, height: 16),
+          rect: Self.appCountRect(valueStart: valueStart, y: textY),
           color: .labelColor, size: 10, alignment: .right)
       }
       let textHeight = paired ? pairedLayout.textHeight : 16

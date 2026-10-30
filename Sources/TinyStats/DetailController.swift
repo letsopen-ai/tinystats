@@ -242,15 +242,21 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     popoverMaterial.isHidden = !isPopoverPresentation
     for platter in [headlinePlatter, readingsPlatter, tracePlatter] {
       platter.isHidden = !isPopoverPresentation
+      platter.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
     }
     summaryScroll.isHidden = !isPopoverPresentation
     footerSeparator.isHidden = !isPopoverPresentation
     configureTableStyle()
     sensorSearch.usesNeutralFill = isPopoverPresentation
+    sensorSearch.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
+    chart.usesPanelGlass = isPopoverPresentation
+    chart.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
     openWindowRow.isHidden = !isPopoverPresentation
     if !isPopoverPresentation { openWindowRow.frame.origin.y = 60 }
     weatherScroll.isHidden = !isPopoverPresentation
     if let weatherDashboard {
+      weatherDashboard.usesPopoverLayout = isPopoverPresentation
+      weatherDashboard.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
       if isPopoverPresentation {
         weatherScroll.documentView = weatherDashboard
       } else {
@@ -273,6 +279,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       }
     }
     for button in [historyButton, openWindowRow, readingsButton, pauseButton] {
+      button.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
       button.usesIconPresentation = isPopoverPresentation
       button.isBordered = !isPopoverPresentation
       button.bezelStyle = isPopoverPresentation ? .recessed : .rounded
@@ -289,9 +296,18 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   func monitoringVisibilityChanged(_ visible: Bool) {
     onMonitoringDemand?(visible && !showsSettings ? selected : nil)
   }
+  var sensorFont: NSFont = .systemFont(ofSize: 12) {
+    didSet {
+      guard isViewLoaded else { return }
+      configureTableStyle()
+      table.reloadData()
+    }
+  }
   private func configureTableStyle() {
     // Sensors own their text padding in both hosts; automatic/fullWidth add native cell gutters.
     table.style = isPopoverPresentation || selected == .sensors ? .plain : .automatic
+    table.rowHeight =
+      selected == .sensors ? SensorBrowserTextFieldCell.rowHeight(for: sensorFont) : 25
   }
   func showSettingsView(_ content: NSView, page: PreferencesController.Page) {
     loadViewIfNeeded()
@@ -340,7 +356,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     calendar?.frame = .init(
       x: 154, y: chart.frame.minY, width: min(600, width * 0.7), height: chartHeight)
     let tableHeight = weather && chart.isHidden ? h - 247 : chart.frame.minY - 66
-    detailScroll?.frame = .init(x: 150, y: 56, width: max(0, w - 168), height: max(0, tableHeight))
+    // The cell owns 12pt leading ink padding; align its ink with the native title ink.
+    detailScroll?.frame = .init(
+      x: selected == .sensors ? 145 : 150, y: 56,
+      width: max(0, w - (selected == .sensors ? 163 : 168)), height: max(0, tableHeight))
     let columnsWidth =
       selected == .sensors
       ? max(0, detailScroll?.contentSize.width ?? 0)
@@ -451,7 +470,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     readingsPlatter.isHidden = detailScroll?.isHidden != false
     readingsPlatter.frame = .init(
       x: inset, y: bottom, width: width, height: max(0, tableTop - bottom))
-    // Sensors draw selection 4pt inside the card; text retains its existing 12pt padding.
+    // Sensors draw selection 4pt inside the card; their text cell owns the 12pt ink padding.
     detailScroll?.frame = readingsPlatter.frame.insetBy(dx: selected == .sensors ? 0 : 12, dy: 6)
     let tableWidth = max(0, detailScroll?.contentSize.width ?? width)
     table.frame.size.width = tableWidth
@@ -612,8 +631,20 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     guard notification.object as? NSSearchField === sensorSearch else { return }
     refresh()
   }
+  private func refreshGlassInk() {
+    let ink: NSColor =
+      isPopoverPresentation && glassEnvironment().treatment == .glass
+      ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor
+    titleLabel.textColor = selected == .overview ? .labelColor : ink
+    subtitleLabel.textColor = ink
+    sensorCountLabel.textColor = ink
+    for button in [historyButton, openWindowRow, readingsButton, pauseButton] {
+      button.refreshTint()
+    }
+  }
   private func refreshAppearanceCells() {
     guard isViewLoaded else { return }
+    refreshGlassInk()
     // Equality only describes sample data. Native icons/semantic colors also depend on
     // appearance; refresh realized body cells while leaving the focused header in place.
     let body = IndexSet(rows.indices.filter { !rows[$0].processGroupingHeader })
@@ -721,10 +752,17 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       ? row.compactValue ?? row.value
       : row.heading ? SystemStyle.sectionTitle(row.label) : row.label
     cell.font =
-      isValue
-      ? .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-      : .systemFont(ofSize: 12, weight: row.heading ? .semibold : .regular)
-    cell.textColor = row.heading ? .secondaryLabelColor : .labelColor
+      selected == .sensors
+      ? (isValue
+        ? .monospacedDigitSystemFont(ofSize: sensorFont.pointSize, weight: .regular)
+        : row.heading ? .systemFont(ofSize: sensorFont.pointSize, weight: .semibold) : sensorFont)
+      : isValue
+        ? .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        : .systemFont(ofSize: 12, weight: row.heading ? .semibold : .regular)
+    cell.textColor =
+      row.heading
+      ? (isPopoverPresentation && glassEnvironment().treatment == .glass
+        ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor) : .labelColor
     cell.alignment = isValue ? .right : .left
     cell.lineBreakMode = .byTruncatingTail
     cell.toolTip = row.help ?? (isValue ? row.value : cell.stringValue)
@@ -852,6 +890,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     if weatherSummary {
       if weatherDashboard == nil {
         let dashboard = WeatherDashboardView(frame: .zero, solarCalculator: solarCalculator)
+        dashboard.usesPopoverLayout = isPopoverPresentation
+        dashboard.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
         view.addSubview(dashboard)
         weatherDashboard = dashboard
         if isPopoverPresentation { weatherScroll.documentView = dashboard }
@@ -874,6 +914,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         dashboard.appDisplayCache = appDisplayCache
         summary = dashboard
         dashboard.usesPopoverLayout = isPopoverPresentation
+        dashboard.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
         if isPopoverPresentation { summaryScroll.documentView = dashboard }
       }
       if isPopoverPresentation,
@@ -1175,6 +1216,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     if selected != .sensors || showsAllReadings {
       rows += DetailReadingsBuilder.sampleRows(snapshot: s, settings: settings, paused: paused)
     }
+    refreshGlassInk()
     chart.series = lines
     table.setAccessibilityLabel("\(selected.title) details")
     reloadRows()

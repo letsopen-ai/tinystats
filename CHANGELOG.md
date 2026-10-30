@@ -4,6 +4,9 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Make macOS 26+ glass more transparent: dropdown wash 60% light / 70% dark, sidebar 55% / 65%, and native grouped chips without an extra wash. Compose inset cards with 2.5% light label-colour / 24% dark window-background tints to preserve backdrop hue without seams; strengthen glass-only secondary ink. Preserve legacy and accessibility fallback fills and both accents.
+- Centre Sensors labels through titleRect, size rows from font metrics, verify 12pt glyph padding and align window rows with the title. Anchor Apps counts beside a fixed value column, give Overview Memory's caption a 6pt bar gap, and verify native appearance-inheriting Menu Bar switches. Keep the footer icon-only and Processes / Apps in its card header.
+
 - Extend native Liquid Glass to macOS 26+: one dropdown panel behind neutral inset cards and its icon-only footer, a glass sidebar in Overview/monitoring/Settings, and container-grouped Menu Bar drag chips. Keep chart/number cards and forms neutral, preserve both system-derived accents and macOS 14–25 materials, strengthen the dark wash, and switch every new surface to semantic solid fills for Reduce Transparency or Increase Contrast while open.
 
 - Mark partial app CPU totals with ≥, fit four-digit process counts, remove artificial icon rims and cache the placeholder. Make Network’s Partial coverage note and Sensors counts legible, deduplicate the selected hottest sensor and chart captions, space Overview status columns and hide empty chart grids. Overflow rows name All readings only where available. Group live CPU/Memory immediately through the existing worker schedule, preserve pause/sleep/Network state, expose privacy/cadence in a dedicated nonvisual static-text accessibility element, and refresh appearance-dependent cells without disturbing the grouping header.

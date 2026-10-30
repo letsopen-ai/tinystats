@@ -85,6 +85,7 @@ import Testing
   _ = NSApp.setActivationPolicy(.accessory)
   NSApp.finishLaunching()
   NSApp.activate()
+  _ = NSRunningApplication.current.activate(options: [.activateAllWindows])
   defer { _ = NSApp.setActivationPolicy(savedPolicy) }
   let window = GlassGalleryWindow(
     contentRect: .init(x: 80, y: 80, width: 1080, height: 780), styleMask: [.borderless],
@@ -131,6 +132,17 @@ import Testing
     .init(key: "PSTR", name: "System total power", kind: .power, value: 6.8),
   ]
   snapshot.sensorsSampledAt = snapshot.uptime
+  let history = (0..<30).map { index in
+    var point = snapshot.historyPoint
+    point.time = snapshot.timestamp.addingTimeInterval(Double(index - 29) * 2)
+    point.sampleInterval = 2
+    point.cpuUser = Double(12 + index % 17)
+    point.cpuSystem = Double(5 + index % 9)
+    point.cpu = (point.cpuUser ?? 0) + (point.cpuSystem ?? 0)
+    point.download = Double(1000 + (index * 173) % 2000)
+    point.upload = Double(200 + (index * 107) % 800)
+    return point
+  }
   window.makeKeyAndOrderFront(nil)
   window.orderFrontRegardless()
   window.displayIfNeeded()
@@ -149,7 +161,6 @@ import Testing
     ("cpu", .cpu, true, false, 0), ("memory", .memory, true, false, 0),
     ("network", .network, true, false, 0), ("overview", .overview, true, false, 0),
     ("sensors", .sensors, true, false, 0),
-    // Preserve prior capture names; cover Sensors modes in both hosts as well.
     ("sensors-readings", .sensors, true, false, 0),
     ("main-window", .overview, false, false, 0),
     ("main-sensors", .sensors, false, false, 0),
@@ -159,82 +170,98 @@ import Testing
     ("contrast-cpu", .cpu, true, false, 2), ("contrast-main-window", .overview, false, false, 2),
   ]
   var activationStates: [String] = []
-  for theme in [AppTheme.light, .dark] {
-    window.appearance = theme.nativeAppearance
-    window.displayIfNeeded()
-    try await Task.sleep(for: .milliseconds(750))
-    for (surface, module, dropdown, settingsPage, fallback) in cases {
-      let controller = DetailController(snapshot: snapshot, history: [])
-      controller.glassEnvironment = {
-        .init(
-          supportsGlass: GlassSurface.Environment.current.supportsGlass,
-          reduceTransparency: fallback == 1, increaseContrast: fallback == 2)
-      }
-      controller.settings.processGrouping = .bundles
-      controller.isPopoverPresentation = dropdown
-      controller.selected = module
-      controller.showsAllReadings = surface.hasSuffix("sensors-readings")
-      let size = dropdown ? SystemStyle.popoverSize : MainWindow.minimumSize
-      controller.view.frame = .init(
-        x: (1080 - size.width) / 2, y: (780 - size.height) / 2,
-        width: size.width, height: size.height)
-      backdrop.addSubview(controller.view)
-      var preferences: PreferencesController?
-      if settingsPage {
-        let editor = PreferencesController(
-          settings: controller.settings, interfaces: [],
-          snapshot: snapshot, history: [], initialPage: .menuBar)
-        preferences = editor
-        controller.showSettingsView(
-          try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
-      }
-      controller.view.layoutSubtreeIfNeeded()
-      // Exercise the existing insertion marker above real compositor glass, using
-      // only a private synthetic drag payload in our own fixture window.
-      var insertionDrag: ReadoutDrag?
-      if settingsPage {
-        let editor = try #require(
-          systemDescendants(controller.view).compactMap { $0 as? MenuBarCustomization }.first)
-        let cpu = try #require(editor.chips[.cpu])
-        let memory = try #require(editor.chips[.memory])
-        let drag = ReadoutDrag()
-        drag.draggingSource = cpu
-        #expect(drag.draggingPasteboard.writeObjects([editor.pasteboardItem(for: .cpu)]))
-        drag.draggingLocation = editor.strip.convert(
-          .init(x: memory.frame.minX, y: memory.frame.midY), to: nil)
-        #expect(editor.strip.draggingEntered(drag) == .move)
-        insertionDrag = drag
-      }
-      window.makeKey()
+  for gradient in [false, true] {
+    backdrop.gradient = gradient
+    backdrop.needsDisplay = true
+    for theme in [AppTheme.light, .dark] {
+      window.appearance = theme.nativeAppearance
       window.displayIfNeeded()
-      try await Task.sleep(for: .milliseconds(450))
-      activationStates.append(
-        "\(surface)-\(theme.rawValue): active=\(NSApp.isActive), key=\(window.isKeyWindow)")
-      let stem = "glass-onscreen-\(surface)-\(theme.rawValue)"
-      let image = try await SCScreenshotManager.captureImage(
-        contentFilter: filter, configuration: config)
-      try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
-        .write(to: folder.appendingPathComponent(stem + ".png"))
-      try systemGalleryImage(backdrop, to: folder.appendingPathComponent(stem + "-bitmap.png"))
-      insertionDrag?.draggingPasteboard.releaseGlobally()
-      controller.view.removeFromSuperview()
-      preferences?.disposeEmbedded()
-      preferences?.close()
+      try await Task.sleep(for: .milliseconds(750))
+      for (surface, module, dropdown, settingsPage, fallback) in cases {
+        let controller = DetailController(snapshot: snapshot, history: history)
+        controller.glassEnvironment = {
+          .init(
+            supportsGlass: GlassSurface.Environment.current.supportsGlass,
+            reduceTransparency: fallback == 1, increaseContrast: fallback == 2)
+        }
+        controller.settings.processGrouping = .bundles
+        controller.isPopoverPresentation = dropdown
+        controller.selected = module
+        controller.showsAllReadings = surface.hasSuffix("sensors-readings")
+        let size = dropdown ? SystemStyle.popoverSize : MainWindow.minimumSize
+        controller.view.frame = .init(
+          x: (1080 - size.width) / 2, y: (780 - size.height) / 2,
+          width: size.width, height: size.height)
+        backdrop.addSubview(controller.view)
+        var preferences: PreferencesController?
+        if settingsPage {
+          let editor = PreferencesController(
+            settings: controller.settings, interfaces: [],
+            snapshot: snapshot, history: [], initialPage: .menuBar)
+          preferences = editor
+          controller.showSettingsView(
+            try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
+        }
+        controller.view.layoutSubtreeIfNeeded()
+        // Exercise the existing insertion marker above real compositor glass, using
+        // only a private synthetic drag payload in our own fixture window.
+        var insertionDrag: ReadoutDrag?
+        if settingsPage {
+          let editor = try #require(
+            systemDescendants(controller.view).compactMap { $0 as? MenuBarCustomization }.first)
+          let cpu = try #require(editor.chips[.cpu])
+          let memory = try #require(editor.chips[.memory])
+          let drag = ReadoutDrag()
+          drag.draggingSource = cpu
+          #expect(drag.draggingPasteboard.writeObjects([editor.pasteboardItem(for: .cpu)]))
+          drag.draggingLocation = editor.strip.convert(
+            .init(x: memory.frame.minX, y: memory.frame.midY), to: nil)
+          #expect(editor.strip.draggingEntered(drag) == .move)
+          insertionDrag = drag
+        }
+        window.makeKey()
+        window.displayIfNeeded()
+        try await Task.sleep(for: .milliseconds(450))
+        activationStates.append(
+          "\(surface)-\(theme.rawValue): active=\(NSApp.isActive), key=\(window.isKeyWindow)")
+        let stem = "glass-onscreen-\(surface)\(gradient ? "-gradient" : "")-\(theme.rawValue)"
+        let image = try await SCScreenshotManager.captureImage(
+          contentFilter: filter, configuration: config)
+        try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+          .write(to: folder.appendingPathComponent(stem + ".png"))
+        try systemGalleryImage(backdrop, to: folder.appendingPathComponent(stem + "-bitmap.png"))
+        insertionDrag?.draggingPasteboard.releaseGlobally()
+        controller.view.removeFromSuperview()
+        preferences?.disposeEmbedded()
+        preferences?.close()
+      }
     }
   }
   try
-    ("Captured only the owned synthetic window using ScreenCaptureKit after CGPreflightScreenCaptureAccess succeeded. No permission request, real menu bar, live sampling or other application's content. Colour stripes exercise glass. Full-content solid/contrast cases inject the same policy inputs as accessibility notifications; system preferences were not changed. Paired bitmap PNGs establish layout only. Activation is reported honestly; inactive native segments may be gray.\n"
+    ("Captured only the owned synthetic window using ScreenCaptureKit after CGPreflightScreenCaptureAccess succeeded. No permission request, real menu bar, live sampling or other application's content. Saturated stripes and a smooth multi-hue gradient exercise glass. Full-content solid/contrast cases inject the same policy inputs as accessibility notifications; system preferences were not changed. Paired bitmap PNGs establish layout only. Activation is reported honestly; inactive native segments may be gray.\n"
     + activationStates.joined(separator: "\n") + "\n")
     .write(to: report, atomically: true, encoding: .utf8)
 }
 
 @MainActor private final class GlassGalleryWindow: NSWindow {
   override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { true }
 }
 
 @MainActor private final class GlassGalleryBackdrop: NSView {
+  var gradient = false
   override func draw(_ dirtyRect: NSRect) {
     let colors: [NSColor] = [.systemBlue, .systemPurple, .systemOrange, .systemGreen]
+    if gradient {
+      NSGradient(colors: colors)?.draw(in: bounds, angle: 24)
+      NSGradient(starting: NSColor.systemPink.withAlphaComponent(0.8), ending: .clear)?
+        .draw(
+          fromCenter: .init(x: bounds.width * 0.65, y: bounds.height * 0.7), radius: 0,
+          toCenter: .init(x: bounds.width * 0.65, y: bounds.height * 0.7),
+          radius: bounds.width * 0.7,
+          options: [.drawsAfterEndingLocation])
+      return
+    }
     for (index, color) in colors.enumerated() {
       color.setFill()
       NSRect(

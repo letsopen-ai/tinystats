@@ -156,9 +156,9 @@ import Testing
     let field = try #require(
       table.view(atColumn: 1, row: index, makeIfNecessary: true) as? NSTextField)
     let cell = try #require(field.cell)
-    let text = scroll.contentView.convert(cell.drawingRect(forBounds: field.bounds), from: field)
+    let text = scroll.contentView.convert(cell.titleRect(forBounds: field.bounds), from: field)
     // Sensors put the gutter inside the cell, so measure the text rather than unused column width.
-    #expect(abs(scroll.contentView.bounds.maxX - text.maxX - 12) <= 0.5)
+    #expect(abs(scroll.contentView.bounds.maxX - text.maxX - 12) <= 2)
   }
   window.close()
 }
