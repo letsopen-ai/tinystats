@@ -146,7 +146,7 @@ enum DetailReadingsBuilder {
     switch module {
     case .overview:
       series("CPU", \.cpu, SystemStyle.accent)
-      series("Memory", \.memory, SystemStyle.accent)
+      series("Memory", \.memory, SystemStyle.secondaryAccent)
       utilization("CPU", s.cpu?.usage, SystemStyle.accent)
       utilization("GPU", s.gpus.compactMap(\.usage).max(), SystemStyle.secondaryAccent)
       utilization(
@@ -192,15 +192,15 @@ enum DetailReadingsBuilder {
       }
       processes(.cpu)
     case .gpu:
-      series("GPU", \.gpu, SystemStyle.secondaryAccent)
+      series("GPU", \.gpu, SystemStyle.accent)
       if s.gpus.isEmpty { row("Driver does not expose GPU telemetry", "Unavailable") }
       for gpu in s.gpus {
         section(gpu.name)
-        utilization("Driver utilization", gpu.usage, SystemStyle.secondaryAccent)
+        utilization("Driver utilization", gpu.usage, SystemStyle.accent)
         row("Shader core count", gpu.coreCount.map(String.init) ?? "Unavailable")
         row("Per-core utilization", "No verified per-core counter")
         utilization("Renderer utilization", gpu.rendererUsage, SystemStyle.accent)
-        utilization("Tiler utilization", gpu.tilerUsage, SystemStyle.accent)
+        utilization("Tiler utilization", gpu.tilerUsage, SystemStyle.secondaryAccent)
         row("Allocated GPU memory", gpu.memory.map(Display.bytes) ?? "Unavailable")
       }
       row("Counter source", "IOAccelerator driver")
@@ -228,7 +228,7 @@ enum DetailReadingsBuilder {
       if let m = s.memory {
         memoryAmount("Active", m.active, m.total, SystemStyle.accent)
         memoryAmount("Wired", m.wired, m.total, SystemStyle.secondaryAccent)
-        memoryAmount("Compressed", m.compressed, m.total, SystemStyle.accent)
+        memoryAmount("Compressed", m.compressed, m.total, SystemStyle.tertiaryAccent)
         memoryAmount("Inactive · reclaimable", m.inactive, m.total, SystemStyle.secondaryAccent)
         memoryAmount("Purgeable · reclaimable", m.purgeable, m.total, .systemGray)
         memoryAmount("Free (includes speculative)", m.free, m.total, SystemStyle.accent)

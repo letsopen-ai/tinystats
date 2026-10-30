@@ -341,7 +341,7 @@ struct MenuBarReadout {
         }
         drawHistory(item.values, in: chart, domain: domain, color: tint)
         drawHistory(
-          item.secondValues, in: chart, domain: domain, color: tint.withAlphaComponent(0.5))
+          item.secondValues, in: chart, domain: domain, color: palette.secondary)
         if (item.values + item.secondValues).compactMap({ $0 }).isEmpty {
           text(palette: palette, "—", in: chart, font: Self.small, centered: true)
         }

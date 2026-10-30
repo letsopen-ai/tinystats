@@ -27,6 +27,7 @@ extension SummaryDashboardView {
     var fraction: Double? = nil
     var color: NSColor = SystemStyle.accent
     var secondFraction: Double? = nil
+    var secondColor: NSColor = SystemStyle.secondaryAccent
     var accessibilityValue: String? = nil
   }
   struct Gauge {
@@ -229,12 +230,12 @@ extension SummaryDashboardView {
           row.fraction,
           rect: NSRect(
             x: valueStart + 2, y: y + pairedLayout.meterY,
-            width: barWidth - 4, height: 2), color: SystemStyle.secondaryAccent)
+            width: barWidth - 4, height: 2), color: row.color)
         meter(
           row.secondFraction,
           rect: NSRect(
             x: area.minX + area.width * 0.73 + 2,
-            y: y + pairedLayout.meterY, width: barWidth - 4, height: 2), color: SystemStyle.accent)
+            y: y + pairedLayout.meterY, width: barWidth - 4, height: 2), color: row.secondColor)
       }
       let textHeight = paired ? pairedLayout.textHeight : max(12, height)
       text(

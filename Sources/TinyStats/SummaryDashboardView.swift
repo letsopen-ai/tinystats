@@ -240,10 +240,12 @@ import TinyStatsCore
     ) -> Content {
       .plot(
         .init(
-          first: recent.map { $0[keyPath: first] }, second: recent.map { $0[keyPath: second] },
+          first: recent.map { $0[keyPath: first] },
+          second: labels.1.isEmpty ? [] : recent.map { $0[keyPath: second] },
           firstLabel: labels.0, secondLabel: labels.1, firstValue: values.0, secondValue: values.1,
           percent: percent, mirrored: mirrored,
-          firstColor: SystemStyle.accent, secondColor: SystemStyle.secondaryAccent,
+          firstColor: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
+          secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent,
           time: .init(recent.map(\.time), intervals: recent.map(\.sampleInterval)),
           valueFormat: percent ? .percent : .rate))
     }
@@ -283,8 +285,9 @@ import TinyStatsCore
         Reading(
           label: names[index], value: Display.rate(first[index]),
           second: Display.rate(second[index]), fraction: fractions[index],
-          color: SystemStyle.secondaryAccent,
-          secondFraction: fractions[index + first.count])
+          color: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
+          secondFraction: fractions[index + first.count],
+          secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent)
       }
     }
     func tile(
@@ -297,7 +300,7 @@ import TinyStatsCore
         trend = Plot(
           first: miniRecent.map { $0[keyPath: key] }, second: [], firstLabel: label,
           secondLabel: "", firstValue: value, secondValue: "", percent: percent,
-          mirrored: false, firstColor: color,
+          mirrored: false, firstColor: SystemStyle.accent,
           time: .init(miniRecent.map(\.time), intervals: miniRecent.map(\.sampleInterval)),
           valueFormat: key == \.temperature
             ? .temperature(fahrenheit: settings.fahrenheit) : percent ? .percent : .rate)
@@ -314,7 +317,7 @@ import TinyStatsCore
           color: SystemStyle.accent),
         Gauge(
           label: "Renderer", value: Display.percent(gpu?.rendererUsage),
-          percent: gpu?.rendererUsage, color: SystemStyle.secondaryAccent),
+          percent: gpu?.rendererUsage, color: SystemStyle.accent),
         Gauge(
           label: "Tiler", value: Display.percent(gpu?.tilerUsage), percent: gpu?.tilerUsage,
           color: SystemStyle.secondaryAccent),
@@ -827,7 +830,8 @@ import TinyStatsCore
       secondLabel: labels.1,
       firstValue: text(first), secondValue: second.map(text) ?? "", percent: percent,
       mirrored: module == .network || module == .disks,
-      firstColor: SystemStyle.accent, secondColor: SystemStyle.secondaryAccent,
+      firstColor: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
+      secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent,
       time: .init(
         module == .cpu ? projection.bucketCenters : projection.buckets.map(\.last),
         intervals: projection.buckets.map {
@@ -1556,7 +1560,7 @@ import TinyStatsCore
       if !plot.secondLabel.isEmpty {
         var second = plot
         second.first = plot.second
-        second.firstColor = SystemStyle.secondaryAccent
+        second.firstColor = plot.secondColor
         second.percent = false
         drawMiniHistory(second, in: graph, upperBound: layout.maximum)
       }

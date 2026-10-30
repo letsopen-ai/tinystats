@@ -142,7 +142,7 @@ extension SummaryDashboardView {
       first: recent.map(\.download), second: recent.map(\.upload),
       firstLabel: "Download", secondLabel: "Upload", firstValue: Display.rate(s.download),
       secondValue: Display.rate(s.upload),
-      percent: false, mirrored: false, secondColor: .secondaryLabelColor,
+      percent: false, mirrored: false, secondColor: SystemStyle.secondaryAccent,
       time: .init(recent.map(\.time), intervals: recent.map(\.sampleInterval), domain: domain),
       valueFormat: .rate, drawsTrace: true)
     return [

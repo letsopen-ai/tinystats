@@ -8,16 +8,17 @@ import Testing
   view.subviews.flatMap { [$0] + systemDescendants($0) }
 }
 
-@Test @MainActor func systemAccentTintsResolveInBothAppearancesAndKeepCoreClassification() throws {
+@Test @MainActor func systemAccentPairResolvesInBothAppearancesAndKeepsCoreClassification() throws {
   for name in [NSAppearance.Name.aqua, .darkAqua] {
     let appearance = try #require(NSAppearance(named: name))
     appearance.performAsCurrentDrawingAppearance {
       let accent = SystemStyle.accent.usingColorSpace(.sRGB)
       let tint = SystemStyle.secondaryAccent.usingColorSpace(.sRGB)
-      #expect(accent?.redComponent == tint?.redComponent)
-      #expect(accent?.greenComponent == tint?.greenComponent)
-      #expect(accent?.blueComponent == tint?.blueComponent)
-      #expect(tint?.alphaComponent == (name == .darkAqua ? 0.5 : 0.45))
+      let expected = SystemStyle.resolvedPalette(in: appearance)
+      #expect(accent == expected.primary.usingColorSpace(.sRGB))
+      #expect(tint == expected.secondary.usingColorSpace(.sRGB))
+      #expect(accent != tint)
+      #expect(tint?.alphaComponent == 1)
       #expect(CPUCoreKind.efficiency.chartColor == SystemStyle.secondaryAccent)
       #expect(CPUCoreKind.performance.chartColor == SystemStyle.accent)
       #expect(CPUCoreKind.unknown.chartColor == .secondaryLabelColor)
@@ -319,5 +320,135 @@ import Testing
       }
     }
     #expect(writes == 0)
+  }
+}
+
+@MainActor private final class AccentPairGallerySurface: NSView {
+  override func draw(_ dirtyRect: NSRect) {
+    let rgb = AccentPalette.background(dark: SystemStyle.isDark(effectiveAppearance))
+    NSColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1).setFill()
+    bounds.fill()
+  }
+}
+
+/// A deterministic fixture sheet uses the production ChartView with actual native accent inputs.
+/// It supplements live-accent dropdown/Overview renders without changing system preferences.
+@Test @MainActor func systemAccentPairGalleryRendersLightAndDarkChartsAndMenuGraphs() throws {
+  for name in [NSAppearance.Name.aqua, .darkAqua] {
+    let appearance = try #require(NSAppearance(named: name))
+    let dark = SystemStyle.isDark(appearance)
+    let root = AccentPairGallerySurface(frame: .init(x: 0, y: 0, width: 640, height: 1000))
+    root.appearance = appearance
+    for (index, fixture) in SystemAccentFixture.all.enumerated() {
+      let pair = AccentPalette.derive(
+        from: .init(hex: dark ? fixture.dark : fixture.light), dark: dark)
+      func color(_ c: AccentPalette.RGB) -> NSColor {
+        NSColor(srgbRed: c.red, green: c.green, blue: c.blue, alpha: 1)
+      }
+      let y = CGFloat(900 - index * 100)
+      let label = NSTextField(
+        labelWithString: fixture.name + " · " + pair.primary.hex + " / " + pair.secondary.hex)
+      label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+      label.frame = .init(x: 12, y: y + 78, width: 610, height: 18)
+      root.addSubview(label)
+      let chart = ChartView(frame: .init(x: 12, y: y, width: 610, height: 74))
+      chart.times = (0..<5).map { Date(timeIntervalSince1970: Double($0 * 2)) }
+      chart.series = [
+        .init(
+          name: "User / Download / Read / P", color: color(pair.primary),
+          values: [20, 40, nil, 60, 40]),
+        .init(
+          name: "System / Upload / Write / E", color: color(pair.secondary),
+          values: [10, 20, nil, 30, 20]),
+      ]
+      #expect(
+        (chart.accessibilityValue() as? String)?.contains("System / Upload / Write / E") == true)
+      root.addSubview(chart)
+    }
+    let menu = MenuBarReadoutView(frame: .init(x: 12, y: 8, width: 240, height: 24))
+    var network = MenuBarReadout(
+      label: "NET", value: "↓ 1 MB/s", secondary: "↑ 48 KB/s", style: .historyValue)
+    network.module = .network
+    network.isNetwork = true
+    network.values = [10, 40, nil, 70, 50]
+    network.secondValues = [5, 10, nil, 25, 15]
+    var cpu = MenuBarReadout(label: "CPU", value: "23%", secondary: nil, style: .cores)
+    cpu.module = .cpu
+    cpu.cores = [0, nil, 30, 70]
+    cpu.coreKinds = [.efficiency, .efficiency, .performance, .performance]
+    menu.readouts = [network, cpu]
+    root.addSubview(menu)
+    let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+    root.cacheDisplay(in: root.bounds, to: bitmap)
+    #expect(bitmap.pixelsWide >= 640 && bitmap.pixelsHigh >= 1000)
+    if let directory = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
+      let url = URL(fileURLWithPath: directory, isDirectory: true)
+      try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+      try #require(bitmap.representation(using: .png, properties: [:])).write(
+        to: url.appendingPathComponent("accent-pairs-\(name.rawValue).png"))
+    }
+  }
+}
+
+@Test @MainActor func pairedSeriesKeepNamedColorsAcrossLiveRecordedAndSingleSeriesCharts() throws {
+  let view = SummaryDashboardView(frame: .init(x: 0, y: 0, width: 520, height: 454))
+  let snapshot = Snapshot()
+  var point = snapshot.historyPoint
+  point.cpuUser = 20
+  point.cpuSystem = 10
+  point.gpu = 15
+  point.upload = 5
+  point.download = 25
+  point.diskRead = 10
+  point.diskWrite = 5
+  let overview = try #require(
+    DetailReadingsBuilder.build(
+      module: .overview, snapshot: snapshot, history: [point], settings: Settings(), paused: false))
+  #expect(overview.series.map(\.name) == ["CPU", "Memory"])
+  #expect(overview.series.map(\.color) == [SystemStyle.accent, SystemStyle.secondaryAccent])
+  var archive = SessionHistory()
+  archive.append(point, uptime: 1)
+  for module in [Module.cpu, .network, .disks, .gpu] {
+    let details = try #require(
+      DetailReadingsBuilder.build(
+        module: module, snapshot: snapshot, history: [point], settings: Settings(), paused: false))
+    #expect(details.series.first?.color == SystemStyle.accent)
+    if module == .network || module == .disks {
+      #expect(details.series.last?.color == SystemStyle.secondaryAccent)
+    } else {
+      #expect(details.series.count == 1)
+    }
+    view.update(snapshot, history: [point], settings: Settings(), module: module)
+    let plot = try #require(
+      view.cards.compactMap { card -> SummaryDashboardView.Plot? in
+        if case .plot(let plot) = card.content { return plot }
+        return nil
+      }.first)
+    #expect(
+      plot.firstColor == (module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent))
+    if module == .gpu {
+      #expect(plot.second.isEmpty && plot.secondLabel.isEmpty)
+    } else {
+      #expect(
+        plot.secondColor == (module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent))
+      #expect(!plot.firstLabel.isEmpty && !plot.secondLabel.isEmpty)
+    }
+    view.updateHistory(archive.projection(.tenMinutes), module: module, fahrenheit: false)
+    let recorded = try #require(
+      view.cards.compactMap { card -> SummaryDashboardView.Plot? in
+        if case .plot(let plot) = card.content { return plot }
+        return nil
+      }.first)
+    #expect(
+      recorded.firstColor == (module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent)
+    )
+    if module == .network || module == .disks {
+      #expect(
+        recorded.secondColor
+          == (module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent))
+      #expect(!recorded.secondLabel.isEmpty)
+    } else {
+      #expect(recorded.second.isEmpty && recorded.secondLabel.isEmpty)
+    }
   }
 }
