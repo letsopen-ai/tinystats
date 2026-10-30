@@ -284,19 +284,19 @@ import Testing
   #expect(view.preferredWidth == 3 * single + 2)
   view.frame = .init(x: 0, y: 0, width: view.preferredWidth, height: 24)
   let rep = try bitmap(view)
-  var colored = 0
   var white = 0
   for y in 0..<rep.pixelsHigh {
     for x in 0..<rep.pixelsWide {
       let color = try #require(rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
       if color.alphaComponent > 0.9 {
-        if color.blueComponent - color.redComponent > 0.2 { colored += 1 }
+        let channels = [color.redComponent, color.greenComponent, color.blueComponent]
+        #expect(channels.max()! - channels.min()! < 0.02)
         if min(color.redComponent, color.greenComponent, color.blueComponent) > 0.97 { white += 1 }
       }
       if x == 0 || x == rep.pixelsWide - 1 { #expect(color.alphaComponent == 0) }
     }
   }
-  #expect(colored > 30 && white > 10)
+  #expect(white > 40)
 }
 
 @Test @MainActor func networkDirectionMarkersStayAtLeadingEdgeForShortAndLongRates() throws {

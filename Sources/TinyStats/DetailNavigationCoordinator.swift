@@ -42,6 +42,7 @@ final class DetailNavigationCoordinator: NSObject {
       }
       let button = NavigationButton(
         title: module.title, target: self, action: #selector(selectModule(_:)))
+      button.module = module
       button.image = NSImage(systemSymbolName: module.symbol, accessibilityDescription: nil)
       button.setAccessibilityLabel(module.title)
       button.imagePosition = .imageLeading
@@ -160,22 +161,22 @@ final class DetailNavigationCoordinator: NSObject {
 
 /// Fixed icon slot and text baseline keep every sidebar label aligned.
 @MainActor final class NavigationButton: NSButton {
+  var module: Module?
   var usesGlassInk = false
   var usesModernSelection = false { didSet { needsDisplay = true } }
   override func draw(_ dirtyRect: NSRect) {
     if state == .on {
-      (usesModernSelection
-        ? NSColor.selectedContentBackgroundColor
-        : NSColor.controlAccentColor.withAlphaComponent(0.14)).setFill()
+      NSColor.labelColor.withAlphaComponent(0.10).setFill()
       NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 1), xRadius: 6, yRadius: 6).fill()
     }
     let color: NSColor =
       state == .on
-      ? (usesModernSelection ? .alternateSelectedControlTextColor : .controlAccentColor)
+      ? .labelColor
       : usesGlassInk ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor
+    let glyph = module.map { SystemStyle.moduleAccent($0) } ?? color
     if let image {
       let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
-        .applying(.init(paletteColors: [color]))
+        .applying(.init(paletteColors: [glyph]))
       let symbol = image.withSymbolConfiguration(configuration) ?? image
       let size = symbol.size
       let scale = min(18 / max(1, size.width), 18 / max(1, size.height))

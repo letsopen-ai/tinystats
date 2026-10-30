@@ -175,8 +175,8 @@ import Testing
         })
     }
   }
-  #expect(CPUCoreKind.efficiency.chartColor == SystemStyle.secondaryAccent)
-  #expect(CPUCoreKind.performance.chartColor == SystemStyle.accent)
+  #expect(CPUCoreKind.efficiency.chartColor == SystemStyle.moduleSecondary(.cpu))
+  #expect(CPUCoreKind.performance.chartColor == SystemStyle.moduleAccent(.cpu))
   #expect(
     CPUCoreKind.unknown.chartColor == NSColor.secondaryLabelColor
       && CPUCoreKind.unknown.chartTitle == "Unclassified")

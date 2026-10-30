@@ -651,6 +651,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     subtitleLabel.textColor = ink
     sensorCountLabel.textColor = ink
     for button in [historyButton, openWindowRow, readingsButton, pauseButton] {
+      button.accentModule = selected
       button.refreshTint()
     }
   }
@@ -1085,7 +1086,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         }
       }
       if let current {
-        utilization("Humidity", current.humidity, SystemStyle.accent)
+        utilization("Humidity", current.humidity, SystemStyle.moduleAccent(.weather))
         utilization("Cloud cover", current.cloudCover, .systemGray)
         row("Wind from", WindDirectionPresentation(current.windFromDegrees)?.value ?? "—")
         row("Wind", current.windMetersPerSecond.map { String(format: "%.1f m/s", $0) } ?? "—")
@@ -1131,7 +1132,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
           "Next 48h forecast · \(weatherZone.identifier) · time → · \(settings.fahrenheit ? "°F" : "°C")"
         lines = [
           .init(
-            name: "Forecast temperature", color: SystemStyle.accent,
+            name: "Forecast temperature", color: SystemStyle.moduleAccent(.weather),
             values: upcoming.map { point in
               point.celsius.map { settings.fahrenheit ? $0 * 1.8 + 32 : $0 }
             })

@@ -102,7 +102,9 @@ import Testing
   snapshot.timestamp = Date(timeIntervalSince1970: 1_700_000_000)
   snapshot.uptime = 968400
   snapshot.device = .init(model: "Mac mini", chip: "Apple M4", operatingSystem: "macOS")
-  snapshot.cpu = .init(usage: 23, cores: [30, 16], load: [1.2, 1.1, 1], user: 15, system: 8)
+  snapshot.cpu = .init(
+    usage: 23, cores: [30, 16], load: [1.2, 1.1, 1], coreKinds: [.efficiency, .performance],
+    user: 15, system: 8)
   snapshot.cpuApps = [
     .init(
       name: "TextEdit", bundlePath: "/System/Applications/TextEdit.app", processCount: 1234,
@@ -156,7 +158,7 @@ import Testing
   config.height = 780
   config.showsCursor = false
   config.ignoreShadowsSingleWindow = true
-  let cases: [(String, Module, Bool, Bool, Int)] = [
+  let surfaces: [(String, Module, Bool, Bool, Int)] = [
     ("cpu", .cpu, true, false, 0), ("memory", .memory, true, false, 0),
     ("network", .network, true, false, 0), ("overview", .overview, true, false, 0),
     ("sensors", .sensors, true, false, 0),
@@ -165,9 +167,14 @@ import Testing
     ("main-sensors", .sensors, false, false, 0),
     ("main-sensors-readings", .sensors, false, false, 0),
     ("settings-menu-bar", .overview, false, true, 0),
-    ("solid-cpu", .cpu, true, false, 1), ("solid-main-window", .overview, false, false, 1),
-    ("contrast-cpu", .cpu, true, false, 2), ("contrast-main-window", .overview, false, false, 2),
   ]
+  let cases =
+    surfaces
+    + [1, 2].flatMap { fallback in
+      surfaces.map { surface, module, dropdown, settings, _ in
+        ("\(fallback == 1 ? "solid" : "contrast")-\(surface)", module, dropdown, settings, fallback)
+      }
+    }
   var activationStates: [String] = []
   for gradient in [false, true] {
     backdrop.gradient = gradient
@@ -182,6 +189,17 @@ import Testing
           .init(
             supportsGlass: GlassSurface.Environment.current.supportsGlass,
             reduceTransparency: fallback == 1, increaseContrast: fallback == 2)
+        }
+        // Seed only synthetic existing observations before loading the view: no collector,
+        // permission, timer or live hardware access. This makes the sensor accent inspectable.
+        for index in 0..<30 {
+          var sample = snapshot
+          let offset = Double(index - 29) * 5
+          sample.timestamp = snapshot.timestamp.addingTimeInterval(offset)
+          sample.uptime = snapshot.uptime + offset
+          sample.sensorsSampledAt = sample.uptime
+          sample.sensors[0].value = index == 29 ? 52 : Double(48 + index % 5)
+          controller.update(sample, history: history)
         }
         controller.settings.processGrouping = .bundles
         controller.isPopoverPresentation = dropdown
@@ -289,8 +307,8 @@ import Testing
       #expect(tint == expected.secondary.usingColorSpace(.sRGB))
       #expect(accent != tint)
       #expect(tint?.alphaComponent == 1)
-      #expect(CPUCoreKind.efficiency.chartColor == SystemStyle.secondaryAccent)
-      #expect(CPUCoreKind.performance.chartColor == SystemStyle.accent)
+      #expect(CPUCoreKind.efficiency.chartColor == SystemStyle.moduleSecondary(.cpu))
+      #expect(CPUCoreKind.performance.chartColor == SystemStyle.moduleAccent(.cpu))
       #expect(CPUCoreKind.unknown.chartColor == .secondaryLabelColor)
     }
   }
@@ -985,17 +1003,20 @@ import Testing
     DetailReadingsBuilder.build(
       module: .overview, snapshot: snapshot, history: [point], settings: Settings(), paused: false))
   #expect(overview.series.map(\.name) == ["CPU", "Memory"])
-  #expect(overview.series.map(\.color) == [SystemStyle.accent, SystemStyle.secondaryAccent])
+  #expect(
+    overview.series.map(\.color) == [
+      SystemStyle.moduleAccent(.cpu), SystemStyle.moduleAccent(.memory),
+    ])
   var archive = SessionHistory()
   archive.append(point, uptime: 1)
   for module in [Module.cpu, .network, .disks, .gpu] {
     let details = try #require(
       DetailReadingsBuilder.build(
         module: module, snapshot: snapshot, history: [point], settings: Settings(), paused: false))
-    #expect(details.series.first?.color == SystemStyle.accent)
+    #expect(details.series.first?.color == SystemStyle.moduleAccent(module))
     #expect(details.series.first?.role == .primary)
     if module == .network || module == .disks {
-      #expect(details.series.last?.color == SystemStyle.secondaryAccent)
+      #expect(details.series.last?.color == SystemStyle.moduleSecondary(module))
       #expect(details.series.last?.role == .secondary)
     } else {
       #expect(details.series.count == 1)
@@ -1007,14 +1028,18 @@ import Testing
         return nil
       }.first)
     #expect(
-      plot.firstColor == (module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent))
+      plot.firstColor
+        == (module == .network
+          ? SystemStyle.moduleSecondary(module) : SystemStyle.moduleAccent(module)))
     #expect(plot.firstRole == (module == .network ? .secondary : .primary))
     #expect(plot.secondRole == (module == .network ? .primary : .secondary))
     if module == .gpu {
       #expect(plot.second.isEmpty && plot.secondLabel.isEmpty)
     } else {
       #expect(
-        plot.secondColor == (module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent))
+        plot.secondColor
+          == (module == .network
+            ? SystemStyle.moduleAccent(module) : SystemStyle.moduleSecondary(module)))
       #expect(!plot.firstLabel.isEmpty && !plot.secondLabel.isEmpty)
     }
     view.updateHistory(archive.projection(.tenMinutes), module: module, fahrenheit: false)
@@ -1024,13 +1049,16 @@ import Testing
         return nil
       }.first)
     #expect(
-      recorded.firstColor == (module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent)
+      recorded.firstColor
+        == (module == .network
+          ? SystemStyle.moduleSecondary(module) : SystemStyle.moduleAccent(module))
     )
     #expect(recorded.firstRole == plot.firstRole && recorded.secondRole == plot.secondRole)
     if module == .network || module == .disks {
       #expect(
         recorded.secondColor
-          == (module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent))
+          == (module == .network
+            ? SystemStyle.moduleAccent(module) : SystemStyle.moduleSecondary(module)))
       #expect(!recorded.secondLabel.isEmpty)
     } else {
       #expect(recorded.second.isEmpty && recorded.secondLabel.isEmpty)

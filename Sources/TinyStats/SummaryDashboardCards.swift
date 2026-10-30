@@ -462,8 +462,8 @@ extension SummaryDashboardView {
   func drawMemory(_ memory: MemoryReading, in area: NSRect) {
     let c = memory.composition
     let segments: [(String, UInt64, NSColor)] = [
-      ("App · estimate", c.app, SystemStyle.accent),
-      ("Wired", c.wired, SystemStyle.secondaryAccent),
+      ("App · estimate", c.app, SystemStyle.moduleAccent(.memory)),
+      ("Wired", c.wired, SystemStyle.moduleSecondary(.memory)),
       ("Compressed", c.compressed, SystemStyle.neutralSeries),
       ("Available · incl. cache", c.available, SystemStyle.availableSeries),
     ]
@@ -503,7 +503,7 @@ extension SummaryDashboardView {
     }
     let diameter: CGFloat = 140
     let rect = NSRect(x: area.minX + 12, y: area.minY + 8, width: diameter, height: diameter)
-    ring(0, rect: rect, color: SystemStyle.accent, lineWidth: 11)
+    ring(0, rect: rect, color: SystemStyle.moduleAccent(.memory), lineWidth: 11)
     var start: CGFloat = -90
     if memory.total > 0 {
       for (_, bytes, color) in segments {
