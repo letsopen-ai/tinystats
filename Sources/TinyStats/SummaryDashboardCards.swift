@@ -473,9 +473,25 @@ extension SummaryDashboardView {
       path.fill()
     }
   }
-  static func coreCells(_ cpu: CPUReading, area: NSRect) -> [(Int, NSRect)] {
+  static func coreCells(_ cpu: CPUReading, area: NSRect, capsules: Bool = false) -> [(Int, NSRect)]
+  {
     let order = displayedCoreIndices(cpu)
     guard !order.isEmpty else { return [] }
+    if capsules {
+      let columns = min(12, order.count)
+      let cellWidth = area.width / CGFloat(columns)
+      let rows = (order.count + columns - 1) / columns
+      let rowHeight = max(24, (area.height - 16) / CGFloat(rows))
+      return order.enumerated().map { position, index in
+        (
+          index,
+          NSRect(
+            x: area.minX + CGFloat(position % columns) * cellWidth + (cellWidth - 12) / 2,
+            y: area.minY + CGFloat(position / columns) * rowHeight,
+            width: 12, height: max(10, rowHeight - 18))
+        )
+      }
+    }
     let columns = order.count > 12 ? (order.count + 1) / 2 : order.count
     let rows = (order.count + columns - 1) / columns
     let width = area.width / CGFloat(columns)
@@ -496,13 +512,7 @@ extension SummaryDashboardView {
       let order = Self.displayedCoreIndices(cpu)
       let columns = min(12, max(1, order.count))
       let cellWidth = area.width / CGFloat(columns)
-      let rows = max(1, (order.count + columns - 1) / columns)
-      let rowHeight = max(24, (area.height - 16) / CGFloat(rows))
-      for (position, index) in order.enumerated() {
-        let x = area.minX + CGFloat(position % columns) * cellWidth
-        let y = area.minY + CGFloat(position / columns) * rowHeight
-        let bar = NSRect(
-          x: x + (cellWidth - 12) / 2, y: y, width: 12, height: max(10, rowHeight - 18))
+      for (index, bar) in Self.coreCells(cpu, area: area, capsules: true) {
         NSColor.quaternaryLabelColor.setFill()
         NSBezierPath(roundedRect: bar, xRadius: 6, yRadius: 6).fill()
         if let value = UtilizationMeterCell.normalized(cpu.cores[index]), value > 0 {
@@ -515,7 +525,7 @@ extension SummaryDashboardView {
         }
         text(
           cpu.cores[index].map { String(format: "%.0f", $0) } ?? "—",
-          rect: .init(x: x, y: bar.maxY + 2, width: cellWidth, height: 12),
+          rect: .init(x: bar.midX - cellWidth / 2, y: bar.maxY + 2, width: cellWidth, height: 12),
           color: .secondaryLabelColor, size: 9, alignment: .center)
       }
       let kinds = CPUCoreKind.allCases.filter { kind in order.contains { cpu.kind(at: $0) == kind }

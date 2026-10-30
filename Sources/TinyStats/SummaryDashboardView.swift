@@ -55,6 +55,32 @@ import TinyStatsCore
     var xFractions: [Double?] { timeline.positions }
   }
 
+  /// Trace and bar modes disclose the same observed time span and availability.
+  /// The trace's unsigned range uses the exact maximum passed to its renderer.
+  struct PlotCaptions {
+    let emptyMessage: String?
+    let span: String
+    let scale: String
+    init(_ plot: Plot, layout: HistoryBarLayout, trace: Bool) {
+      emptyMessage =
+        layout.hasData
+        ? nil
+        : layout.timeline.indices.isEmpty
+          ? "No readings yet" : "No readings to show for this period"
+      let count = layout.timeline.indices.count
+      let noun =
+        plot.bucketSeconds == nil
+        ? (count == 1 ? "sample" : "samples") : (count == 1 ? "bucket" : "buckets")
+      span = "\(plot.historySpan ?? layout.timeline.span) · \(count) \(noun)"
+      scale =
+        plot.percent
+        ? "0–100%"
+        : !layout.hasData
+          ? "Scale unavailable"
+          : (trace ? "Scale 0–" : "Scale ± ") + Display.rate(layout.maximum)
+    }
+  }
+
   private(set) var cards: [Card] = []
   var usesPopoverLayout = false
   private(set) var isOverview = false
@@ -577,7 +603,7 @@ import TinyStatsCore
               tile(
                 "Battery temperature", temperature(sensor(.battery, .temperature)),
                 SystemStyle.secondaryAccent),
-            ], columns: 4))
+            ], columns: usesPopoverLayout ? 2 : 4))
       } else {
         card(
           "POWER SOURCE", 0, 54, .none, trailing: "AC · No internal battery")
@@ -1330,7 +1356,11 @@ import TinyStatsCore
       }
       return nil
     case .cores(let cpu):
-      guard let cell = Self.coreCells(cpu, area: area).first(where: { $0.1.contains(point) }) else {
+      guard
+        let cell = Self.coreCells(cpu, area: area, capsules: usesPopoverLayout).first(where: {
+          $0.1.contains(point)
+        })
+      else {
         return nil
       }
       return cpu.kind(at: cell.0).chartTitle + " core: "
@@ -1521,90 +1551,84 @@ import TinyStatsCore
           return a + b
         }
       }
-      let maximum =
-        plot.percent
-        ? 100 : max(1, (plot.first + plot.second).compactMap { $0 }.filter(\.isFinite).max() ?? 1)
       first.percent = false
-      drawMiniHistory(first, in: graph, upperBound: maximum)
+      drawMiniHistory(first, in: graph, upperBound: layout.maximum)
       if !plot.secondLabel.isEmpty {
         var second = plot
         second.first = plot.second
         second.firstColor = SystemStyle.secondaryAccent
         second.percent = false
-        drawMiniHistory(second, in: graph, upperBound: maximum)
+        drawMiniHistory(second, in: graph, upperBound: layout.maximum)
       }
-      return
+    } else {
+      let firstBars = NSBezierPath()
+      let secondBars = NSBezierPath()
+      let missing = NSBezierPath()
+      func barHeight(_ value: Double?) -> CGFloat {
+        guard let value, value > 0 else { return 0 }
+        return min(
+          height,
+          max(pixel, floor(CGFloat(min(1, value / layout.maximum)) * height * scale) / scale))
+      }
+      for column in layout.columns {
+        let x = left + layout.x(column)
+        let a = barHeight(column.first)
+        let b = barHeight(column.second)
+        if a > 0 {
+          firstBars.appendRect(NSRect(x: x, y: baseline - a, width: layout.barWidth, height: a))
+        }
+        if b > 0 {
+          let available = plot.mirrored ? b : min(b, max(0, height - a))
+          secondBars.appendRect(
+            NSRect(
+              x: x,
+              y: plot.mirrored ? baseline : baseline - a - available,
+              width: layout.barWidth, height: available))
+        }
+        if column.firstMissing {
+          missing.appendRect(
+            NSRect(
+              x: x, y: max(graph.minY, baseline - 3 * pixel),
+              width: layout.barWidth, height: pixel))
+        }
+        if column.secondMissing {
+          missing.appendRect(
+            NSRect(
+              x: x,
+              y: plot.mirrored
+                ? min(graph.maxY - pixel, baseline + 2 * pixel)
+                : max(graph.minY, baseline - 5 * pixel), width: layout.barWidth, height: pixel))
+        }
+      }
+      firstColor.setFill()
+      firstBars.fill()
+      secondColor.setFill()
+      secondBars.fill()
+      NSColor.secondaryLabelColor.setFill()
+      missing.fill()
+      let gaps = NSBezierPath()
+      for gap in layout.timeline.gaps {
+        let y = max(graph.minY + pixel, baseline - 3 * pixel)
+        gaps.move(to: NSPoint(x: left + (right - left) * gap.lowerBound, y: y))
+        gaps.line(to: NSPoint(x: left + (right - left) * gap.upperBound, y: y))
+      }
+      gaps.setLineDash([pixel, 2 * pixel], count: 2, phase: 0)
+      gaps.lineWidth = pixel
+      NSColor.secondaryLabelColor.setStroke()
+      gaps.stroke()
     }
-    let firstBars = NSBezierPath()
-    let secondBars = NSBezierPath()
-    let missing = NSBezierPath()
-    func barHeight(_ value: Double?) -> CGFloat {
-      guard let value, value > 0 else { return 0 }
-      return min(
-        height, max(pixel, floor(CGFloat(min(1, value / layout.maximum)) * height * scale) / scale))
-    }
-    for column in layout.columns {
-      let x = left + layout.x(column)
-      let a = barHeight(column.first)
-      let b = barHeight(column.second)
-      if a > 0 {
-        firstBars.appendRect(NSRect(x: x, y: baseline - a, width: layout.barWidth, height: a))
-      }
-      if b > 0 {
-        let available = plot.mirrored ? b : min(b, max(0, height - a))
-        secondBars.appendRect(
-          NSRect(
-            x: x,
-            y: plot.mirrored ? baseline : baseline - a - available,
-            width: layout.barWidth, height: available))
-      }
-      if column.firstMissing {
-        missing.appendRect(
-          NSRect(
-            x: x, y: max(graph.minY, baseline - 3 * pixel),
-            width: layout.barWidth, height: pixel))
-      }
-      if column.secondMissing {
-        missing.appendRect(
-          NSRect(
-            x: x,
-            y: plot.mirrored
-              ? min(graph.maxY - pixel, baseline + 2 * pixel)
-              : max(graph.minY, baseline - 5 * pixel), width: layout.barWidth, height: pixel))
-      }
-    }
-    firstColor.setFill()
-    firstBars.fill()
-    secondColor.setFill()
-    secondBars.fill()
-    NSColor.secondaryLabelColor.setFill()
-    missing.fill()
-    let gaps = NSBezierPath()
-    for gap in layout.timeline.gaps {
-      let y = max(graph.minY + pixel, baseline - 3 * pixel)
-      gaps.move(to: NSPoint(x: left + (right - left) * gap.lowerBound, y: y))
-      gaps.line(to: NSPoint(x: left + (right - left) * gap.upperBound, y: y))
-    }
-    gaps.setLineDash([pixel, 2 * pixel], count: 2, phase: 0)
-    gaps.lineWidth = pixel
-    NSColor.secondaryLabelColor.setStroke()
-    gaps.stroke()
-    if !layout.hasData {
+    let captions = PlotCaptions(plot, layout: layout, trace: usesPopoverLayout)
+    if let message = captions.emptyMessage {
       text(
-        layout.timeline.indices.isEmpty
-          ? "No readings yet" : "No readings to show for this period",
+        message,
         rect: graph, color: .secondaryLabelColor, size: 10)
     }
-    let scaleText =
-      plot.percent
-      ? "0–100%"
-      : layout.hasData ? "Scale ± " + Display.rate(layout.maximum) : "Scale unavailable"
     text(
-      "\(plot.historySpan ?? layout.timeline.span) · \(layout.timeline.indices.count) \(plot.bucketSeconds == nil ? (layout.timeline.indices.count == 1 ? "sample" : "samples") : (layout.timeline.indices.count == 1 ? "bucket" : "buckets"))",
+      captions.span,
       rect: NSRect(x: area.minX, y: area.maxY - 25, width: area.width / 2, height: 13),
       color: .secondaryLabelColor, size: 9)
     text(
-      scaleText,
+      captions.scale,
       rect: NSRect(x: area.midX, y: area.maxY - 25, width: area.width / 2, height: 13),
       color: .secondaryLabelColor, size: 9, alignment: .right)
     let reset = layout.timeline.reset ? " · timeline reset" : ""
