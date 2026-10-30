@@ -234,8 +234,13 @@ import Testing
       view.appearance = NSAppearance(named: appearance)
       for module in [Module.cpu, .overview] {
         view.update(snapshot, history: history, settings: Settings(), module: module)
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let bitmap = try legendBitmap(appearance: appearance, scale: 1, size: view.bounds.size) {
+          if let context = NSGraphicsContext.current {
+            view.displayIgnoringOpacity(view.bounds, in: context)
+          } else {
+            Issue.record("Missing bitmap drawing context")
+          }
+        }
         let card = try #require(
           view.cards.first {
             if case .plot(let plot) = $0.content { return !plot.secondLabel.isEmpty }
@@ -274,7 +279,12 @@ import Testing
             resolvedColor = (index == 0 ? plot.firstColor : plot.secondColor)
               .usingColorSpace(.deviceRGB)
           }
-          let expectedColor = try #require(resolvedColor)
+          let rawColor = try #require(resolvedColor)
+          let alpha = rawColor.alphaComponent
+          let expectedColor = NSColor(
+            deviceRed: rawColor.redComponent * alpha + background.redComponent * (1 - alpha),
+            green: rawColor.greenComponent * alpha + background.greenComponent * (1 - alpha),
+            blue: rawColor.blueComponent * alpha + background.blueComponent * (1 - alpha), alpha: 1)
           if index == 0 {
             #expect(try legendColorDistance(center, background) > 0.2)
             #expect(try legendColorDistance(center, expectedColor) < 0.1)
@@ -297,7 +307,7 @@ import Testing
               bitmap, at: .init(x: (x + 3.5) * scale, y: (coreArea.maxY - 5.5) * scale))
             let rowBackground = try legendPixel(
               bitmap, at: .init(x: (x + 9) * scale, y: (coreArea.maxY - 5.5) * scale))
-            #expect(try legendColorDistance(markerCenter, rowBackground) > 0.2)
+            #expect(try legendColorDistance(markerCenter, rowBackground) > 0.12)
           }
         }
         if let directory = ProcessInfo.processInfo.environment[

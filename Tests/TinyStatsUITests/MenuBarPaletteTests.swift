@@ -14,54 +14,45 @@ import Testing
     + 0.0722 * linear(rgb.blueComponent)
 }
 
-@Test @MainActor func darkMenuBarPalettePreservesExistingColorsAndShadow() throws {
+@Test @MainActor func menuBarPaletteUsesOneAccentAndPreservesLabelContrast() throws {
   for name in [
-    NSAppearance.Name.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua,
-    .accessibilityHighContrastVibrantDark,
+    NSAppearance.Name.aqua, .darkAqua, .vibrantLight, .vibrantDark,
+    .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
   ] {
-    let palette = MenuBarPalette.resolve(try #require(NSAppearance(named: name)))
-    #expect(palette.text == .white)
-    #expect(palette.gaugeOutline == NSColor.white.withAlphaComponent(0.65))
-    let shadow = try #require(palette.textShadow)
-    #expect(shadow.shadowColor == NSColor.black.withAlphaComponent(0.65))
-    #expect(shadow.shadowBlurRadius == 1)
-    #expect(shadow.shadowOffset == NSSize(width: 0, height: -0.5))
-    let brightBlue = NSColor(calibratedRed: 0.3, green: 0.78, blue: 1, alpha: 1)
-    let expected: [(Module, NSColor)] = [
-      (.cpu, brightBlue), (.network, brightBlue), (.gpu, .systemTeal),
-      (.memory, .systemPurple), (.disks, .systemOrange), (.sensors, .systemOrange),
-      (.weather, .systemOrange), (.battery, .systemGreen), (.clock, .white),
-      (.overview, .labelColor),
-    ]
-    for (module, color) in expected { #expect(palette.graphic(module) == color) }
-    #expect(palette.graphic(nil) == .labelColor)
-    for kind in [CPUCoreKind.efficiency, .performance, .unknown] {
-      #expect(palette.core(kind) == kind.chartColor)
+    let appearance = try #require(NSAppearance(named: name))
+    let palette = MenuBarPalette.resolve(appearance)
+    let dark = SystemStyle.isDark(appearance)
+    let expectedText: NSColor = dark ? .white : NSColor(calibratedWhite: 0.1, alpha: 1)
+    #expect(palette.text == expectedText)
+    #expect(palette.gaugeOutline == expectedText.withAlphaComponent(0.65))
+    #expect((palette.textShadow != nil) == dark)
+    if let shadow = palette.textShadow {
+      #expect(shadow.shadowColor == NSColor.black.withAlphaComponent(0.65))
+      #expect(shadow.shadowBlurRadius == 1)
+      #expect(shadow.shadowOffset == NSSize(width: 0, height: -0.5))
     }
+    let accent = SystemStyle.menuBarAccent(SystemStyle.resolvedAccent(in: appearance), dark: dark)
+    for module in Module.allCases { #expect(palette.graphic(module) == accent) }
+    #expect(palette.graphic(nil) == accent)
+    #expect(palette.core(.performance) == accent)
+    #expect(palette.core(.efficiency) == accent.withAlphaComponent(dark ? 0.5 : 0.45))
+    #expect(palette.core(.unknown) == expectedText.withAlphaComponent(0.65))
+    let background = try luminance(dark ? .black : .white)
+    let foreground = try luminance(palette.text)
+    #expect((max(background, foreground) + 0.05) / (min(background, foreground) + 0.05) >= 4.5)
   }
 }
 
-@Test @MainActor func lightMenuBarPaletteHasDarkTextAndSaturatedContrastingGraphics() throws {
-  let background = try luminance(NSColor(calibratedWhite: 0.94, alpha: 1))
-  for name in [
-    NSAppearance.Name.aqua, .vibrantLight, .accessibilityHighContrastAqua,
-    .accessibilityHighContrastVibrantLight,
-  ] {
-    let palette = MenuBarPalette.resolve(try #require(NSAppearance(named: name)))
-    #expect(palette.text == NSColor(calibratedWhite: 0.1, alpha: 1))
-    #expect(palette.textShadow == nil)
-    #expect(palette.gaugeOutline == palette.text.withAlphaComponent(0.65))
-    #expect((background + 0.05) / (try luminance(palette.text) + 0.05) >= 4.5)
-    #expect(palette.graphic(.clock) == palette.text)
-    let colors =
-      Module.allCases.map { palette.graphic($0) }
-      + [CPUCoreKind.efficiency, .performance, .unknown].map { palette.core($0) }
-    for color in colors {
-      #expect(color.alphaComponent == 1)
-      #expect((background + 0.05) / (try luminance(color) + 0.05) >= 3)
-    }
-    #expect(palette.core(.efficiency) != palette.core(.performance))
-    #expect(palette.core(.performance) != palette.core(.unknown))
+@Test @MainActor func menuBarAccentAdjustmentPreservesUserHueIncludingGraphite() throws {
+  for accent in [NSColor.systemPurple, .systemGreen, .systemGray] {
+    #expect(SystemStyle.menuBarAccent(accent, dark: false) == accent)
+    let adjusted = try #require(
+      SystemStyle.menuBarAccent(accent, dark: true).usingColorSpace(.sRGB))
+    let original = try #require(accent.usingColorSpace(.sRGB))
+    #expect(adjusted.redComponent >= original.redComponent)
+    #expect(adjusted.greenComponent >= original.greenComponent)
+    #expect(adjusted.blueComponent >= original.blueComponent)
+    #expect(adjusted.alphaComponent == 1)
   }
 }
 

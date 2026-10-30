@@ -59,19 +59,19 @@ import Testing
   controller.snapshot = componentSnapshot()
   controller.selected = .cpu
   let cpu = try detailRows(controller)
-  #expect(cpu.contains { $0.0 == "EFFICIENCY CORES" })
-  #expect(cpu.contains { $0.0 == "PERFORMANCE CORES" })
+  #expect(cpu.contains { $0.0 == "Efficiency cores" })
+  #expect(cpu.contains { $0.0 == "Performance cores" })
   #expect(cpu.contains { $0.0 == "Logical core 2" && $0.1 == "—" })
   #expect(cpu.contains { $0.0 == "Logical core 4" && $0.1 == "0%" })
-  #expect(cpu.contains { $0.0 == "CPU SENSORS" })
-  #expect(!cpu.contains { $0.0 == "GPU SENSORS" || $0.0.contains("F0Ac") })
+  #expect(cpu.contains { $0.0 == "CPU sensors" })
+  #expect(!cpu.contains { $0.0 == "GPU sensors" || $0.0.contains("F0Ac") })
   controller.selected = .gpu
   let gpu = try detailRows(controller)
   #expect(gpu.contains { $0.0 == "Shader core count" && $0.1 == "10" })
   #expect(gpu.contains { $0.0 == "Per-core utilization" && $0.1 == "No verified per-core counter" })
   #expect(gpu.contains { $0.0 == "Tiler utilization" && $0.1 == "—" })
-  #expect(gpu.contains { $0.0 == "GPU SENSORS" })
-  #expect(!gpu.contains { $0.0 == "CPU SENSORS" })
+  #expect(gpu.contains { $0.0 == "GPU sensors" })
+  #expect(!gpu.contains { $0.0 == "CPU sensors" })
 }
 
 @Test @MainActor func sensorsGroupByComponentWithoutDroppingUnknownOrSignedReadings() throws {
@@ -81,7 +81,7 @@ import Testing
   controller.selected = .sensors
   let rows = try detailRows(controller)
   for heading in [
-    "CPU", "GPU", "FANS", "STORAGE", "UNCLASSIFIED",
+    "CPU", "GPU", "Fans", "Storage", "Unclassified",
   ] {
     #expect(rows.filter { $0.0 == heading }.count == 1)
   }

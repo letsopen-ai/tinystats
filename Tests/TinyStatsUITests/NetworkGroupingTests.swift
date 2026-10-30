@@ -152,7 +152,7 @@ import Testing
   controller.paused = true
   let root = controller.view
   let title = try #require(
-    root.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == "NETWORK · PAUSED" })
+    root.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == "Network · Paused" })
   let width = (title.stringValue as NSString).size(withAttributes: [.font: try #require(title.font)]
   ).width
   #expect(width <= title.frame.width)

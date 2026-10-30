@@ -127,8 +127,8 @@ func weatherChildSettingsSurviveParentEditsAndForecastReadoutsRejectStaleOrWrong
       )
     }
   }
-  #expect(rows().contains { $0.0 == "DATA FROM MET NORWAY · CC BY 4.0" })
-  #expect(rows().contains { $0.0 == "DAILY · SAMPLED LOW / HIGH" })
+  #expect(rows().contains { $0.0 == "Data from MET Norway · CC BY 4.0" })
+  #expect(rows().contains { $0.0 == "Daily · sampled low / high" })
   #expect(rows().contains { $0.0 == "Precipitation · next 1h" && $0.1 == "0.0 mm" })
   let chart = try #require(controller.view.subviews.compactMap { $0 as? ChartView }.first)
   #expect(chart.caption?.contains("forecast") == true && chart.series.count == 1)

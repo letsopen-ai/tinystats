@@ -173,7 +173,7 @@ enum SensorBrowserPresentation {
       title: "SENSORS · \(physical.count)/\(snapshot.sensors.count)" + (paused ? " · PAUSED" : ""),
       value: chosen?.formatted(fahrenheit: settings.fahrenheit) ?? "Sensor unavailable",
       subtitle: subtitle, rows: rows,
-      series: [.init(name: name, color: .systemOrange, values: values)],
+      series: [.init(name: name, color: SystemStyle.accent, values: values)],
       unit: kind == .temperature && settings.fahrenheit ? "°F" : kind?.unit ?? "",
       available: chosen != nil)
   }
