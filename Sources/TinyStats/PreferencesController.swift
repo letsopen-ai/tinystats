@@ -64,9 +64,37 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private lazy var clocks = NSTextField(string: "")
   private lazy var message = NSTextField(wrappingLabelWithString: "")
   private static let menuHelperText =
-    "Each readout opens its own page. ⌘-drag menu bar items to reorder. Scroll wide previews horizontally."
+    "Each readout opens its own page. Drag chips to customize, or use their context menus and keyboard actions. Chips wrap to keep every item visible."
   private lazy var menuMessage = NSTextField(wrappingLabelWithString: Self.menuHelperText)
   private var readouts: [Module: SystemSettingSwitch] = [:]
+  private lazy var customization: MenuBarCustomization = {
+    let view = MenuBarCustomization(frame: .zero)
+    view.onAction = { [weak self] module, action in
+      guard let self else { return false }
+      // The displayed native order is the starting point, including pre-existing ⌘-drag positions.
+      var updated = self.settings
+      updated.readouts = self.displayedOrder
+      guard updated.customizeReadout(module, action: action) else { return false }
+      updated.validate()
+      self.settings = updated
+      self.individualOrder = self.settings.readouts
+      for (module, toggle) in self.readouts {
+        toggle.state = self.settings.readouts.contains(module) ? .on : .off
+      }
+      self.updatePresetSelection()
+      self.customization.update(order: self.settings.readouts, animated: true)
+      self.updatePreview()
+      self.menuMessage.stringValue = Self.menuHelperText
+      self.onChange?(self.settings)
+      return true
+    }
+    return view
+  }()
+  private var displayedOrder: [Module] {
+    individualOrder.count == settings.readouts.count
+      && Set(individualOrder) == Set(settings.readouts)
+      ? individualOrder : settings.readouts
+  }
   private lazy var preview = MenuBarPreviewView(frame: .zero)
   private lazy var appearance = NSPopUpButton()
   private let presetStatus = SystemSettingsForm.text("")
@@ -311,7 +339,10 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       previewScroll.topAnchor.constraint(equalTo: wallpaper.topAnchor, constant: 6),
       previewScroll.heightAnchor.constraint(equalToConstant: 42),
     ])
-    styleDisclosure.bezelStyle = .rounded
+    styleDisclosure.isBordered = false
+    styleDisclosure.alignment = .left
+    styleDisclosure.imagePosition = .imageLeading
+    styleDisclosure.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
     styleDisclosure.title = "Hide readout & style options"
     styleDisclosure.setAccessibilityLabel("Customize menu bar readouts and styles")
     styleDisclosure.setAccessibilityExpanded(true)
@@ -386,7 +417,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       in: menuBarPage,
       views: [
         form.group([form.row("", wallpaper, height: 78), form.row("", presetSelector, height: 86)]),
-        presetStatus, styleDisclosure, styleOptions, menuMessage,
+        presetStatus, customization, styleDisclosure, styleOptions, menuMessage,
       ])
     updatePresetSelection()
   }
@@ -395,6 +426,9 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     styleOptions.isHidden.toggle()
     styleDisclosure.title =
       styleOptions.isHidden ? "Customize readouts & styles…" : "Hide readout & style options"
+    styleDisclosure.image = NSImage(
+      systemSymbolName: styleOptions.isHidden ? "chevron.right" : "chevron.down",
+      accessibilityDescription: nil)
     styleDisclosure.setAccessibilityExpanded(!styleOptions.isHidden)
   }
 
@@ -490,6 +524,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   @objc private func showHistoryStorage() { onHistory?() }
   func updateMenuBarSettings(_ value: Settings) {
     settings.readouts = value.readouts
+    individualOrder = value.readouts
     settings.styles = value.styles
     settings.appearances = value.appearances
     for (module, check) in readouts {
@@ -625,9 +660,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     preview.appearance = menuBarAppearance
     previewScroll.appearance = menuBarAppearance
     previewScroll.superview?.appearance = menuBarAppearance
-    let actualOrder =
-      settings.separateItems && individualOrder.count == settings.readouts.count
-        && Set(individualOrder) == Set(settings.readouts) ? individualOrder : settings.readouts
+    let actualOrder = displayedOrder
+    customization.update(order: actualOrder)
     let groups = actualOrder.map {
       MenuBarReadout.makeAll(
         module: $0, snapshot: latest, settings: settings, history: history, clockDate: clockDate)
@@ -706,9 +740,11 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
         return
       }
       // Preserve existing order; append newly enabled readouts in module order.
+      let previousOrder = displayedOrder
       settings.readouts =
-        settings.readouts.filter { chosen.contains($0) }
-        + chosen.filter { !settings.readouts.contains($0) }
+        previousOrder.filter { chosen.contains($0) }
+        + chosen.filter { !previousOrder.contains($0) }
+      individualOrder = settings.readouts
       settings.separateItems = true
       for (module, popup) in styleMenus {
         settings.styles[module.rawValue] =

@@ -30,10 +30,20 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let readingsPlatter = PlatterView()
   private let tracePlatter = PlatterView()
   private let popoverMaterial = NSVisualEffectView()
-  private let summaryScroll = NSScrollView()
-  private let weatherScroll = NSScrollView()
+  private let summaryScroll = PopoverScrollView()
+  private let weatherScroll = PopoverScrollView()
   private let openWindowRow = MenuActionRow()
   private let footerSeparator = NSBox()
+  private struct PopoverKeyViewLayout: Equatable {
+    let window: ObjectIdentifier
+    let module: Module
+    let allReadings: Bool
+    let paused: Bool
+    let weatherEnabled: Bool
+    let weatherSource: WeatherLocationSource
+    let size: NSSize
+  }
+  private var popoverKeyViewLayout: PopoverKeyViewLayout?
   var onCalendarDate: ((Date) -> Void)?
   var onCalendarSettings: (() -> Void)?
   var calendarSnapshot = CalendarAgendaSnapshot()
@@ -152,8 +162,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     add(valueLabel, x: 154, y: 474, w: 520, h: 39)
     add(subtitleLabel, x: 155, y: 449, w: 520, h: 20)
     add(chart, x: 156, y: 310, w: 520, h: 126)
-    let scroll = NSScrollView()
+    let scroll = PopoverScrollView()
     scroll.hasVerticalScroller = true
+    scroll.autohidesScrollers = true
+    scroll.scrollerStyle = .overlay
     scroll.drawsBackground = false
     add(scroll, x: 150, y: 56, w: 532, h: 244)
     detailScroll = scroll
@@ -189,7 +201,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     historyButton.controlSize = .small
     add(historyButton, x: 473, y: 516, w: 90, h: 26)
     footnoteLabel.font = .systemFont(ofSize: 10)
-    footnoteLabel.textColor = .tertiaryLabelColor
+    footnoteLabel.textColor = .secondaryLabelColor
     add(footnoteLabel, x: 156, y: 27, w: 355, h: 18)
     pauseButton.target = self
     pauseButton.action = #selector(togglePause)
@@ -207,6 +219,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     refresh()
   }
   private func configurePresentation() {
+    popoverKeyViewLayout = nil
     navigation?.sidebar.isHidden = isPopoverPresentation
     (view as? MainContentView)?.usesPopoverMaterial = isPopoverPresentation
     popoverMaterial.isHidden = !isPopoverPresentation
@@ -215,6 +228,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     summaryScroll.isHidden = !isPopoverPresentation
     footerSeparator.isHidden = !isPopoverPresentation
+    // Plain rows leave all padding to the platter gutter; fullWidth adds hidden content padding.
+    table.style = isPopoverPresentation ? .plain : .automatic
     openWindowRow.isHidden = !isPopoverPresentation
     if !isPopoverPresentation { openWindowRow.frame.origin.y = 60 }
     weatherScroll.isHidden = !isPopoverPresentation
@@ -226,6 +241,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         view.addSubview(weatherDashboard)
       }
     }
+    for scroll in [summaryScroll, weatherScroll, detailScroll].compactMap({
+      $0 as? PopoverScrollView
+    }) {
+      scroll.fadesBottom = isPopoverPresentation
+    }
     summary?.usesPopoverLayout = isPopoverPresentation
     if let summary {
       if isPopoverPresentation {
@@ -235,11 +255,12 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         view.addSubview(summary)
       }
     }
-    for button in [historyButton, readingsButton, pauseButton] {
+    for button in [historyButton, openWindowRow, readingsButton, pauseButton] {
+      button.usesIconPresentation = isPopoverPresentation
       button.isBordered = !isPopoverPresentation
       button.bezelStyle = isPopoverPresentation ? .recessed : .rounded
-      button.alignment = isPopoverPresentation ? .left : .center
-      button.font = .systemFont(ofSize: isPopoverPresentation ? 13 : 12)
+      button.alignment = .center
+      button.font = .systemFont(ofSize: 12)
     }
   }
   @objc private func openInWindow() { onOpenInWindow?() }
@@ -277,7 +298,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     let width = max(0, w - 180)
     titleLabel.frame.origin = .init(x: 154, y: h - 42)
-    readingsButton.frame.origin = .init(x: w - 132, y: h - 44)
+    readingsButton.frame = .init(x: w - 132, y: h - 44, width: 108, height: 26)
     historyButton.frame = .init(
       x: w - (selected == .overview ? 120 : 227), y: h - 44, width: selected == .overview ? 92 : 90,
       height: selected == .overview ? 28 : 26)
@@ -324,7 +345,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       historyButton.image = nil
     }
   }
-  /// A narrow material surface; the document scrolls, actions keep their full-width hit targets.
+  /// A narrow material surface; one fixed icon bar gives the remaining height to content.
   private func layoutPopover() {
     let w = view.bounds.width
     let h = view.bounds.height
@@ -333,17 +354,21 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let width = max(0, w - 2 * inset)
     popoverMaterial.frame = view.bounds
     navigation?.sidebar.isHidden = true
-    openWindowRow.title = "Open \(selected.title) in TinyStats"
-    let actions = [historyButton, openWindowRow, readingsButton, pauseButton].filter {
+    let actions = [historyButton, openWindowRow, readingsButton].filter {
       !$0.isHidden
     }
-    for (index, action) in actions.reversed().enumerated() {
+    let actionSize = SystemStyle.Space.action
+    let barTop = inset + SystemStyle.Space.actionBar
+    for (index, action) in actions.enumerated() {
       action.frame = .init(
-        x: inset + 4, y: inset + CGFloat(index) * 26, width: width - 8, height: 26)
+        x: inset + 4 + CGFloat(index) * (actionSize + SystemStyle.Space.gap), y: inset + 3,
+        width: actionSize, height: actionSize)
     }
-    let bottom = inset + CGFloat(actions.count) * 26 + 24
-    footerSeparator.frame = .init(x: inset + 4, y: bottom - 24, width: width - 8, height: 1)
-    footnoteLabel.frame = .init(x: x, y: bottom - 20, width: width - 24, height: 14)
+    pauseButton.frame = .init(
+      x: w - inset - 4 - actionSize, y: inset + 3, width: actionSize, height: actionSize)
+    let bottom = barTop + 32
+    footerSeparator.frame = .init(x: inset + 4, y: barTop, width: width - 8, height: 0.5)
+    footnoteLabel.frame = .init(x: x, y: barTop + 7, width: width - 24, height: 18)
     footnoteLabel.toolTip = footnoteLabel.stringValue
     titleLabel.frame = .init(x: x, y: h - 39, width: width - 24, height: 20)
     valueLabel.frame = .init(x: x, y: h - 80, width: width - 24, height: 38)
@@ -407,10 +432,26 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     readingsPlatter.isHidden = detailScroll?.isHidden != false
     readingsPlatter.frame = .init(
       x: inset, y: bottom, width: width, height: max(0, tableTop - bottom))
-    detailScroll?.frame = readingsPlatter.frame.insetBy(dx: 8, dy: 6)
-    let tableWidth = max(0, (detailScroll?.contentSize.width ?? width) - 10)
-    sizeColumn(table.tableColumns.first, to: tableWidth * 0.55)
-    sizeColumn(table.tableColumns.last, to: tableWidth * 0.45)
+    detailScroll?.frame = readingsPlatter.frame.insetBy(dx: 12, dy: 6)
+    let tableWidth = max(0, detailScroll?.contentSize.width ?? width)
+    table.frame.size.width = tableWidth
+    let columnWidth = max(
+      0, tableWidth - table.intercellSpacing.width * CGFloat(table.numberOfColumns))
+    sizeColumn(table.tableColumns.first, to: columnWidth * 0.55)
+    sizeColumn(table.tableColumns.last, to: columnWidth * 0.45)
+    table.tile()
+    if let window = view.window {
+      let keyLayout = PopoverKeyViewLayout(
+        window: ObjectIdentifier(window), module: selected, allReadings: showsAllReadings,
+        paused: paused, weatherEnabled: settings.weather.enabled,
+        weatherSource: settings.weather.source, size: view.bounds.size)
+      if keyLayout != popoverKeyViewLayout {
+        // New/hidden module controls need a fresh native loop after their final frames.
+        // Keep content controls reachable; unchanged samples do not rebuild traversal.
+        popoverKeyViewLayout = keyLayout
+        window.recalculateKeyViewLoop()
+      }
+    }
   }
   private func sizeColumn(_ column: NSTableColumn?, to width: CGFloat) {
     guard let column, column.width != width else { return }
@@ -678,6 +719,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         : selected == .sensors
           ? (showsAllReadings ? "Show summary" : "Show all readings and SMC keys")
           : showsAllReadings ? "Show summary" : "Show all readings")
+    updateActionPresentation()
     titleLabel.frame.size.width =
       selected == .overview && !isPopoverPresentation
       ? max(0, view.bounds.width - 390)
@@ -908,7 +950,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
           "Next 48h forecast · \(weatherZone.identifier) · time → · \(settings.fahrenheit ? "°F" : "°C")"
         lines = [
           .init(
-            name: "Forecast temperature", color: SystemStyle.secondaryAccent,
+            name: "Forecast temperature", color: SystemStyle.accent,
             values: upcoming.map { point in
               point.celsius.map { settings.fahrenheit ? $0 * 1.8 + 32 : $0 }
             })
@@ -1013,6 +1055,26 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     reloadRows()
     updateFootnote()
   }
+  private func updateActionPresentation() {
+    openWindowRow.title = "Open \(selected.title) in TinyStats"
+    for button in [historyButton, openWindowRow, pauseButton] {
+      button.setAccessibilityLabel(button.title)
+      button.toolTip = button.title
+    }
+    readingsButton.toolTip = readingsButton.accessibilityLabel()
+    guard isPopoverPresentation else { return }
+    historyButton.setIcon("clock.arrow.circlepath", fallback: "clock")
+    openWindowRow.setIcon("arrow.up.forward.app", fallback: "macwindow")
+    if selected == .clock {
+      readingsButton.setIcon("calendar", fallback: "clock")
+    } else if showsAllReadings {
+      readingsButton.setIcon("square.grid.2x2", fallback: "square")
+    } else {
+      readingsButton.setIcon("list.bullet.rectangle", fallback: "list.bullet")
+    }
+    pauseButton.showsAccent = paused
+    pauseButton.setIcon(paused ? "play.fill" : "pause", fallback: paused ? "play" : "pause")
+  }
   private func updateFootnote() {
     if selected == .sensors
       && snapshot.sensors.filter({ !$0.key.hasPrefix("ioreport:") }).count >= 128
@@ -1037,5 +1099,40 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     guard !usesPopoverMaterial else { return }
     NSColor.windowBackgroundColor.setFill()
     dirtyRect.fill()
+  }
+}
+
+/// The bottom of a scrolling platter fades into the reserved footer gap. Layer state
+/// follows layout/appearance only; no observer, animation, event loop or timer.
+@MainActor final class PopoverScrollView: NSScrollView {
+  private let fade = CAGradientLayer()
+  var fadesBottom = false {
+    didSet {
+      guard oldValue != fadesBottom else { return }
+      automaticallyAdjustsContentInsets = false
+      contentInsets = .init(top: 0, left: 0, bottom: fadesBottom ? 36 : 0, right: 0)
+      wantsLayer = fadesBottom
+      layer?.mask = fadesBottom ? fade : nil
+      needsLayout = true
+    }
+  }
+  override func layout() {
+    super.layout()
+    guard fadesBottom else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    fade.frame = bounds
+    // A 12pt clear footer buffer removes clipped card rims; the preceding 24pt fades content.
+    fade.colors = [
+      NSColor.clear.cgColor, NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor,
+    ]
+    fade.locations = [
+      0, NSNumber(value: min(1, 12 / max(1, bounds.height))),
+      NSNumber(value: min(1, 36 / max(1, bounds.height))), 1,
+    ]
+    // NSScrollView has a flipped backing layer: normalized y=1 is the footer edge.
+    fade.startPoint = .init(x: 0.5, y: 1)
+    fade.endPoint = .init(x: 0.5, y: 0)
+    CATransaction.commit()
   }
 }

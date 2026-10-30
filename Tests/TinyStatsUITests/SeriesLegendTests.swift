@@ -330,3 +330,32 @@ import Testing
     }
   }
 }
+
+@Test @MainActor func readingsChartLegendColorsOnlyItsMarkerInBothAppearances() throws {
+  _ = NSApplication.shared
+  for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+    let chart = ChartView(frame: .init(x: 0, y: 0, width: 300, height: 100))
+    chart.appearance = NSAppearance(named: appearance)
+    func render(_ color: NSColor) throws -> NSBitmapImageRep {
+      chart.series = [.init(name: "Working set %", color: color, values: [])]
+      return try legendBitmap(appearance: appearance, scale: 1, size: chart.bounds.size) {
+        chart.draw(chart.bounds)
+      }
+    }
+    let red = try render(.systemRed)
+    let blue = try render(.systemBlue)
+    var markerChanged = false
+    var textUnchanged = true
+    for y in 0..<100 {
+      for x in 0..<150 {
+        let differs = red.colorAt(x: x, y: y) != blue.colorAt(x: x, y: y)
+        if x < 12 {
+          markerChanged = markerChanged || differs
+        } else {
+          textUnchanged = textUnchanged && !differs
+        }
+      }
+    }
+    #expect(markerChanged && textUnchanged)
+  }
+}

@@ -12,6 +12,8 @@ import Testing
   weak var generalPage: NSView?
   weak var menuBarPage: NSView?
   weak var preview: MenuBarPreviewView?
+  weak var customization: MenuBarCustomization?
+  weak var chip: MenuBarChip?
   weak var editor: NSWindowController?
   try autoreleasepool {
     let controller = PreferencesController(
@@ -31,6 +33,10 @@ import Testing
       return result
     }
     preview = try #require(descendants(root).compactMap { $0 as? MenuBarPreviewView }.first)
+    customization = try #require(descendants(root).compactMap { $0 as? MenuBarCustomization }.first)
+    chip = customization?.chips[.cpu]
+    // Materialize custom action closures as a VoiceOver client would before closing.
+    #expect(chip?.accessibilityCustomActions()?.isEmpty == false)
     let battery = try #require(
       descendants(root).compactMap { $0 as? NSButton }.first {
         $0.accessibilityLabel() == "Battery menu bar formats"
@@ -58,4 +64,5 @@ import Testing
   #expect(generalPage == nil)
   #expect(menuBarPage == nil)
   #expect(preview == nil)
+  #expect(customization == nil && chip == nil)
 }

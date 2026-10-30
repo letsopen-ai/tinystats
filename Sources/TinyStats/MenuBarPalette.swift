@@ -8,16 +8,17 @@ import TinyStatsCore
   let textShadow: NSShadow?
   let gaugeOutline: NSColor
   private let accent: NSColor
-  private let isDark: Bool
+  let secondary: NSColor
 
   static func resolve(_ appearance: NSAppearance) -> Self {
     let dark = SystemStyle.isDark(appearance)
     let text: NSColor = dark ? .white : NSColor(calibratedWhite: 0.1, alpha: 1)
+    let pair = SystemStyle.resolvedPalette(in: appearance)
     return Self(
       text: text, textShadow: dark ? darkTextShadow : nil,
       gaugeOutline: text.withAlphaComponent(0.65),
-      accent: SystemStyle.menuBarAccent(SystemStyle.resolvedAccent(in: appearance), dark: dark),
-      isDark: dark)
+      accent: SystemStyle.menuBarAccent(pair.primary, dark: dark),
+      secondary: pair.secondary)
   }
   private static let darkTextShadow: NSShadow = {
     let shadow = NSShadow()
@@ -31,7 +32,7 @@ import TinyStatsCore
 
   func core(_ kind: CPUCoreKind) -> NSColor {
     switch kind {
-    case .efficiency: accent.withAlphaComponent(isDark ? 0.5 : 0.45)
+    case .efficiency: secondary
     case .performance: accent
     case .unknown: text.withAlphaComponent(0.65)
     }
