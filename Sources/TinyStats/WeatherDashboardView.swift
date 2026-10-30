@@ -12,6 +12,8 @@ enum SolarEventPresentation {
 }
 
 @MainActor final class WeatherDashboardView: ChartHoverView {
+  var usesPopoverLayout = false
+  var glassEnvironment: () -> GlassSurface.Environment = { .current }
   struct Day: Equatable {
     let date: Date, low: Double?, high: Double?
     let samples: Int
@@ -707,7 +709,7 @@ enum SolarEventPresentation {
     NSBezierPath(ovalIn: .init(x: end.x - 2, y: end.y - 2, width: 4, height: 4)).fill()
   }
   private func panel(_ rect: NSRect) {
-    SystemStyle.drawPlatter(rect)
+    SystemStyle.drawPlatter(rect, onGlass: usesPopoverLayout, environment: glassEnvironment())
   }
   private func capsule(_ rect: NSRect, _ color: NSColor) {
     guard rect.width > 0 else { return }
@@ -733,7 +735,9 @@ enum SolarEventPresentation {
       in: rect,
       withAttributes: [
         .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight),
-        .foregroundColor: color, .paragraphStyle: style,
+        .foregroundColor: usesPopoverLayout && glassEnvironment().treatment == .glass
+          && color == .secondaryLabelColor ? SystemStyle.glassSecondaryLabel : color,
+        .paragraphStyle: style,
       ])
   }
 }

@@ -153,9 +153,18 @@ import TinyStatsCore
       dirtyRect.intersection(bounds).fill()
     }
   }
-  static func washOpacity(role: Role, dark: Bool) -> CGFloat {
-    role == .panel ? (dark ? 0.94 : 0.88) : (dark ? 0.85 : 0.80)
+  nonisolated static func washOpacity(role: Role, dark: Bool) -> CGFloat {
+    switch role {
+    case .panel: dark ? 0.70 : 0.60
+    case .sidebar: dark ? 0.65 : 0.55
+    case .chips: 0  // Native grouped shapes; no extra wash above their neutral well.
+    }
   }
+  /// A translucent neutral tint preserves the panel's backdrop hue through the inset cards.
+  nonisolated static func cardTintOpacity(dark: Bool) -> CGFloat { dark ? 0.24 : 0.025 }
+  nonisolated static func plotFillOpacity(glass: Bool) -> CGFloat { glass ? 0.06 : 0.20 }
+  nonisolated static func traceWidth(glass: Bool) -> CGFloat { glass ? 2 : 1.5 }
+  nonisolated static let secondaryInkOpacity: CGFloat = 0.80
   @MainActor private final class FlippedContent: NSView {
     override var isFlipped: Bool { true }
   }
