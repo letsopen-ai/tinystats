@@ -5,7 +5,7 @@ import TinyStatsCore
 @MainActor final class MenuBarCustomization: SystemStyledView {
   static let pasteboardType = NSPasteboard.PasteboardType("com.tinystats.private.readout")
   private let token = UUID().uuidString
-  private let stripScroll = NSScrollView()
+  private lazy var contentHeight = heightAnchor.constraint(equalToConstant: 254)
   let strip = MenuBarDropArea(inMenuBar: true)
   let palette = MenuBarDropArea(inMenuBar: false)
   private(set) var chips: [Module: MenuBarChip] = [:]
@@ -20,16 +20,10 @@ import TinyStatsCore
 
   override init(frame: NSRect) {
     super.init(frame: frame)
-    heightAnchor.constraint(equalToConstant: 254).isActive = true
+    contentHeight.isActive = true
     strip.owner = self
     palette.owner = self
-    stripScroll.documentView = strip
-    stripScroll.hasHorizontalScroller = true
-    stripScroll.autohidesScrollers = true
-    stripScroll.scrollerStyle = .overlay
-    stripScroll.drawsBackground = false
-    stripScroll.setAccessibilityLabel("In menu bar")
-    for view in [stripLabel, stripScroll, paletteLabel, palette, hint] { addSubview(view) }
+    for view in [stripLabel, strip, paletteLabel, palette, hint] { addSubview(view) }
     for module in Module.allCases where module != .overview {
       let chip = MenuBarChip(module: module)
       chip.owner = self
@@ -38,14 +32,24 @@ import TinyStatsCore
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override var isFlipped: Bool { true }
+  override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    updateContentHeight()
+  }
+  private func updateContentHeight() {
+    let width = max(0, bounds.width - 24)
+    let height = 116 + strip.height(for: width) + palette.height(for: width)
+    if contentHeight.constant != height { contentHeight.constant = height }
+  }
   override func layout() {
     super.layout()
-    stripLabel.frame = .init(x: 12, y: 10, width: bounds.width - 24, height: 18)
-    stripScroll.frame = .init(x: 12, y: 33, width: bounds.width - 24, height: 54)
-    strip.frame.size = .init(width: max(stripScroll.bounds.width, strip.contentWidth), height: 54)
-    paletteLabel.frame = .init(x: 12, y: 99, width: bounds.width - 24, height: 18)
-    palette.frame = .init(x: 12, y: 122, width: bounds.width - 24, height: 84)
-    hint.frame = .init(x: 12, y: 217, width: bounds.width - 24, height: 30)
+    let width = max(0, bounds.width - 24)
+    stripLabel.frame = .init(x: 12, y: 10, width: width, height: 18)
+    strip.frame = .init(x: 12, y: 33, width: width, height: strip.height(for: width))
+    paletteLabel.frame = .init(x: 12, y: strip.frame.maxY + 12, width: width, height: 18)
+    palette.frame = .init(
+      x: 12, y: paletteLabel.frame.maxY + 5, width: width, height: palette.height(for: width))
+    hint.frame = .init(x: 12, y: palette.frame.maxY + 11, width: width, height: 30)
   }
   override func draw(_ dirtyRect: NSRect) {
     SystemStyle.drawPlatter(bounds)
@@ -63,6 +67,7 @@ import TinyStatsCore
         chips[$0]
       })
     for chip in chips.values { chip.refreshActions() }
+    updateContentHeight()
     needsLayout = true
     layoutSubtreeIfNeeded()
     if animated {
@@ -116,7 +121,34 @@ import TinyStatsCore
   private(set) var chips: [MenuBarChip] = []
   private(set) var insertion: Int?
   private var targetFrames: [Module: NSRect] = [:]
-  var contentWidth: CGFloat { chips.reduce(20) { $0 + $1.chipWidth + 8 } }
+  /// One shared geometry calculation keeps height, drawing and drop boundaries in sync.
+  private func chipFrames(for width: CGFloat) -> [NSRect] {
+    var x: CGFloat = 12
+    var y: CGFloat = 12
+    return chips.map { chip in
+      let chipWidth = chip.chipWidth
+      if x > 12 && x + chipWidth > width - 12 {
+        x = 12
+        y += 36
+      }
+      let frame = NSRect(x: x, y: y, width: chipWidth, height: 28)
+      x += chipWidth + 8
+      return frame
+    }
+  }
+  func height(for width: CGFloat) -> CGFloat {
+    max(54, (chipFrames(for: width).last?.maxY ?? 0) + 12)
+  }
+  var insertionFrame: NSRect? {
+    guard inMenuBar, let insertion else { return nil }
+    let frames = chipFrames(for: bounds.width)
+    if insertion < frames.count {
+      let next = frames[insertion]
+      return .init(x: next.minX - 5, y: next.minY + 2, width: 2, height: 24)
+    }
+    let last = frames.last ?? .init(x: 12, y: 12, width: 0, height: 28)
+    return .init(x: last.maxX + 3, y: last.minY + 2, width: 2, height: 24)
+  }
   override var isFlipped: Bool { true }
   init(inMenuBar: Bool) {
     self.inMenuBar = inMenuBar
@@ -141,18 +173,10 @@ import TinyStatsCore
     positionChips(animated: false)
   }
   func positionChips(animated: Bool) {
-    var x: CGFloat = 12
-    var y: CGFloat = 12
     NSAnimationContext.runAnimationGroup { context in
       context.duration =
         animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.16 : 0
-      for chip in chips {
-        let width = chip.chipWidth
-        if !inMenuBar && x > 12 && x + width > bounds.width - 8 {
-          x = 12
-          y += 36
-        }
-        let frame = NSRect(x: x, y: y, width: width, height: 28)
+      for (chip, frame) in zip(chips, chipFrames(for: bounds.width)) {
         if animated || targetFrames[chip.module] != frame {
           targetFrames[chip.module] = frame
           if context.duration > 0 && chip.frame.width > 0 {
@@ -161,12 +185,16 @@ import TinyStatsCore
             chip.frame = frame
           }
         }
-        x += width + 8
       }
     }
   }
   func insertionIndex(at point: NSPoint) -> Int {
-    chips.firstIndex { point.x < $0.frame.midX } ?? chips.count
+    let frames = chipFrames(for: bounds.width)
+    guard let rowStart = frames.firstIndex(where: { point.y <= $0.maxY + 4 }) else {
+      return chips.count
+    }
+    let rowEnd = frames[rowStart...].firstIndex { $0.minY != frames[rowStart].minY } ?? frames.count
+    return (rowStart..<rowEnd).first { point.x < frames[$0].midX } ?? rowEnd
   }
   override func draw(_ dirtyRect: NSRect) {
     let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
@@ -176,15 +204,10 @@ import TinyStatsCore
     NSColor.separatorColor.setStroke()
     path.lineWidth = 0.5
     path.stroke()
-    if let insertion {
+    if insertion != nil {
       NSColor.controlAccentColor.setFill()
-      if inMenuBar {
-        let x =
-          insertion < chips.count
-          ? chips[insertion].frame.minX - 5 : (chips.last?.frame.maxX ?? 12) + 3
-        NSBezierPath(
-          roundedRect: .init(x: x, y: 14, width: 2, height: 24), xRadius: 1, yRadius: 1
-        ).fill()
+      if let marker = insertionFrame {
+        NSBezierPath(roundedRect: marker, xRadius: 1, yRadius: 1).fill()
       } else {
         NSColor.controlAccentColor.setStroke()
         path.lineWidth = 2
@@ -193,11 +216,12 @@ import TinyStatsCore
     }
     if chips.isEmpty {
       let text = inMenuBar ? "Drop readouts here" : "Drag items here to hide them"
+      let attributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
+      ]
+      let size = (text as NSString).size(withAttributes: attributes)
       (text as NSString).draw(
-        at: .init(x: 12, y: 18),
-        withAttributes: [
-          .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor,
-        ])
+        at: .init(x: 12, y: floor(bounds.midY - size.height / 2)), withAttributes: attributes)
     }
   }
   override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -209,18 +233,6 @@ import TinyStatsCore
     else {
       clearInsertion()
       return []
-    }
-    if inMenuBar, let scroll = enclosingScrollView {
-      // AppKit's drag updates drive edge scrolling; no view-owned timer is needed.
-      let point = convert(sender.draggingLocation, from: nil)
-      let visible = visibleRect
-      let step: CGFloat = point.x < visible.minX + 24 ? -12 : (point.x > visible.maxX - 24 ? 12 : 0)
-      if step != 0 {
-        scroll.contentView.scroll(
-          to: .init(
-            x: min(max(0, visible.minX + step), max(0, bounds.width - visible.width)), y: 0))
-        scroll.reflectScrolledClipView(scroll.contentView)
-      }
     }
     insertion = inMenuBar ? insertionIndex(at: convert(sender.draggingLocation, from: nil)) : 0
     needsDisplay = true
@@ -266,7 +278,9 @@ import TinyStatsCore
     font = .systemFont(ofSize: 12)
     contentTintColor = .labelColor
     image = NSImage(systemSymbolName: module.symbol, accessibilityDescription: nil)?
-      .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+      .withSymbolConfiguration(
+        NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+          .applying(.preferringMonochrome()))
     imagePosition = .imageLeading
     imageScaling = .scaleProportionallyDown
     isBordered = false
@@ -409,8 +423,9 @@ import TinyStatsCore
     let symbol = NSRect(x: cellFrame.minX + 10, y: cellFrame.midY - 6.5, width: 13, height: 13)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
-    image?.draw(in: symbol)
-    NSColor.labelColor.setFill()
+    image?.draw(in: symbol, from: .zero, operation: .sourceOver, fraction: 1)
+    // Resolve in the current drawing appearance, then use the label hue at full opacity.
+    NSColor.labelColor.withAlphaComponent(1).setFill()
     symbol.fill(using: .sourceIn)
     NSGraphicsContext.current?.cgContext.endTransparencyLayer()
     NSGraphicsContext.restoreGraphicsState()

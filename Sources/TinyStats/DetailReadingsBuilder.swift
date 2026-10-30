@@ -113,7 +113,10 @@ enum DetailReadingsBuilder {
       section(
         type == .cpu
           ? "TOP CPU · BARS = MAC CAPACITY"
-          : type == .memory ? "TOP MEMORY · PHYSICAL FOOTPRINT" : "TOP DISK I/O · READ + WRITE")
+          : type == .memory ? "TOP MEMORY" : "TOP DISK I/O · READ + WRITE")
+      if type == .memory {
+        result.rows[result.rows.count - 1].accessibilityLabel = "Top memory · physical footprint"
+      }
       let list = s.processes.sorted { a, b in
         switch type {
         case .cpu: return (a.cpu ?? 0) > (b.cpu ?? 0)

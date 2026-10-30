@@ -98,6 +98,10 @@ import TinyStatsCore
     case .rows(let rows):
       return max(
         canonical.height, 38 + CGFloat(min(7, rows.count)) * 25 + (card.note.isEmpty ? 0 : 17))
+    case .none where card.title == "TOP PROCESSES": return 56
+    case .none
+    where card.title.contains("TRAFFIC · PARTIAL") || card.title == "APP BUNDLES · PARTIAL":
+      return 96
     case .memory: return 204
     case .tiles(_, let columns): return max(canonical.height, columns > 2 ? 150 : 134)
     default: return canonical.height

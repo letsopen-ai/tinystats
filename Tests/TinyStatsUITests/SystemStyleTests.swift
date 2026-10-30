@@ -459,6 +459,9 @@ import Testing
     var changes = 0
     controller.onChange = { _ in changes += 1 }
     let root = try #require(controller.window?.contentView)
+    // Request a key fixture window; the test runner may still receive inactive native ink.
+    controller.window?.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
     for page in [PreferencesController.Page.general, .menuBar] {
       controller.selectPage(page)
       root.layoutSubtreeIfNeeded()
@@ -468,9 +471,14 @@ import Testing
       if page == .menuBar {
         let customization = try #require(views.compactMap { $0 as? MenuBarCustomization }.first)
         #expect(customization.strip.chips.map(\.module) == settings.readouts)
+        for toggle in views.compactMap({ $0 as? SystemSettingSwitch }) {
+          if let module = Module.allCases.first(where: { $0.title == toggle.title }) {
+            #expect((toggle.state == .on) == settings.readouts.contains(module))
+          }
+        }
         #expect(customization.palette.chips.map(\.module) == [.gpu, .battery, .clock])
         #expect(customization.strip.visibleRect.height >= 50)
-        #expect(customization.palette.visibleRect.height >= 80)
+        #expect(customization.palette.visibleRect.height >= 50)
         if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
           let url = URL(fileURLWithPath: path, isDirectory: true)
           try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -485,8 +493,9 @@ import Testing
             to: url.appendingPathComponent("settings-menubar-customization-\(theme.rawValue).png"))
           func captureState(_ state: String) throws {
             root.layoutSubtreeIfNeeded()
-            let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: crop))
-            root.cacheDisplay(in: crop, to: bitmap)
+            let currentCrop = customization.convert(customization.bounds, to: root)
+            let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: currentCrop))
+            root.cacheDisplay(in: currentCrop, to: bitmap)
             try #require(bitmap.representation(using: .png, properties: [:])).write(
               to: url.appendingPathComponent(
                 "settings-menubar-customization-\(state)-\(theme.rawValue).png"))
@@ -503,10 +512,26 @@ import Testing
           #expect(customization.strip.insertion == 1)
           try captureState("drag")
           customization.strip.draggingExited(drag)
-          customization.update(order: Module.allCases.filter { $0 != .overview })
+          var allEnabled = settings
+          allEnabled.readouts = Module.allCases.filter { $0 != .overview }
+          controller.updateMenuBarSettings(allEnabled)
+          root.layoutSubtreeIfNeeded()
           #expect(customization.palette.chips.isEmpty)
+          #expect(
+            customization.strip.chips.allSatisfy { customization.strip.bounds.contains($0.frame) })
           try captureState("empty-available")
-          customization.update(order: settings.readouts)
+          let full = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+          root.cacheDisplay(in: root.bounds, to: full)
+          try #require(full.representation(using: .png, properties: [:])).write(
+            to: url.appendingPathComponent(
+              "settings-menubar-all-modules-enabled-\(theme.rawValue).png"))
+          let secondRow = try #require(customization.strip.chips.first { $0.frame.minY > 12 })
+          drag.draggingLocation = customization.strip.convert(
+            .init(x: secondRow.frame.minX, y: secondRow.frame.midY), to: nil)
+          #expect(customization.strip.draggingEntered(drag) == .move)
+          try captureState("wrapped-drag")
+          customization.strip.draggingExited(drag)
+          controller.updateMenuBarSettings(settings)
         }
       }
       let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
@@ -822,4 +847,50 @@ import Testing
   missing = primary
   missing.values = []
   #expect(try plotImage([secondary]) == plotImage([missing, secondary]))
+}
+
+@Test @MainActor func pausedMemoryProcessRowsUseTheSharedTableStyleAndShortHeader() throws {
+  _ = NSApplication.shared
+  var snapshot = Snapshot()
+  snapshot.memory = .init(
+    total: 100, active: 59, inactive: 0, wired: 0, compressed: 0,
+    free: 41, speculative: 0, purgeable: 0, swapUsed: 0, swapTotal: 0, pressure: 1)
+  snapshot.processes = [.init(pid: 42, name: "Xcode", cpu: nil, memory: 0, read: nil, written: nil)]
+  let controller = DetailController()
+  controller.isPopoverPresentation = true
+  controller.showsAllReadings = true
+  controller.paused = true
+  controller.selected = .memory
+  controller.view.setFrameSize(SystemStyle.popoverSize)
+  controller.update(snapshot, history: [])
+  controller.view.layoutSubtreeIfNeeded()
+  let table = try #require(
+    systemDescendants(controller.view).compactMap { $0 as? NSTableView }.first)
+  func label(_ row: Int) throws -> NSTextField {
+    try #require(table.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTextField)
+  }
+  let labels = try (0..<table.numberOfRows).map { try label($0) }
+  let header = try #require(labels.first { $0.stringValue == "Top memory" })
+  #expect(header.accessibilityLabel() == "Top memory · physical footprint")
+  let process = try #require(labels.first { $0.stringValue == "Xcode · 42" })
+  let active = try #require(labels.first { $0.stringValue == "Active" })
+  #expect(process.font == active.font && process.textColor == active.textColor)
+  #expect(
+    process.convert(process.bounds, to: controller.view).minX
+      == active.convert(active.bounds, to: controller.view).minX)
+  #expect(abs(process.convert(process.bounds, to: controller.view).minX - 22) < 1)
+}
+
+@Test @MainActor func emptyProcessCardsStayCompactInThePopover() throws {
+  let view = SummaryDashboardView(frame: .init(x: 0, y: 0, width: 324, height: 600))
+  view.usesPopoverLayout = true
+  for module in [Module.cpu, .disks, .network] {
+    view.update(Snapshot(), history: [], settings: Settings(), module: module)
+    let card = try #require(
+      view.cards.first {
+        $0.title == "TOP PROCESSES" || $0.title == "PROCESS TRAFFIC · PARTIAL"
+      })
+    #expect(card.frame.height == (module == .network ? 96 : 56))
+    #expect(!card.note.isEmpty)
+  }
 }

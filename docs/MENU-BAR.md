@@ -15,7 +15,7 @@ Selecting a different readout switches the existing popover directly to that pag
 1. Enable **Sensors**, **Network**, **Disks**, **CPU** and **Memory**. Disable other readouts for the same five-item arrangement.
 2. Set **Menu bar sensor** to **CPU · hottest recognized sensor**. Leave **Use Fahrenheit** off for the Celsius version of the example.
 3. Choose **Stacked label + value** for all five readouts. Use **Standard** font; colors are automatic.
-4. In Settings, drag chips in **In menu bar** into **Sensors → Network → Disks → CPU → Memory** order. Native **⌘-drag** also works. The preview and customization strip follow observed native positions; scroll wide strips horizontally when needed.
+4. In Settings, drag chips in **In menu bar** into **Sensors → Network → Disks → CPU → Memory** order. Native **⌘-drag** also works. The preview and customization wells follow observed native positions. Chips wrap into rows so every item stays visible; the live preview scrolls horizontally when needed.
 
 The sensor displays a CPU label over temperature, Network puts upload above download, and the remaining items put SSD/CPU/MEM labels over percentages. Values come from the current readings; matching the arrangement does not imply matching a reference image's sample numbers. Unsupported readings remain unavailable.
 
@@ -56,7 +56,7 @@ Every readout is a separate native status item, including migration from saved c
 
 ## Drag customization and accessible actions
 
-The grouped customization platter contains rounded SF Symbol/name chips. Drag from **Available** into **In menu bar** to enable a readout at the accent insertion marker. Drag within the strip to reorder; drag onto **Available** to remove. Dragging outside either destination, or cancelling with Escape, leaves settings unchanged. At least one readout must remain, matching the existing Show-switch rule. An unavailable hardware reading still has a chip; enabling a Weather readout does not authorize Weather requests.
+The grouped customization platter contains rounded SF Symbol/name chips. Both wells wrap with 8-point gaps and grow in height, pushing the following controls down. Drag from **Available** into **In menu bar** to enable a readout at the accent insertion marker. Drag within the strip to reorder; drag onto **Available** to remove. Dragging outside either destination, or cancelling with Escape, leaves settings unchanged. At least one readout must remain, matching the existing Show-switch rule. An unavailable hardware reading still has a chip; enabling a Weather readout does not authorize Weather requests.
 
 Right-click a chip for **Add to menu bar**, or **Remove from menu bar**, **Move left/right**, **Move to start/end**. Inapplicable actions are disabled. Tab/Shift-Tab focus the chips; plain Left/Right focuses the adjacent chip. Return/Space adds or removes, and Option or Command + Left/Right moves one position; add Shift to move to the start/end. VoiceOver exposes the labeled In menu bar and Available groups and named custom actions, announcing the new position or removal. VoiceOver press alone leaves the selection unchanged. Keyboard focus stays with the moved chip. The existing Style/Font/Show controls, accessibility labels, sensor selector and format editors remain available below; disabled readouts retain their styles. Presets preserve the enabled set and order and refresh the strip and preview immediately.
 
