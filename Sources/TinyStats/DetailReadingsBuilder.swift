@@ -14,6 +14,7 @@ struct DetailRow: Equatable {
   var bundlePath: String?
   var processCount: Int = 1
   var accessibilityLabel: String?
+  var compactValue: String?
 }
 
 /// Formats existing local observations; never collects, persists, or requests permission.
@@ -70,6 +71,35 @@ enum DetailReadingsBuilder {
     return result
   }
 
+  /// Existing observations only; available as table rows and footer action help.
+  static func sampleRows(snapshot: Snapshot, settings: Settings, paused: Bool) -> [DetailRow] {
+    let privacy =
+      settings.connectivityChecks || settings.publicIPChecks || settings.weather.enabled
+      ? "Internet requests enabled"
+      : settings.pingCheck.enabled ? "Network checks enabled" : "Local only"
+    let cost = snapshot.sampleMilliseconds
+    var rows: [DetailRow] = [
+      .init(label: "ABOUT THIS SAMPLE", value: "", heading: true),
+      .init(
+        label: "Privacy", value: privacy,
+        compactValue: privacy == "Internet requests enabled"
+          ? "Internet enabled"
+          : privacy == "Network checks enabled" ? "Network checks" : nil),
+      .init(
+        label: "Monitoring", value: paused ? "Paused · readings are frozen" : "Running",
+        compactValue: paused ? "Paused" : nil),
+      .init(label: "Configured cadence", value: "\(Int(settings.interval))s"),
+      .init(
+        label: "Last sample cost",
+        value: cost.isFinite && cost >= 0
+          ? String(format: "%.1f ms", cost) : "Unavailable"),
+    ]
+    if snapshot.sensors.filter({ !$0.key.hasPrefix("ioreport:") }).count >= 128 {
+      rows.append(.init(label: "SMC scan limit", value: "128 · some sensors may be missing"))
+    }
+    return rows
+  }
+
   static func build(
     module: Module, snapshot s: Snapshot, history: [HistoryPoint], settings: Settings, paused: Bool
   ) -> Presentation? {
@@ -118,9 +148,14 @@ enum DetailReadingsBuilder {
         apps
           ? "TOP APPS"
           : type == .cpu
-            ? "TOP CPU · BARS = MAC CAPACITY"
-            : type == .memory ? "TOP MEMORY" : "TOP DISK I/O · READ + WRITE")
+            ? "TOP CPU"
+            : type == .memory ? "TOP MEMORY" : "TOP DISK I/O")
       result.rows[result.rows.count - 1].processGroupingHeader = type != .disks
+      if type == .cpu && !apps {
+        result.rows[result.rows.count - 1].accessibilityLabel = "TOP CPU · BARS = MAC CAPACITY"
+      } else if type == .disks {
+        result.rows[result.rows.count - 1].accessibilityLabel = "TOP DISK I/O · READ + WRITE"
+      }
       if type == .memory && !apps {
         result.rows[result.rows.count - 1].accessibilityLabel = "Top memory · physical footprint"
       }

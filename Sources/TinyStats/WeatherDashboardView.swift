@@ -318,7 +318,7 @@ enum SolarEventPresentation {
     return nil
   }
   override func draw(_ dirtyRect: NSRect) {
-    guard bounds.width >= 300, bounds.height >= 300 else { return }
+    guard bounds.width >= 300, bounds.height >= (bounds.width < 400 ? 96 : 300) else { return }
     if bounds.width < 400 {
       drawPopover()
       return
@@ -493,13 +493,23 @@ enum SolarEventPresentation {
     drawSolarDay()
     attribution()
   }
+  private var hasNoReadings: Bool {
+    current == nil && upcoming.isEmpty && days.isEmpty && solarDay == nil
+  }
   var popoverDocumentHeight: CGFloat {
-    200 + 8 + 40 + CGFloat(upcoming.count) * 30 + 8 + 40 + CGFloat(days.count) * 23
+    if hasNoReadings { return 126 }
+    return 200 + 8 + 40 + CGFloat(upcoming.count) * 30 + 8 + 40 + CGFloat(days.count) * 23
       + (solarDay == nil ? 0 : 100) + 30
   }
   /// Forecast times remain individual readable rows in a narrow dropdown.
   private func drawPopover() {
     let width = bounds.width
+    if hasNoReadings {
+      panel(.init(x: 0, y: 0, width: width, height: 96))
+      text(status, .init(x: 12, y: 18, width: width - 24, height: 60), size: 13, wrapping: true)
+      attribution()
+      return
+    }
     panel(.init(x: 0, y: 0, width: width, height: 200))
     text(
       "Now · model forecast", .init(x: 12, y: 10, width: width - 24, height: 18), size: 12,
@@ -522,12 +532,10 @@ enum SolarEventPresentation {
         metric.value, .init(x: x, y: y + 14, width: cellWidth, height: 18), size: 14,
         weight: .medium)
     }
-    text(
-      status, .init(x: 12, y: 180, width: width - 24, height: 14), size: 9,
-      color: .secondaryLabelColor)
-    if current == nil && upcoming.isEmpty && days.isEmpty && solarDay == nil {
-      attribution()
-      return
+    if current != nil {
+      text(
+        status, .init(x: 12, y: 180, width: width - 24, height: 14), size: 9,
+        color: .secondaryLabelColor)
     }
     let forecastY: CGFloat = 208
     let forecastHeight = 40 + CGFloat(upcoming.count) * 30

@@ -75,6 +75,7 @@ extension SummaryDashboardView {
   }
   struct Card {
     var frame: NSRect, title: String, trailing: String = "", content: Content, note: String = ""
+    var help = ""
     var groupsProcesses = false
     var headerHeight: CGFloat = 31
     var contentRect: NSRect {
@@ -180,7 +181,7 @@ extension SummaryDashboardView {
                 ?? "No recorded values in this window"))
         }
       }
-      return (parts + [note]).filter { !$0.isEmpty }.joined(separator: ". ")
+      return (parts + [note, help]).filter { !$0.isEmpty }.joined(separator: ". ")
     }
   }
   nonisolated static func displayedCoreIndices(_ cpu: CPUReading) -> [Int] {
