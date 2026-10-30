@@ -25,6 +25,7 @@ final class MonitorWorker: @unchecked Sendable {
   private let date: @Sendable () -> Date
   private let makeTimer: TimerFactory
   private var schedule = MonitorSchedule()
+  private var lastCollection: Double?
   private var clockPreviewSeconds: Bool?
   private var settings = Settings()
   private var history = RingBuffer<HistoryPoint>(capacity: 300)
@@ -101,7 +102,7 @@ final class MonitorWorker: @unchecked Sendable {
       // Reuse the shared scheduler/demand, without resetting process rate baselines or
       // collecting while paused/asleep. The UI retains only top-eight projections.
       if cadenceChanged || regroupProcesses {
-        self.arm()
+        self.arm(regroupProcesses: regroupProcesses)
       } else if oldClockStep != self.clockStep {
         self.arm(resetSchedule: false)
       }
@@ -243,17 +244,28 @@ final class MonitorWorker: @unchecked Sendable {
   private var collectionInterval: Double { max(settings.interval, lowPower ? 5 : 1) }
   private func resetAndArm() {
     sampler?.reset()
+    lastCollection = nil
     alerts.resetSustainedConditions()
     arm()
   }
-  private func arm(resetSchedule: Bool = true) {
+  private func arm(resetSchedule: Bool = true, regroupProcesses: Bool = false) {
     timer?.cancel()
     timer = nil
-    if resetSchedule { schedule.reset() } else { schedule.invalidateClock() }
+    if regroupProcesses {
+      schedule.requestCollection(noEarlierThan: (lastCollection.map { $0 + 1 }) ?? uptime())
+    } else if resetSchedule {
+      schedule.reset()
+    } else {
+      schedule.invalidateClock()
+    }
     guard !terminating && !paused && !sleeping else { return }
     lowPower = powerState()
     let timer = makeTimer(queue) { [weak self] in self?.tick() }
-    timer?.schedule(deadline: .now())
+    let now = uptime()
+    let delay =
+      regroupProcesses
+      ? max(0, schedule.deadline(at: now, date: date(), clockStep: clockStep) - now) : 0
+    timer?.schedule(deadline: .now() + delay)
     self.timer = timer
     timer?.resume()
   }
@@ -281,8 +293,9 @@ final class MonitorWorker: @unchecked Sendable {
         let points = details || settings.needsMenuBarHistory ? history.elements : []
         let events = settings.alerts ? alerts.evaluate(snapshot, now: snapshot.uptime) : []
         mailbox.submit(snapshot, history: points, events: events)
-        schedule.collectionFinished(
-          at: uptime(), interval: collectionInterval)
+        let finished = uptime()
+        lastCollection = finished
+        schedule.collectionFinished(at: finished, interval: collectionInterval)
       }
       if decision.clock || (decision.collect && clockStep != nil) { mailbox.submitClock(date()) }
       let now = uptime()

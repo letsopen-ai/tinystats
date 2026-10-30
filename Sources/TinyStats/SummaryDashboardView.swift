@@ -102,7 +102,7 @@ import TinyStatsCore
   var popoverDocumentHeight: CGFloat {
     canonicalFrames.enumerated().reduce(0) { total, pair in
       total + popoverCardHeight(cards[pair.offset], canonical: pair.element)
-        + (pair.offset == 0 && popoverHeadline != nil ? 27 : 0) + 8
+        + (pair.offset == 0 && popoverHeadline != nil && !isOverview ? 27 : 0) + 8
     }
   }
   func popoverCardHeight(_ card: Card, canonical: NSRect) -> CGFloat {
@@ -189,7 +189,7 @@ import TinyStatsCore
     if usesPopoverLayout {
       var y: CGFloat = 0
       for index in cards.indices {
-        let header = index == 0 && popoverHeadline != nil
+        let header = index == 0 && popoverHeadline != nil && !isOverview
         cards[index].headerHeight = header ? 58 : 36
         let height =
           popoverCardHeight(cards[index], canonical: canonicalFrames[index]) + (header ? 27 : 0)

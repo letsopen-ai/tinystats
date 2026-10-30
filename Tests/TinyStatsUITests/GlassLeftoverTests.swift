@@ -94,7 +94,7 @@ import Testing
     snapshot: snapshot, timeline: SensorTimeline(),
     settings: Settings(), query: "", showsAll: false, selection: .hottest(.cpu))
   #expect(presentation.count == "2 sensors")
-  #expect(!presentation.rows.contains { $0.sensorIdentity == .hottest(.cpu) })
+  #expect(presentation.rows.contains { $0.sensorIdentity == .hottest(.cpu) && $0.value.isEmpty })
   #expect(!presentation.rows.contains { $0.value == presentation.value })
   let detail = DetailController(snapshot: snapshot, history: [])
   detail.isPopoverPresentation = true
@@ -105,7 +105,7 @@ import Testing
     leftoverViews(detail.view).compactMap { $0 as? NSTextField }.first {
       $0.stringValue == "2 sensors"
     })
-  #expect(count.accessibilityLabel() == "2 of 2 readable sensors match the search")
+  #expect(count.accessibilityLabel() == "2 readable sensors")
   #expect(count.frame.width >= count.intrinsicContentSize.width)
   let chart = try #require(leftoverViews(detail.view).compactMap { $0 as? ChartView }.first)
   #expect(!chart.showsSummaryDecorations && chart.caption == "")
@@ -173,6 +173,8 @@ import Testing
       $0.accessibilityLabel() == "About this sample"
     })
   #expect(information.isAccessibilityElement() && information.accessibilityRole() == .staticText)
+  #expect(information.accessibilityHelp() == nil)
+  #expect(detail.view.accessibilityLabel() == "Overview details")
   #expect(
     NSAccessibility.unignoredChildren(from: [information]).contains {
       ($0 as? NSAccessibilityElement) === information

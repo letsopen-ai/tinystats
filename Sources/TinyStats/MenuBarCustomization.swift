@@ -74,6 +74,14 @@ import TinyStatsCore
       for (module, chip) in chips {
         if let old = oldFrames[module], old.0 === chip.superview { chip.frame = old.1 }
       }
+      for area in [strip, palette] {
+        area.glass.setChipFrames(
+          Dictionary(
+            uniqueKeysWithValues: area.chips.compactMap { chip in
+              guard let old = oldFrames[chip.module], old.0 === area else { return nil }
+              return (chip.module, old.1)
+            }))
+      }
     }
     strip.positionChips(animated: animated)
     palette.positionChips(animated: animated)
@@ -121,13 +129,14 @@ import TinyStatsCore
   let inMenuBar: Bool
   private(set) var chips: [MenuBarChip] = []
   private(set) var insertion: Int?
+  let insertionOverlay = MenuBarInsertionOverlay()
   private var targetFrames: [Module: NSRect] = [:]
   /// One shared geometry calculation keeps height, drawing and drop boundaries in sync.
   private func chipFrames(for width: CGFloat) -> [NSRect] {
     var x: CGFloat = 12
     var y: CGFloat = 12
     return chips.map { chip in
-      let chipWidth = chip.chipWidth
+      let chipWidth = ceil(chip.chipWidth)
       if x > 12 && x + chipWidth > width - 12 {
         x = 12
         y += 36
@@ -155,6 +164,8 @@ import TinyStatsCore
     self.inMenuBar = inMenuBar
     super.init(frame: .zero)
     addSubview(glass)
+    insertionOverlay.area = self
+    addSubview(insertionOverlay)
     glass.onTreatmentChange = { [weak self] in
       self?.needsDisplay = true
       for chip in self?.chips ?? [] { chip.needsDisplay = true }
@@ -172,11 +183,13 @@ import TinyStatsCore
       chip.removeFromSuperview()
       addSubview(chip)
     }
+    addSubview(insertionOverlay, positioned: .above, relativeTo: nil)
     needsDisplay = true
   }
   override func layout() {
     super.layout()
     glass.frame = bounds
+    insertionOverlay.frame = bounds
     positionChips(animated: false)
   }
   func positionChips(animated: Bool) {
@@ -193,7 +206,11 @@ import TinyStatsCore
           }
         }
       }
-      glass.setChipFrames(chipFrames(for: bounds.width), animated: context.duration > 0)
+      glass.setChipFrames(
+        Dictionary(
+          uniqueKeysWithValues:
+            zip(chips.map(\.module), chipFrames(for: bounds.width))), animated: context.duration > 0
+      )
     }
   }
   func insertionIndex(at point: NSPoint) -> Int {
@@ -212,16 +229,6 @@ import TinyStatsCore
     NSColor.separatorColor.setStroke()
     path.lineWidth = 0.5
     path.stroke()
-    if insertion != nil {
-      NSColor.controlAccentColor.setFill()
-      if let marker = insertionFrame {
-        NSBezierPath(roundedRect: marker, xRadius: 1, yRadius: 1).fill()
-      } else {
-        NSColor.controlAccentColor.setStroke()
-        path.lineWidth = 2
-        path.stroke()
-      }
-    }
     if chips.isEmpty {
       let text = inMenuBar ? "Drop readouts here" : "Drag items here to hide them"
       let attributes: [NSAttributedString.Key: Any] = [
@@ -243,14 +250,14 @@ import TinyStatsCore
       return []
     }
     insertion = inMenuBar ? insertionIndex(at: convert(sender.draggingLocation, from: nil)) : 0
-    needsDisplay = true
+    insertionOverlay.needsDisplay = true
     return .move
   }
   override func draggingExited(_ sender: NSDraggingInfo?) { clearInsertion() }
   override func draggingEnded(_ sender: NSDraggingInfo) { clearInsertion() }
   private func clearInsertion() {
     insertion = nil
-    needsDisplay = true
+    insertionOverlay.needsDisplay = true
   }
   override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
     draggingUpdated(sender) == .move
@@ -263,6 +270,26 @@ import TinyStatsCore
     let action: MenuBarLayoutAction = inMenuBar ? .add(at: insertion ?? chips.count) : .remove
     // A drop at the current position is still a valid, harmless drop.
     return owner.perform(action, for: module) || inMenuBar
+  }
+}
+
+/// The existing drop marker is decoration above all material and chip layers.
+@MainActor final class MenuBarInsertionOverlay: NSView {
+  weak var area: MenuBarDropArea?
+  override var isFlipped: Bool { true }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+  override func isAccessibilityElement() -> Bool { false }
+  override func draw(_ dirtyRect: NSRect) {
+    guard let area, area.insertion != nil else { return }
+    if let marker = area.insertionFrame {
+      NSColor.controlAccentColor.setFill()
+      NSBezierPath(roundedRect: marker, xRadius: 1, yRadius: 1).fill()
+    } else {
+      NSColor.controlAccentColor.setStroke()
+      let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+      path.lineWidth = 2
+      path.stroke()
+    }
   }
 }
 
