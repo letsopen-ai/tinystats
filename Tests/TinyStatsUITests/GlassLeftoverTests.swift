@@ -83,7 +83,7 @@ import Testing
   }
 }
 
-@Test @MainActor func sensorsCountIsReadableAndSelectedHottestValueAppearsOnlyInHeadline() throws {
+@Test @MainActor func sensorsCountIsReadableAndSelectedHottestRowsKeepTheirValues() throws {
   var snapshot = Snapshot()
   snapshot.sensors = [
     .init(key: "Tp01", name: "CPU die", kind: .temperature, value: 52),
@@ -94,8 +94,14 @@ import Testing
     snapshot: snapshot, timeline: SensorTimeline(),
     settings: Settings(), query: "", showsAll: false, selection: .hottest(.cpu))
   #expect(presentation.count == "2 sensors")
-  #expect(presentation.rows.contains { $0.sensorIdentity == .hottest(.cpu) && $0.value.isEmpty })
-  #expect(!presentation.rows.contains { $0.value == presentation.value })
+  #expect(
+    presentation.rows.contains {
+      $0.sensorIdentity == .hottest(.cpu) && $0.value == presentation.value
+    })
+  #expect(
+    presentation.rows.contains {
+      $0.sensorIdentity == .reading("Tp01") && $0.value == presentation.value
+    })
   let detail = DetailController(snapshot: snapshot, history: [])
   detail.isPopoverPresentation = true
   detail.selected = .sensors

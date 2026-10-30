@@ -59,7 +59,10 @@ import TinyStatsCore
       return
     }
     let focused = window?.firstResponder as? MenuBarChip
-    let oldFrames = chips.mapValues { ($0.superview, $0.frame) }
+    // Capture in the common ancestor before reparenting or resizing either area.
+    let oldFrames = chips.compactMapValues { chip -> NSRect? in
+      chip.superview.map { $0.convert(chip.frame, to: self) }
+    }
     self.order = order
     strip.setChips(order.compactMap { chips[$0] })
     palette.setChips(
@@ -72,14 +75,16 @@ import TinyStatsCore
     layoutSubtreeIfNeeded()
     if animated {
       for (module, chip) in chips {
-        if let old = oldFrames[module], old.0 === chip.superview { chip.frame = old.1 }
+        if let old = oldFrames[module], let area = chip.superview {
+          chip.frame = area.convert(old, from: self)
+        }
       }
       for area in [strip, palette] {
         area.glass.setChipFrames(
           Dictionary(
             uniqueKeysWithValues: area.chips.compactMap { chip in
-              guard let old = oldFrames[chip.module], old.0 === area else { return nil }
-              return (chip.module, old.1)
+              guard let old = oldFrames[chip.module] else { return nil }
+              return (chip.module, area.glass.convert(old, from: self))
             }))
       }
     }

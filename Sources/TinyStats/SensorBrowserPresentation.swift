@@ -159,11 +159,13 @@ enum SensorBrowserPresentation {
             !prominentKeys.contains(key)
           {
             // Revealing a singleton must not silently replace the existing initial
-            // focus with an unclassified reading. It remains explicitly selectable.
+            // focus with an unclassified reading when a named alternative exists.
             return nil
           }
           return identity
         }.first
+        ?? rows.compactMap(\.sensorIdentity).first
+        ?? physical.first.map { .reading($0.key) }
     }
     let selected = selection ?? defaultSelection
     var chosen: SensorReading?
@@ -196,23 +198,6 @@ enum SensorBrowserPresentation {
       values = timeline.maximumValues(
         for: temperatures(type).map(\.key), fahrenheit: settings.fahrenheit)
     case nil: break
-    }
-    if !showsAll && query.isEmpty {
-      // Keep every selectable identity and its row index stable across selection. Only
-      // suppress the repeated number; AX still describes the reading in full.
-      for index in rows.indices {
-        let identity = rows[index].sensorIdentity
-        let duplicatesHeadline =
-          identity == selected
-          || {
-            if case .hottest = selected { return identity == chosen.map { .reading($0.key) } }
-            return false
-          }()
-        if identity != nil && duplicatesHeadline {
-          rows[index].accessibilityLabel = rows[index].label + ": " + rows[index].value
-          rows[index].value = ""
-        }
-      }
     }
     return Presentation(
       selection: selected,

@@ -101,7 +101,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   }
   private var sensorTimeline = SensorTimeline()
   private var selectedSensorIdentity: SensorBrowserIdentity?
-  private let sensorSearch = NSSearchField()
+  private let sensorSearch = SensorSearchField()
   private var reloadingRows = false
   private var displayedRows: [Row] = []
   private var renderedSensorSample: Double?
@@ -244,6 +244,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     footerSeparator.isHidden = !isPopoverPresentation
     // Plain rows leave all padding to the platter gutter; fullWidth adds hidden content padding.
     table.style = isPopoverPresentation ? .plain : .automatic
+    sensorSearch.usesNeutralFill = isPopoverPresentation
     openWindowRow.isHidden = !isPopoverPresentation
     if !isPopoverPresentation { openWindowRow.frame.origin.y = 60 }
     weatherScroll.isHidden = !isPopoverPresentation
@@ -578,6 +579,15 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     return true
   }
   func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
+  func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+    guard selected == .sensors else { return nil }
+    let identifier = NSUserInterfaceItemIdentifier("sensor-browser-row")
+    let view =
+      tableView.makeView(withIdentifier: identifier, owner: self) as? SensorBrowserRowView
+      ?? SensorBrowserRowView()
+    view.identifier = identifier
+    return view
+  }
   func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
     selected == .sensors && rows.indices.contains(row) && rows[row].sensorIdentity != nil
   }

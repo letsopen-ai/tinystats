@@ -82,7 +82,10 @@ final class DetailNavigationCoordinator: NSObject {
 
   private func updateControlHost() {
     let host = sidebarMaterial.legacyContentView ?? sidebar
-    for control in controls where control.superview !== host { host.addSubview(control) }
+    for control in controls {
+      if control.superview !== host { host.addSubview(control) }
+      (control as? NavigationButton)?.usesModernSelection = sidebarMaterial.treatment != .legacy
+    }
     layout(in: sidebar.superview?.bounds ?? .init(x: 0, y: 0, width: 700, height: 560))
     sidebar.superview?.needsDisplay = true
   }
@@ -140,21 +143,28 @@ final class DetailNavigationCoordinator: NSObject {
     for (index, module) in Self.mainModules.enumerated() {
       moduleButtons[module]?.frame.origin.y = height - 83 - CGFloat(index * 35)
     }
-    advancedLabel.frame = .init(x: 17, y: height - 382, width: 100, height: 15)
+    let sectionGap: CGFloat = inset == 0 ? 0 : 6
+    advancedLabel.frame = .init(x: 17, y: height - 382 - sectionGap, width: 100, height: 15)
     for (index, module) in Self.advancedModules.enumerated() {
-      moduleButtons[module]?.frame.origin.y = height - 418 - CGFloat(index * 35)
+      moduleButtons[module]?.frame.origin.y = height - 418 - sectionGap - CGFloat(index * 35)
     }
   }
 }
 
 /// Fixed icon slot and text baseline keep every sidebar label aligned.
 @MainActor final class NavigationButton: NSButton {
+  var usesModernSelection = false { didSet { needsDisplay = true } }
   override func draw(_ dirtyRect: NSRect) {
     if state == .on {
-      NSColor.controlAccentColor.withAlphaComponent(0.14).setFill()
+      (usesModernSelection
+        ? NSColor.selectedContentBackgroundColor
+        : NSColor.controlAccentColor.withAlphaComponent(0.14)).setFill()
       NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 1), xRadius: 6, yRadius: 6).fill()
     }
-    let color: NSColor = state == .on ? .controlAccentColor : .secondaryLabelColor
+    let color: NSColor =
+      state == .on
+      ? (usesModernSelection ? .alternateSelectedControlTextColor : .controlAccentColor)
+      : .secondaryLabelColor
     if let image {
       let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
         .applying(.init(paletteColors: [color]))
