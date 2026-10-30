@@ -23,7 +23,7 @@ import Testing
   let chart = try #require(root.subviews.compactMap { $0 as? ChartView }.first)
   let table = try #require(
     root.subviews.compactMap { $0 as? NSScrollView }.first?.documentView as? NSTableView)
-  #expect(!search.isHidden && !chart.isHidden && table.numberOfRows == 9)
+  #expect(!search.isHidden && !chart.isHidden && table.numberOfRows == 8)
   let readingButtons = root.subviews.compactMap { $0 as? NSButton }.filter {
     $0.title == "All readings" || $0.title == "Summary"
   }

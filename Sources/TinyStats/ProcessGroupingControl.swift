@@ -36,10 +36,10 @@ import TinyStatsCore
   }
   private var entries: [String: Entry] = [:]
   private var order: [String] = []
-  static var placeholder: NSImage {
+  static let placeholder: NSImage = {
     let image = NSImage(systemSymbolName: "app.dashed", accessibilityDescription: nil) ?? NSImage()
     return image.withSymbolConfiguration(.init(paletteColors: [.secondaryLabelColor])) ?? image
-  }
+  }()
   static let capacity = 32
   func entry(path: String, fallback: String) -> Entry {
     if let entry = entries[path] { return entry }
@@ -69,9 +69,6 @@ import TinyStatsCore
     countLabel.textColor = .labelColor
     countLabel.alignment = .right
     countLabel.setAccessibilityElement(false)
-    icon.wantsLayer = true
-    icon.layer?.cornerRadius = 3
-    icon.layer?.borderWidth = 0.5
     icon.setAccessibilityElement(false)
     name.setAccessibilityElement(false)
     name.font = .systemFont(ofSize: 12)
@@ -83,7 +80,6 @@ import TinyStatsCore
   func update(_ entry: ProcessAppDisplayCache.Entry, count: Int, path: String?, provenance: String)
   {
     icon.image = entry.icon
-    updateIconRim()
     name.stringValue = entry.name
     countLabel.stringValue = String(count)
     let countText = "\(count) \(count == 1 ? "process" : "processes")"
@@ -93,21 +89,27 @@ import TinyStatsCore
       .joined(separator: " · ")
     setAccessibilityLabel(toolTip)
   }
-  private func updateIconRim() {
-    effectiveAppearance.performAsCurrentDrawingAppearance {
-      icon.layer?.borderColor = NSColor.separatorColor.cgColor
-    }
-  }
-  override func systemStyleDidChange() {
-    super.systemStyleDidChange()
-    updateIconRim()
-  }
+  static let countWidth: CGFloat = 30
   override func layout() {
     super.layout()
     icon.frame = .init(x: 0, y: (bounds.height - 16) / 2, width: 16, height: 16)
     name.frame = .init(
-      x: 20, y: (bounds.height - 17) / 2, width: max(0, bounds.width - 45), height: 17)
+      x: 20, y: (bounds.height - 17) / 2, width: max(0, bounds.width - 20 - Self.countWidth - 3),
+      height: 17)
     countLabel.frame = .init(
-      x: max(20, bounds.width - 22), y: (bounds.height - 17) / 2, width: 22, height: 17)
+      x: max(20, bounds.width - Self.countWidth), y: (bounds.height - 17) / 2,
+      width: Self.countWidth, height: 17)
+  }
+}
+
+/// A measured subset is a lower bound; unavailable totals never receive a numeric cue.
+extension ProcessAppReading {
+  var cpuDisplayValue: String {
+    (cpu.map { $0.isFinite && $0 >= 0 } == true && cpuIncomplete > 0 ? "≥" : "")
+      + Display.processPercent(cpu)
+  }
+  var cpuMeasurementHelp: String? {
+    guard cpuIncomplete > 0 else { return nil }
+    return "Sum of measured members · \(cpuIncomplete) unmeasured processes"
   }
 }

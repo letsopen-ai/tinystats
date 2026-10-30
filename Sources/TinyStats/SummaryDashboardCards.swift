@@ -260,14 +260,11 @@ extension SummaryDashboardView {
         icon.draw(
           in: iconRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
           hints: nil)
-        NSColor.separatorColor.setStroke()
-        let rim = NSBezierPath(
-          roundedRect: iconRect.insetBy(dx: 0.25, dy: 0.25), xRadius: 3, yRadius: 3)
-        rim.lineWidth = 0.5
-        rim.stroke()
         text(
           "\(row.processCount)",
-          rect: .init(x: valueStart - 22, y: textY, width: 19, height: 16),
+          rect: .init(
+            x: valueStart - ProcessAppLabelCell.countWidth - 3, y: textY,
+            width: ProcessAppLabelCell.countWidth, height: 16),
           color: .labelColor, size: 10, alignment: .right)
       }
       let textHeight = paired ? pairedLayout.textHeight : 16
@@ -276,7 +273,7 @@ extension SummaryDashboardView {
         rect: NSRect(
           x: area.minX + 3 + iconInset, y: textY,
           width: area.width * (paired ? 0.42 : 0.55) - 3 - iconInset
-            - (row.displayName == nil ? 0 : 22), height: textHeight),
+            - (row.displayName == nil ? 0 : ProcessAppLabelCell.countWidth + 3), height: textHeight),
         size: height < 18 ? 10 : 11)
       text(
         row.value,

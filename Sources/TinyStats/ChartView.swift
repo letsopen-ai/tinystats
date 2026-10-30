@@ -49,6 +49,7 @@ enum ChartSeriesRole {
   var upperBound: Double? = 100
   var emptyMessage = "No readings yet"
   var newestValueLabel = "Latest"
+  var showsSummaryDecorations = true
   var caption: String?
   var inspectionDateLabel: ((Date) -> String)?
   override init(frame: NSRect) {
@@ -91,10 +92,21 @@ enum ChartSeriesRole {
           + valueFormat.string(line.values.indices.contains(index) ? line.values[index] : nil)
       }).joined(separator: "\n")
   }
+  var hasPlottableData: Bool {
+    let timeline = HistoryTimeline(times: times)
+    let domain = plotDomain
+    return series.contains { line in
+      timeline.indices.contains { index in
+        line.values.indices.contains(index) && domain.fraction(line.values[index]) != nil
+          && timeline.positions[index] != nil
+      }
+    }
+  }
   override func draw(_ dirtyRect: NSRect) {
     let area = plotArea
     NSColor.quaternaryLabelColor.setStroke()
-    for fraction in [0.0, 0.5, 1.0] {
+    let drawsGrid = hasPlottableData
+    for fraction in [0.0, 0.5, 1.0] where drawsGrid {
       let y = area.minY + area.height * fraction
       let path = NSBezierPath()
       path.move(to: .init(x: area.minX, y: y))
@@ -139,7 +151,7 @@ enum ChartSeriesRole {
     }
     let font = NSFont.systemFont(ofSize: 10)
     var x = 0.0
-    for line in series where !fitsDataRange || hasData {
+    for line in series where showsSummaryDecorations && (!fitsDataRange || hasData) {
       let label =
         line.role.legendGlyph + (line.displayName ?? line.name)
         + (fitsDataRange ? " · " + valueFormat.string(line.values.last.flatMap { $0 }) : "")
@@ -159,9 +171,11 @@ enum ChartSeriesRole {
         (valueFormat.string(value) as NSString).draw(
           in: .init(x: 0, y: y, width: 64, height: 13), withAttributes: attrs)
       }
-      (recordedSummary as NSString).draw(
-        in: .init(x: 0, y: 15, width: bounds.width, height: 13),
-        withAttributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+      if showsSummaryDecorations {
+        (recordedSummary as NSString).draw(
+          in: .init(x: 0, y: 15, width: bounds.width, height: 13),
+          withAttributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+      }
     }
     if !hasData {
       (emptyMessage as NSString).draw(

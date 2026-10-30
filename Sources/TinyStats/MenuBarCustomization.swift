@@ -117,6 +117,7 @@ import TinyStatsCore
 
 @MainActor final class MenuBarDropArea: SystemStyledView {
   weak var owner: MenuBarCustomization?
+  let glass = GlassSurface(role: .chips)
   let inMenuBar: Bool
   private(set) var chips: [MenuBarChip] = []
   private(set) var insertion: Int?
@@ -153,6 +154,11 @@ import TinyStatsCore
   init(inMenuBar: Bool) {
     self.inMenuBar = inMenuBar
     super.init(frame: .zero)
+    addSubview(glass)
+    glass.onTreatmentChange = { [weak self] in
+      self?.needsDisplay = true
+      for chip in self?.chips ?? [] { chip.needsDisplay = true }
+    }
     registerForDraggedTypes([MenuBarCustomization.pasteboardType])
     setAccessibilityElement(true)
     setAccessibilityRole(.group)
@@ -170,6 +176,7 @@ import TinyStatsCore
   }
   override func layout() {
     super.layout()
+    glass.frame = bounds
     positionChips(animated: false)
   }
   func positionChips(animated: Bool) {
@@ -186,6 +193,7 @@ import TinyStatsCore
           }
         }
       }
+      glass.setChipFrames(chipFrames(for: bounds.width), animated: context.duration > 0)
     }
   }
   func insertionIndex(at point: NSPoint) -> Int {
@@ -366,9 +374,14 @@ import TinyStatsCore
   }
   override func draw(_ dirtyRect: NSRect) {
     let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
-    (SystemStyle.isDark(effectiveAppearance)
-      ? NSColor.white.withAlphaComponent(0.10) : NSColor.controlBackgroundColor).setFill()
-    path.fill()
+    let treatment = (superview as? MenuBarDropArea)?.glass.treatment ?? .legacy
+    if treatment != .glass {
+      (treatment == .solid
+        ? NSColor.controlBackgroundColor
+        : SystemStyle.isDark(effectiveAppearance)
+          ? NSColor.white.withAlphaComponent(0.10) : NSColor.controlBackgroundColor).setFill()
+      path.fill()
+    }
     NSColor.separatorColor.setStroke()
     path.lineWidth = 0.5
     path.stroke()

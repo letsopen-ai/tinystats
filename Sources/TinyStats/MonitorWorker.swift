@@ -83,6 +83,9 @@ final class MonitorWorker: @unchecked Sendable {
       var settings = settings
       settings.persistHistory = self.persistence.state.enabled
       let cadenceChanged = self.settings.interval != settings.interval
+      let regroupProcesses =
+        self.details && (self.detailModule == .cpu || self.detailModule == .memory)
+        && self.settings.processGrouping != settings.processGrouping
       if self.details && self.detailModule == .network,
         self.settings.processGrouping != settings.processGrouping
           || self.settings.networkTrafficRevision != settings.networkTrafficRevision
@@ -95,7 +98,9 @@ final class MonitorWorker: @unchecked Sendable {
       self.sampler?.configureInternetChecks(settings)
       self.sampler?.configureWeather(settings.weather)
       self.alerts.configure(settings.rules)
-      if cadenceChanged {
+      // Reuse the shared scheduler/demand, without resetting process rate baselines or
+      // collecting while paused/asleep. The UI retains only top-eight projections.
+      if cadenceChanged || regroupProcesses {
         self.arm()
       } else if oldClockStep != self.clockStep {
         self.arm(resetSchedule: false)
@@ -254,7 +259,7 @@ final class MonitorWorker: @unchecked Sendable {
   }
   private func tick() {
     autoreleasepool {
-      guard !terminating, let sampler else { return }
+      guard !terminating, !paused, !sleeping, let sampler else { return }
       let decision = schedule.next(
         at: uptime(), date: date(), interval: collectionInterval,
         clockStep: clockStep)

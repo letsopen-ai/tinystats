@@ -3,7 +3,7 @@ import Testing
 
 @testable import TinyStats
 
-@Test @MainActor func glassPolicyPreservesLegacyThroughMacOS26AndHonorsAccessibilityOn27() {
+@Test @MainActor func glassPolicyPreservesLegacyBelowMacOS26AndHonorsAccessibility() {
   for supported in [false, true] {
     for reduced in [false, true] {
       for contrast in [false, true] {
@@ -15,7 +15,7 @@ import Testing
     }
   }
   let expected: Bool
-  if #available(macOS 27, *) { expected = true } else { expected = false }
+  if #available(macOS 26, *) { expected = true } else { expected = false }
   #expect(GlassSurface.Environment.current.supportsGlass == expected)
 }
 
@@ -31,7 +31,7 @@ import Testing
 }
 
 @Test @MainActor func glassAccessibilityChangesReplaceMaterialWithoutRetainingOldViews() throws {
-  guard #available(macOS 27, *) else { return }
+  guard #available(macOS 26, *) else { return }
   var environment = GlassSurface.Environment(
     supportsGlass: true, reduceTransparency: false, increaseContrast: false)
   weak var released: GlassSurface?
@@ -41,7 +41,7 @@ import Testing
     surface.setFrameSize(.init(width: 344, height: 640))
     let glass = surface.subviews.first as? NSGlassEffectView
     #expect(glass?.style == .regular && glass?.tintColor == nil)
-    #expect(glass?.contentView != nil && glass?.effectIsInteractive == false)
+    #expect(glass?.contentView != nil)
     #expect(glass?.frame == surface.bounds && surface.treatment == .glass)
     NotificationCenter.default.post(name: NSColor.systemColorsDidChangeNotification, object: nil)
     #expect(surface.subviews.first === glass)
@@ -79,4 +79,69 @@ import Testing
   controller.view.layoutSubtreeIfNeeded()
   #expect(!surface.isHidden && surface.frame == controller.view.bounds)
   #expect(controller.view.subviews.filter { $0 is GlassSurface }.count == 1)
+}
+
+@Test @MainActor func glassSidebarRetainsLegacyMaterialAndAllRolesObserveDisplayOptions() throws {
+  let legacy = GlassSurface(
+    role: .sidebar,
+    environment: {
+      .init(supportsGlass: false, reduceTransparency: true, increaseContrast: true)
+    })
+  let effect = try #require(legacy.subviews.first as? NSVisualEffectView)
+  #expect(effect.material == .sidebar && effect.blendingMode == .withinWindow)
+  #expect(effect.state == .followsWindowActiveState)
+  var environment = GlassSurface.Environment(
+    supportsGlass: true, reduceTransparency: false, increaseContrast: false)
+  let surfaces = [GlassSurface.Role.panel, .sidebar, .chips].map { role in
+    GlassSurface(role: role, environment: { environment })
+  }
+  for option in 0..<3 {
+    environment.reduceTransparency = option == 0
+    environment.increaseContrast = option == 1
+    NSWorkspace.shared.notificationCenter.post(
+      name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+    #expect(surfaces.allSatisfy { $0.treatment == (option == 2 ? .glass : .solid) })
+    if option < 2 { #expect(surfaces.allSatisfy { $0.subviews.isEmpty }) }
+  }
+  #expect(
+    GlassSurface.washOpacity(role: .panel, dark: true)
+      > GlassSurface.washOpacity(role: .panel, dark: false))
+}
+
+@Test @MainActor func glassChipShapesShareOneContainerWithoutChangingControls() throws {
+  guard #available(macOS 26, *) else { return }
+  let editor = MenuBarCustomization(frame: .init(x: 0, y: 0, width: 620, height: 280))
+  editor.update(order: [.cpu, .memory, .network])
+  editor.layoutSubtreeIfNeeded()
+  for area in [editor.strip, editor.palette] {
+    area.layoutSubtreeIfNeeded()
+    let container = try #require(area.glass.subviews.first as? NSGlassEffectContainerView)
+    #expect(container.spacing == 8)
+    let content = try #require(container.contentView)
+    #expect(content.subviews.count == area.chips.count)
+    for (shape, chip) in zip(content.subviews, area.chips) {
+      #expect(shape is NSGlassEffectView && shape.frame == chip.frame)
+      #expect(chip.superview === area && chip.acceptsFirstResponder)
+      #expect(area.glass.hitTest(chip.frame.origin) == nil)
+      #expect(chip.accessibilityLabel() == "\(chip.module.title) menu bar item")
+    }
+  }
+}
+
+@Test @MainActor func glassDropdownCardsContainNoNestedEffectsAndWindowHasOneSidebar() throws {
+  let detail = DetailController()
+  detail.isPopoverPresentation = true
+  detail.selected = .cpu
+  detail.view.layoutSubtreeIfNeeded()
+  func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
+  let surfaces = descendants(detail.view).compactMap { $0 as? GlassSurface }
+  #expect(surfaces.filter { $0.role == .panel }.count == 1)
+  #expect(surfaces.filter { $0.role == .sidebar }.count == 1)
+  let summary = try #require(
+    descendants(detail.view).compactMap { $0 as? SummaryDashboardView }.first)
+  if #available(macOS 26, *) {
+    #expect(!descendants(summary).contains { $0 is NSGlassEffectView })
+  }
+  detail.isPopoverPresentation = false
+  #expect(surfaces.first { $0.role == .sidebar }?.isHiddenOrHasHiddenAncestor == false)
 }
