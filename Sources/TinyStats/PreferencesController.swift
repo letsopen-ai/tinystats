@@ -64,7 +64,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private lazy var clocks = NSTextField(string: "")
   private lazy var message = NSTextField(wrappingLabelWithString: "")
   private static let menuHelperText =
-    "Each readout opens its own page. Drag chips to customize, or use their context menus and keyboard actions. Scroll wide strips horizontally."
+    "Each readout opens its own page. Drag chips to customize, or use their context menus and keyboard actions. Chips wrap to keep every item visible."
   private lazy var menuMessage = NSTextField(wrappingLabelWithString: Self.menuHelperText)
   private var readouts: [Module: SystemSettingSwitch] = [:]
   private lazy var customization: MenuBarCustomization = {

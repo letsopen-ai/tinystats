@@ -193,7 +193,8 @@ import Testing
   try payload(.gpu)
   let cpu = try #require(editor.chips[.cpu])
   #expect(editor.strip.insertionIndex(at: .init(x: cpu.frame.minX, y: 20)) == 0)
-  drag.draggingLocation = .init(x: cpu.frame.maxX + 2, y: 53)
+  drag.draggingLocation = editor.strip.convert(
+    .init(x: cpu.frame.maxX + 2, y: cpu.frame.midY), to: nil)
   #expect(editor.strip.draggingEntered(drag) == .move)
   #expect(editor.strip.insertion == 1)
   #expect(settings.readouts == [.cpu, .memory, .network] && writes == 0)
@@ -205,7 +206,7 @@ import Testing
   #expect(settings.readouts == [.cpu, .gpu, .memory, .network] && writes == 1)
   #expect(editor.strip.insertion == nil)
   try payload(.network)
-  drag.draggingLocation = .init(x: 0, y: 53)
+  drag.draggingLocation = editor.strip.convert(.init(x: 0, y: cpu.frame.midY), to: nil)
   #expect(editor.strip.performDragOperation(drag))
   #expect(settings.readouts == [.network, .cpu, .gpu, .memory])
   #expect(editor.palette.performDragOperation(drag))
@@ -234,15 +235,14 @@ import Testing
   settings.readouts = Module.allCases.filter { $0 != .overview }
   editor.update(order: settings.readouts)
   #expect(editor.palette.chips.isEmpty)
-  #expect(editor.strip.contentWidth > editor.strip.enclosingScrollView?.bounds.width ?? 0)
+  #expect(editor.strip.chips.allSatisfy { editor.strip.bounds.contains($0.frame) })
   try payload(.cpu)
-  let scroll = try #require(editor.strip.enclosingScrollView)
+  let last = try #require(editor.strip.chips.last)
   drag.draggingLocation = editor.strip.convert(
-    .init(x: editor.strip.visibleRect.maxX - 2, y: 20), to: nil)
-  let previous = scroll.contentView.bounds.minX
+    .init(x: last.frame.maxX + 2, y: last.frame.midY), to: nil)
   #expect(editor.strip.draggingUpdated(drag) == .move)
-  #expect(scroll.contentView.bounds.minX > previous)
-  #expect(writes == 3)  // edge scrolling/hover still does not save settings
+  #expect(editor.strip.insertion == editor.order.count)
+  #expect(writes == 3)  // hover still does not save settings
 }
 
 @MainActor private final class NativeReadoutTarget: NSObject {
@@ -409,4 +409,147 @@ import Testing
   #expect(observation.accept(dragged) == nil)  // Changing frames cannot settle enforcement.
   #expect(observation.pendingEnforcedOrder == requested)
   #expect(observation.accept(requested) == requested)
+}
+
+@Test @MainActor func menuBarCustomizationWrapsEveryChipWithinBothWells() throws {
+  _ = NSApplication.shared
+  var settings = Settings()
+  settings.readouts = Module.allCases.filter { $0 != .overview }
+  let controller = PreferencesController(
+    settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
+  defer { controller.close() }
+  let root = try #require(controller.window?.contentView)
+  root.layoutSubtreeIfNeeded()
+  let views = layoutDescendants(root)
+  let editor = try #require(views.compactMap { $0 as? MenuBarCustomization }.first)
+  for width: CGFloat in [740, 884, 1000, 740] {
+    controller.window?.setContentSize(.init(width: width, height: 660))
+    for order in [settings.readouts, [.cpu], []] {
+      editor.update(order: order)
+      root.layoutSubtreeIfNeeded()
+      for well in [editor.strip, editor.palette] {
+        let parent = try #require(well.superview)
+        #expect(parent.bounds.contains(well.frame))
+        #expect(editor.bounds.contains(editor.convert(well.bounds, from: well)))
+        #expect(well.chips.allSatisfy { well.bounds.insetBy(dx: 8, dy: 8).contains($0.frame) })
+        #expect(
+          well.chips.allSatisfy {
+            well.hitTest(well.convert(.init(x: $0.frame.midX, y: $0.frame.midY), to: parent)) === $0
+          })
+      }
+      let disclosure = try #require(
+        views.compactMap { $0 as? NSButton }.first {
+          $0.accessibilityLabel() == "Customize menu bar readouts and styles"
+        })
+      let nextFrame = editor.convert(disclosure.bounds, from: disclosure)
+      #expect(nextFrame.minY >= editor.bounds.maxY + 8)
+    }
+  }
+}
+
+@Test @MainActor func menuBarRingFixtureKeepsShowOnAndOnlyDisablesFont() throws {
+  _ = NSApplication.shared
+  var settings = Settings()
+  settings.styles["cpu"] = .ring
+  let controller = PreferencesController(
+    settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
+  defer { controller.close() }
+  let root = try #require(controller.window?.contentView)
+  root.layoutSubtreeIfNeeded()
+  let views = layoutDescendants(root)
+  let toggle = try #require(
+    views.compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "CPU" })
+  let style = try #require(
+    views.compactMap { $0 as? NSPopUpButton }.first {
+      $0.accessibilityLabel() == "CPU menu bar style"
+    })
+  let font = try #require(
+    views.compactMap { $0 as? NSPopUpButton }.first {
+      $0.accessibilityLabel() == "CPU menu bar font size"
+    })
+  #expect(toggle.state == .on && toggle.isEnabled)
+  #expect(style.isEnabled && style.titleOfSelectedItem == MenuBarStyle.ring.title)
+  #expect(!font.isEnabled)
+}
+
+@Test @MainActor func menuBarWrappedRowsKeepDragKeyboardAndContextActions() throws {
+  _ = NSApplication.shared
+  var settings = Settings()
+  settings.readouts = Module.allCases.filter { $0 != .overview }
+  let editor = MenuBarCustomization(frame: .init(x: 0, y: 0, width: 640, height: 300))
+  let window = NSWindow(
+    contentRect: editor.frame, styleMask: [.titled], backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
+  window.contentView = editor
+  defer { window.close() }
+  editor.update(order: settings.readouts)
+  editor.onAction = { module, action in
+    let changed = settings.customizeReadout(module, action: action)
+    if changed { editor.update(order: settings.readouts) }
+    return changed
+  }
+  defer { editor.onAction = nil }
+  let rowStart = try #require(editor.strip.chips.firstIndex { $0.frame.minY > 12 })
+  let chip = editor.strip.chips[rowStart]
+  let preceding = editor.strip.chips[rowStart - 1]
+  #expect(
+    editor.strip.insertionIndex(at: .init(x: chip.frame.minX, y: chip.frame.midY)) == rowStart)
+  #expect(
+    editor.strip.insertionIndex(at: .init(x: preceding.frame.maxX + 3, y: preceding.frame.midY))
+      == rowStart)
+  #expect(window.makeFirstResponder(chip))
+  func key(_ code: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags = []) throws {
+    chip.keyDown(
+      with: try #require(
+        NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+          windowNumber: window.windowNumber, context: nil, characters: characters,
+          charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)))
+  }
+  try key(123, "", .option)
+  #expect(editor.order[rowStart - 1] == chip.module && chip.frame.minY == 12)
+  #expect(window.firstResponder === chip)
+  try key(124, "", .option)
+  #expect(editor.order[rowStart] == chip.module && chip.frame.minY > 12)
+  try key(36, "\r")
+  #expect(!editor.order.contains(chip.module) && chip.superview === editor.palette)
+  try key(49, " ")
+  #expect(editor.order.last == chip.module && chip.superview === editor.strip)
+  let menu = try #require(chip.menu(for: NSEvent()))
+  let start = try #require(menu.items.first { $0.title == "Move to start" })
+  #expect(NSApp.sendAction(try #require(start.action), to: start.target, from: start))
+  #expect(editor.order.first == chip.module && window.firstResponder === chip)
+  let drag = ReadoutDrag()
+  defer { drag.draggingPasteboard.releaseGlobally() }
+  drag.draggingSource = chip
+  #expect(drag.draggingPasteboard.writeObjects([editor.pasteboardItem(for: chip.module)]))
+  let targetIndex = try #require(editor.strip.chips.firstIndex { $0.frame.minY > 12 })
+  let target = editor.strip.chips[targetIndex]
+  drag.draggingLocation = editor.strip.convert(
+    .init(x: target.frame.minX, y: target.frame.midY), to: nil)
+  #expect(editor.strip.draggingEntered(drag) == .move)
+  #expect(editor.strip.insertion == targetIndex)
+  let marker = try #require(editor.strip.insertionFrame)
+  #expect(marker.minY == target.frame.minY + 2 && editor.strip.bounds.contains(marker))
+  #expect(editor.strip.performDragOperation(drag))
+  #expect(editor.order[targetIndex - 1] == chip.module)
+  #expect(!settings.weather.enabled)
+}
+
+@Test @MainActor func darkMenuBarChipGlyphUsesFullOpacityLabelInk() throws {
+  _ = NSApplication.shared
+  let chip = MenuBarChip(module: .battery)
+  chip.frame = .init(x: 0, y: 0, width: chip.chipWidth, height: 28)
+  chip.appearance = NSAppearance(named: .darkAqua)
+  let data = try #require(chip.dragImage()?.tiffRepresentation)
+  let bitmap = try #require(NSBitmapImageRep(data: data))
+  let scale = CGFloat(bitmap.pixelsHigh) / 28
+  var peak: CGFloat = 0
+  for y in Int(8 * scale)..<Int(20 * scale) {
+    for x in Int(10 * scale)..<Int(23 * scale) {
+      let color = try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+      peak = max(peak, min(color.redComponent, color.greenComponent, color.blueComponent))
+    }
+  }
+  #expect(peak > 0.9)
 }
