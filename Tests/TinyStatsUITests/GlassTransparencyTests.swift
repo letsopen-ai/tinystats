@@ -16,6 +16,29 @@ import Testing
   return bitmap
 }
 
+/// Explicit 2x raster makes ink checks independent of the host screen's backing scale.
+@MainActor func sensorInkBounds(_ field: NSTextField) throws -> NSRect {
+  let bitmap = try #require(
+    NSBitmapImageRep(
+      bitmapDataPlanes: nil, pixelsWide: Int(ceil(field.bounds.width * 2)),
+      pixelsHigh: Int(ceil(field.bounds.height * 2)), bitsPerSample: 8, samplesPerPixel: 4,
+      hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+  bitmap.size = field.bounds.size
+  field.effectiveAppearance.performAsCurrentDrawingAppearance {
+    field.cacheDisplay(in: field.bounds, to: bitmap)
+  }
+  let columns = (0..<bitmap.pixelsWide).filter { x in
+    (0..<bitmap.pixelsHigh).contains { y in
+      (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05
+    }
+  }
+  let first = try #require(columns.first)
+  let last = try #require(columns.last)
+  return NSRect(
+    x: CGFloat(first) / 2, y: 0, width: CGFloat(last + 1 - first) / 2,
+    height: field.bounds.height)
+}
+
 @Test @MainActor func glassWashAndComposingCardTintsPreserveBothFallbacks() throws {
   for dark in [false, true] {
     let appearance = try #require(NSAppearance(named: dark ? .darkAqua : .aqua))
@@ -90,40 +113,75 @@ import Testing
           detail.view.subviews.compactMap { $0 as? NSTextField }.first {
             $0.stringValue == "Sensors"
           })
-        func inkX(_ field: NSTextField) throws -> CGFloat {
-          let bitmap = try transparencyBitmap(field)
-          let first = try #require(
-            (0..<bitmap.pixelsWide).first { x in
-              (0..<bitmap.pixelsHigh).contains { y in
-                (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05
-              }
-            })
-          return field.convert(
-            .init(x: CGFloat(first) * field.bounds.width / CGFloat(bitmap.pixelsWide), y: 0),
-            to: detail.view
-          ).x
-        }
-        #expect(abs(try inkX(field) - inkX(title)) <= 0.5)
+        // Compare identical glyphs and font metrics rather than CPU vs Sensors bearings.
+        title.stringValue = field.stringValue
+        let fieldInk = try sensorInkBounds(field)
+        let titleInk = try sensorInkBounds(title)
+        let rowX = field.convert(fieldInk, to: detail.view).minX
+        let titleX = title.convert(titleInk, to: detail.view).minX
+        // Keep the real header font while exercising larger sensor rows with the same string.
+        #expect(abs(rowX - titleX) <= 0.5)  // One pixel at the explicit 2x scale.
       }
     }
   }
 }
 
-@Test @MainActor func sensorCellInkStartsTwelvePointsInsideBothHostRows() throws {
+@Test @MainActor func sensorCellInkKeepsTwelvePointInsetsInBothHosts() throws {
   for dropdown in [false, true] {
-    let field = SensorBrowserTextField(labelWithString: "Hg52")
-    field.font = .systemFont(ofSize: 12)
-    field.appearance = NSAppearance(named: .aqua)
-    field.frame = .init(x: 0, y: 0, width: dropdown ? 178 : 381, height: 25)
-    let bitmap = try transparencyBitmap(field)
-    let scale = CGFloat(bitmap.pixelsWide) / field.bounds.width
-    let columns = (0..<bitmap.pixelsWide).filter { x in
-      (0..<bitmap.pixelsHigh).contains { y in
-        (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05
+    for alignment in [NSTextAlignment.left, .right] {
+      let field = SensorBrowserTextField(labelWithString: alignment == .left ? "Hg52" : "52°C")
+      field.font = .systemFont(ofSize: 12)
+      field.alignment = alignment
+      field.appearance = NSAppearance(named: .aqua)
+      field.frame = .init(x: 0, y: 0, width: dropdown ? 178 : 381, height: 25)
+      let ink = try sensorInkBounds(field)
+      let inset = alignment == .left ? ink.minX : field.bounds.maxX - ink.maxX
+      #expect(abs(inset - 12) <= 0.5)  // At least one device pixel of raster tolerance.
+    }
+  }
+}
+
+@Test @MainActor func singleValueColumnsFitLongValuesAndKeepNarrowCardNamesNonnegative() {
+  let values = ["↓ 123.4 MB/s", "≥12%"]
+  let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+  let width = SummaryDashboardView.singleValueWidth(values, font: font)
+  #expect(width >= 76)
+  for value in values {
+    #expect(width - 3 >= (value as NSString).size(withAttributes: [.font: font]).width)
+  }
+  for areaWidth in [200.0, 100.0] {
+    let area = NSRect(x: 12, y: 0, width: areaWidth, height: 100)
+    let valueStart = area.maxX - width
+    let nameWidth = SummaryDashboardView.rowNameWidth(
+      valueStart: valueStart, minX: area.minX, app: true)
+    #expect(nameWidth >= 0)
+    if areaWidth == 200 { #expect(nameWidth > 0) }
+    #expect(
+      abs(SummaryDashboardView.appCountRect(valueStart: valueStart, y: 0).maxX + 3 - valueStart)
+        < 0.01)
+  }
+}
+
+@Test @MainActor func secondaryTraceClampOnlyChangesLightGlassAndPreservesHue() throws {
+  for name in [NSAppearance.Name.aqua, .darkAqua] {
+    let appearance = try #require(NSAppearance(named: name))
+    appearance.performAsCurrentDrawingAppearance {
+      let base = SystemStyle.secondaryAccent.usingColorSpace(.sRGB)!
+      for glass in [false, true] {
+        for role in [ChartSeriesRole.primary, .secondary] {
+          let trace = SystemStyle.chartTraceColor(
+            SystemStyle.secondaryAccent, role: role, glass: glass
+          )
+          .usingColorSpace(.sRGB)!
+          if glass && role == .secondary && name == .aqua {
+            #expect(trace.brightnessComponent <= 0.601)
+            #expect(abs(trace.hueComponent - base.hueComponent) < 0.01)
+          } else {
+            #expect(trace == base)
+          }
+        }
       }
     }
-    let first = CGFloat(try #require(columns.first)) / scale
-    #expect(abs(first - 12) <= 0.5)
   }
 }
 
@@ -143,7 +201,6 @@ import Testing
   let caption = SummaryDashboardView.overviewMemoryCaption(in: rect)
   #expect(abs(caption.minY - bar.maxY - 6) <= 0.01)
   #expect(caption.maxY < rect.maxY - 34)  // Preserve the existing legend clearance.
-
 }
 
 @Test @MainActor func menuBarShowSwitchesUseNativeDrawingAndInheritHostAppearance() throws {

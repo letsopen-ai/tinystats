@@ -29,6 +29,22 @@ enum SystemStyle {
   static let secondaryAccent = NSColor(name: nil) { appearance in
     resolvedPalette(in: appearance).secondary
   }
+  /// Keep the auto-derived hue, but cap light glass trace brightness for coloured backdrops.
+  static func chartTraceColor(_ color: NSColor, role: ChartSeriesRole, glass: Bool) -> NSColor {
+    guard glass, role == .secondary else { return color }
+    return NSColor(name: nil) { appearance in
+      guard !isDark(appearance) else { return color }
+      var resolved: NSColor = color
+      appearance.performAsCurrentDrawingAppearance {
+        resolved = color.usingColorSpace(.sRGB) ?? color
+      }
+      guard let rgb = resolved.usingColorSpace(.sRGB) else { return color }
+      let factor = min(1, 0.60 / max(0.001, rgb.brightnessComponent))
+      return NSColor(
+        srgbRed: rgb.redComponent * factor, green: rgb.greenComponent * factor,
+        blue: rgb.blueComponent * factor, alpha: rgb.alphaComponent)
+    }
+  }
   static let neutralSeries = NSColor(name: nil) { appearance in
     (isDark(appearance) ? NSColor.white : NSColor.black).withAlphaComponent(0.55)
   }

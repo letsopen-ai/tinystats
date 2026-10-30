@@ -1180,14 +1180,17 @@ import TinyStatsCore
           glass: usesPopoverLayout && glassEnvironment().treatment == .glass)
       ).setFill()
       if filled ?? !plot.firstRole.dashed { fill.fill() }
-      plot.firstColor.setStroke()
+      let traceColor = SystemStyle.chartTraceColor(
+        plot.firstColor, role: plot.firstRole,
+        glass: usesPopoverLayout && glassEnvironment().treatment == .glass)
+      traceColor.setStroke()
       if plot.firstRole.dashed { line.setLineDash([4, 3], count: 2, phase: 0) }
       line.lineWidth = GlassSurface.traceWidth(
         glass: usesPopoverLayout && glassEnvironment().treatment == .glass)
       line.stroke()
       if points.count == 1 {
         let dot = NSBezierPath(ovalIn: NSRect(x: first.x - 2, y: first.y - 2, width: 4, height: 4))
-        plot.firstRole.legendMarker.draw(in: dot.bounds, color: plot.firstColor)
+        plot.firstRole.legendMarker.draw(in: dot.bounds, color: traceColor)
       }
     }
   }

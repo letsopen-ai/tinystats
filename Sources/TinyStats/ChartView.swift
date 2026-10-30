@@ -149,7 +149,10 @@ enum ChartSeriesRole {
         previous = true
         hasData = true
       }
-      line.color.setStroke()
+      SystemStyle.chartTraceColor(
+        line.color, role: line.role,
+        glass: usesPanelGlass && glassEnvironment().treatment == .glass
+      ).setStroke()
       if line.role.dashed { path.setLineDash([4, 3], count: 2, phase: 0) }
       path.lineWidth = 1.5
       path.lineJoinStyle = .round

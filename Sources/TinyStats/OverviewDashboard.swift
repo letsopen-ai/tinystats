@@ -251,7 +251,10 @@ extension SummaryDashboardView {
     let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
       .withSymbolConfiguration(
         .init(pointSize: 13, weight: .regular).applying(
-          .init(paletteColors: [.secondaryLabelColor])))
+          .init(paletteColors: [
+            usesPopoverLayout && glassEnvironment().treatment == .glass
+              ? NSColor.labelColor.withAlphaComponent(0.65) : .secondaryLabelColor
+          ])))
     image?.draw(
       in: .init(x: rect.minX + 14, y: rect.minY + 12, width: 15, height: 15), from: .zero,
       operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)

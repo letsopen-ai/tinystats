@@ -85,7 +85,6 @@ import Testing
   _ = NSApp.setActivationPolicy(.accessory)
   NSApp.finishLaunching()
   NSApp.activate()
-  _ = NSRunningApplication.current.activate(options: [.activateAllWindows])
   defer { _ = NSApp.setActivationPolicy(savedPolicy) }
   let window = GlassGalleryWindow(
     contentRect: .init(x: 80, y: 80, width: 1080, height: 780), styleMask: [.borderless],
@@ -230,6 +229,14 @@ import Testing
         try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
           .write(to: folder.appendingPathComponent(stem + ".png"))
         try systemGalleryImage(backdrop, to: folder.appendingPathComponent(stem + "-bitmap.png"))
+        if settingsPage && !gradient && NSApp.isActive && window.isKeyWindow {
+          try #require(
+            NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+          )
+          .write(
+            to: folder.appendingPathComponent(
+              "glass-onscreen-settings-menu-bar-active-\(theme.rawValue).png"))
+        }
         insertionDrag?.draggingPasteboard.releaseGlobally()
         controller.view.removeFromSuperview()
         preferences?.disposeEmbedded()
@@ -1466,6 +1473,56 @@ import Testing
           }
         }
       }
+    }
+  }
+}
+
+/// Detached native controls use AppKit's active drawing appearance without foreground input.
+@Test @MainActor func menuBarSwitchActiveAppearanceHasDistinctNativeOnInk() throws {
+  _ = NSApplication.shared
+  for theme in [AppTheme.light, .dark] {
+    let root = NSView(frame: .init(x: 0, y: 0, width: 240, height: 80))
+    root.appearance = theme.nativeAppearance
+    let controls = [SystemSettingSwitch(title: "CPU"), SystemSettingSwitch(title: "GPU")]
+    for (index, control) in controls.enumerated() {
+      control.controlSize = .small
+      control.state = index == 0 ? .on : .off
+      control.frame = .init(x: 32 + index * 120, y: 26, width: 42, height: 24)
+      root.addSubview(control)
+    }
+    root.layoutSubtreeIfNeeded()
+    var chromaticPixels: [Int] = []
+    for control in controls {
+      let bitmap = try #require(control.bitmapImageRepForCachingDisplay(in: control.bounds))
+      control.effectiveAppearance.performAsCurrentDrawingAppearance {
+        control.cacheDisplay(in: control.bounds, to: bitmap)
+      }
+      var count = 0
+      for y in 0..<bitmap.pixelsHigh {
+        for x in 0..<bitmap.pixelsWide {
+          if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+            color.alphaComponent > 0.5
+          {
+            let channels = [color.redComponent, color.greenComponent, color.blueComponent]
+            if (channels.max() ?? 0) - (channels.min() ?? 0) > 0.15 { count += 1 }
+          }
+        }
+      }
+      chromaticPixels.append(count)
+    }
+    #expect(chromaticPixels[0] > chromaticPixels[1] + 20)
+    if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
+      let folder = URL(fileURLWithPath: path, isDirectory: true)
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      try systemGalleryImage(
+        root,
+        to: folder.appendingPathComponent(
+          "glass-offscreen-settings-menu-bar-active-\(theme.rawValue).png"))
+      try
+        "Detached native switch active drawing appearance. Native ON/OFF chromatic pixel counts: \(chromaticPixels). No claim of foreground activation.\n"
+        .write(
+          to: folder.appendingPathComponent("switch-active-\(theme.rawValue).txt"),
+          atomically: true, encoding: .utf8)
     }
   }
 }

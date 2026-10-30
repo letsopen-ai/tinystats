@@ -4,8 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
-- Make macOS 26+ glass more transparent: dropdown wash 60% light / 70% dark, sidebar 55% / 65%, and native grouped chips without an extra wash. Compose inset cards with 2.5% light label-colour / 24% dark window-background tints to preserve backdrop hue without seams; strengthen glass-only secondary ink. Preserve legacy and accessibility fallback fills and both accents.
-- Centre Sensors labels through titleRect, size rows from font metrics, verify 12pt glyph padding and align window rows with the title. Anchor Apps counts beside a fixed value column, give Overview Memory's caption a 6pt bar gap, and verify native appearance-inheriting Menu Bar switches. Keep the footer icon-only and Processes / Apps in its card header.
+- Make macOS 26+ glass more transparent: dropdown wash 60% light / 70% dark, sidebar 55% / 65%, and native grouped chips at 0% extra wash (previously inherited the sidebar wash). Compose inset cards with 2.5% light label-colour / 24% dark window-background tints to preserve backdrop hue without seams; strengthen glass-only secondary ink. Preserve legacy and accessibility fallback fills and system-derived accent hues; darken light glass secondary traces for contrast.
+- Centre Sensors labels through titleRect, size rows from font metrics, verify 12pt glyph padding and align window rows with the title. Anchor Apps counts beside a measured value column (76pt minimum), give Overview Memory's caption a 6pt bar gap, and verify native appearance-inheriting Menu Bar switches.
 
 - Extend native Liquid Glass to macOS 26+: one dropdown panel behind neutral inset cards and its icon-only footer, a glass sidebar in Overview/monitoring/Settings, and container-grouped Menu Bar drag chips. Keep chart/number cards and forms neutral, preserve both system-derived accents and macOS 14–25 materials, strengthen the dark wash, and switch every new surface to semantic solid fills for Reduce Transparency or Increase Contrast while open.
 

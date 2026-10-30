@@ -209,8 +209,17 @@ extension SummaryDashboardView {
       meterY = max(0, height - 3)
     }
   }
-  /// Single-value rows share a fixed trailing value column; Apps counts sit directly beside it.
+  /// Single-value rows share a measured trailing column with a 76pt minimum.
   static let rowValueWidth: CGFloat = 76
+  static func singleValueWidth(_ values: [String], font: NSFont) -> CGFloat {
+    max(
+      rowValueWidth,
+      (values.map { ceil(($0 as NSString).size(withAttributes: [.font: font]).width) }
+        .max() ?? 0) + 3)
+  }
+  static func rowNameWidth(valueStart: CGFloat, minX: CGFloat, app: Bool) -> CGFloat {
+    max(0, valueStart - minX - 6 - (app ? 24 + ProcessAppLabelCell.countWidth + 3 : 0))
+  }
   static func appCountRect(valueStart: CGFloat, y: CGFloat) -> NSRect {
     .init(
       x: valueStart - ProcessAppLabelCell.countWidth - 3, y: y,
@@ -228,6 +237,9 @@ extension SummaryDashboardView {
     let valueAttributes: [NSAttributedString.Key: Any] = [
       .font: NSFont.systemFont(ofSize: height < 18 ? 10 : 11, weight: .medium)
     ]
+    let singleWidth = Self.singleValueWidth(
+      rows.filter { $0.second == nil }.map(\.value),
+      font: .systemFont(ofSize: height < 18 ? 10 : 11, weight: .medium))
     // Paired Apps values need only their measured ink width. Give the remaining
     // space to the name, retaining the independent four-digit count gutter.
     let firstWidth = min(
@@ -264,7 +276,7 @@ extension SummaryDashboardView {
         ? area.maxX - firstWidth - secondWidth
         : paired
           ? area.minX + area.width * 0.43
-          : processColumns ? area.maxX - Self.rowValueWidth : area.minX + area.width * 0.56
+          : processColumns ? area.maxX - singleWidth : area.minX + area.width * 0.56
       let secondStart = fitsApp ? area.maxX - secondWidth : area.minX + area.width * 0.73
       if paired {
         let barWidth = secondStart - valueStart
@@ -304,8 +316,9 @@ extension SummaryDashboardView {
         label,
         rect: NSRect(
           x: area.minX + 3 + iconInset, y: textY,
-          width: valueStart - area.minX - 6 - iconInset
-            - (row.displayName == nil ? 0 : ProcessAppLabelCell.countWidth + 3), height: textHeight),
+          width: Self.rowNameWidth(
+            valueStart: valueStart, minX: area.minX, app: row.displayName != nil),
+          height: textHeight),
         size: height < 18 ? 10 : 11)
       text(
         row.value,

@@ -267,6 +267,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     for scroll in [summaryScroll, weatherScroll, detailScroll].compactMap({
       $0 as? PopoverScrollView
     }) {
+      scroll.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
       scroll.fadesBottom = isPopoverPresentation
     }
     summary?.usesPopoverLayout = isPopoverPresentation
@@ -296,6 +297,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   func monitoringVisibilityChanged(_ visible: Bool) {
     onMonitoringDemand?(visible && !showsSettings ? selected : nil)
   }
+  // Test seam for natural-height/large-font containment; production uses the default 12pt.
   var sensorFont: NSFont = .systemFont(ofSize: 12) {
     didSet {
       guard isViewLoaded else { return }
@@ -336,7 +338,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     let width = max(0, w - 180)
     titleLabel.frame.origin = .init(x: 154, y: h - 42)
-    readingsButton.frame = .init(x: w - 132, y: h - 44, width: 108, height: 26)
+    // Match Sensors value ink: 18pt outer scroll inset plus the cell’s 12pt ink inset.
+    let sensorValueInset: CGFloat =
+      selected == .sensors && glassEnvironment().treatment == .glass ? 30 : 24
+    readingsButton.frame = .init(x: w - sensorValueInset - 108, y: h - 44, width: 108, height: 26)
     historyButton.frame = .init(
       x: w - (selected == .overview ? 120 : 227), y: h - 44, width: selected == .overview ? 92 : 90,
       height: selected == .overview ? 28 : 26)
@@ -367,9 +372,14 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let labelWidth: CGFloat = (selected == .network ? 240 : 280) + max(0, w - 700) * 0.55
     sizeColumn(table.tableColumns.first, to: min(columnsWidth, labelWidth))
     sizeColumn(table.tableColumns.last, to: max(0, columnsWidth - labelWidth))
+    let pauseInset: CGFloat =
+      selected == .sensors && glassEnvironment().treatment == .glass ? 30 : 28
     pauseButton.frame = .init(
-      x: w - (selected == .overview ? 216 : 100), y: selected == .overview ? h - 44 : 18,
+      x: w - (selected == .overview ? 216 : pauseInset + 72),
+      y: selected == .overview ? h - 44 : 18,
       width: selected == .overview ? 90 : 72, height: 28)
+    // Only the window reaches this branch; popover layout returns above. Glass ink is
+    // refreshed after updates/appearance changes by refreshGlassInk, never reset here.
     titleLabel.textColor = selected == .overview ? .labelColor : .secondaryLabelColor
     if selected == .overview {
       titleLabel.font = .systemFont(ofSize: 15, weight: .bold)
@@ -424,7 +434,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     if selected == .weather && !showsAllReadings { titleLabel.isHidden = true }
     var top = h - (compact ? 10 : 118)
     if selected == .sensors {
-      sensorCountLabel.frame = .init(x: w - x - 160, y: h - 39, width: 160, height: 20)
+      sensorCountLabel.frame = .init(
+        x: w - x - 160 + (glassEnvironment().treatment == .glass ? 3 : 0),
+        y: h - 39, width: 160, height: 20)
       top -= 32
       sensorSearch.frame = .init(x: inset, y: top + 4, width: width, height: 26)
     }
@@ -1329,6 +1341,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
 /// follows layout/appearance only; no observer, animation, event loop or timer.
 @MainActor final class PopoverScrollView: NSScrollView {
   private let fade = CAGradientLayer()
+  var glassEnvironment: () -> GlassSurface.Environment = { .current }
   var fadesBottom = false {
     didSet {
       guard oldValue != fadesBottom else { return }
@@ -1345,13 +1358,16 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     fade.frame = bounds
-    // Six clear points hide cut card rims before the sixteen-point ramp.
+    // On glass, fade directly into the existing panel tint: no clear shelf that
+    // reads as a lighter band. Legacy/solid retain their six-point lead and ramp.
+    let clearLead: CGFloat = glassEnvironment().treatment == .glass ? 0 : 6
+    let fadeHeight: CGFloat = 22
     fade.colors = [
       NSColor.clear.cgColor, NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor,
     ]
     fade.locations = [
-      0, NSNumber(value: min(1, 6 / max(1, bounds.height))),
-      NSNumber(value: min(1, 22 / max(1, bounds.height))), 1,
+      0, NSNumber(value: min(1, clearLead / max(1, bounds.height))),
+      NSNumber(value: min(1, fadeHeight / max(1, bounds.height))), 1,
     ]
     // NSScrollView has a flipped backing layer: normalized y=1 is the footer edge.
     fade.startPoint = .init(x: 0.5, y: 1)

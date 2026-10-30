@@ -31,7 +31,11 @@ import Testing
         }
         #expect(!pause.isHiddenOrHasHiddenAncestor && pause.isEnabled)
         #expect(detail.view.bounds.contains(pause.frame))
-        #expect(detail.view.bounds.maxX - pause.frame.maxX == (module == .overview ? 126 : 28))
+        let expectedInset: CGFloat =
+          module == .overview
+          ? 126
+          : module == .sensors && detail.glassEnvironment().treatment == .glass ? 30 : 28
+        #expect(abs(detail.view.bounds.maxX - pause.frame.maxX - expectedInset) <= 0.01)
         #expect(NSApp.sendAction(try #require(pause.action), to: pause.target, from: pause))
         #expect(detail.paused && pause.title == "Resume")
         detail.update(Snapshot(), history: [])
