@@ -1491,26 +1491,38 @@ import Testing
       root.addSubview(control)
     }
     root.layoutSubtreeIfNeeded()
-    var chromaticPixels: [Int] = []
+    var samples: [[(luminance: CGFloat, alpha: CGFloat)]] = []
     for control in controls {
       let bitmap = try #require(control.bitmapImageRepForCachingDisplay(in: control.bounds))
       control.effectiveAppearance.performAsCurrentDrawingAppearance {
         control.cacheDisplay(in: control.bounds, to: bitmap)
       }
-      var count = 0
+      var pixels: [(luminance: CGFloat, alpha: CGFloat)] = []
       for y in 0..<bitmap.pixelsHigh {
         for x in 0..<bitmap.pixelsWide {
-          if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
-            color.alphaComponent > 0.5
-          {
-            let channels = [color.redComponent, color.greenComponent, color.blueComponent]
-            if (channels.max() ?? 0) - (channels.min() ?? 0) > 0.15 { count += 1 }
+          let color = try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+          let channels = [color.redComponent, color.greenComponent, color.blueComponent].map {
+            $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4)
           }
+          pixels.append(
+            (
+              channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722,
+              color.alphaComponent
+            ))
         }
       }
-      chromaticPixels.append(count)
+      samples.append(pixels)
     }
-    #expect(chromaticPixels[0] > chromaticPixels[1] + 20)
+    #expect(samples[0].count == samples[1].count)
+    // Native ON must differ even with a neutral Graphite accent: compare coverage
+    // and premultiplied luminance rather than requiring chromatic track pixels.
+    var distinctPixels = 0
+    for (on, off) in zip(samples[0], samples[1]) {
+      let alphaDifference = abs(on.alpha - off.alpha)
+      let luminanceDifference = abs(on.luminance * on.alpha - off.luminance * off.alpha)
+      if alphaDifference > 0.1 || luminanceDifference > 0.1 { distinctPixels += 1 }
+    }
+    #expect(distinctPixels > 20)
     if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
       let folder = URL(fileURLWithPath: path, isDirectory: true)
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -1519,7 +1531,7 @@ import Testing
         to: folder.appendingPathComponent(
           "glass-offscreen-settings-menu-bar-active-\(theme.rawValue).png"))
       try
-        "Detached native switch active drawing appearance. Native ON/OFF chromatic pixel counts: \(chromaticPixels). No claim of foreground activation.\n"
+        "Detached native switch active drawing appearance. Native ON/OFF distinct luminance/alpha pixels: \(distinctPixels). No claim of foreground activation.\n"
         .write(
           to: folder.appendingPathComponent("switch-active-\(theme.rawValue).txt"),
           atomically: true, encoding: .utf8)

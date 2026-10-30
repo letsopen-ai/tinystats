@@ -167,7 +167,11 @@ enum ChartSeriesRole {
       let string = NSMutableAttributedString(
         string: label, attributes: [.font: font, .foregroundColor: secondaryInk])
       string.addAttribute(
-        .foregroundColor, value: line.color, range: NSRange(location: 0, length: 1))
+        .foregroundColor,
+        value: SystemStyle.chartTraceColor(
+          line.color, role: line.role,
+          glass: usesPanelGlass && glassEnvironment().treatment == .glass),
+        range: NSRange(location: 0, length: 1))
       string.draw(at: NSPoint(x: x, y: bounds.height - 13))
       x += string.size().width + 14
     }

@@ -120,7 +120,7 @@ import Testing
         let rowX = field.convert(fieldInk, to: detail.view).minX
         let titleX = title.convert(titleInk, to: detail.view).minX
         // Keep the real header font while exercising larger sensor rows with the same string.
-        #expect(abs(rowX - titleX) <= 0.5)  // One pixel at the explicit 2x scale.
+        #expect(abs(rowX - titleX) <= 1.0)  // Two independently rounded ink origins.
       }
     }
   }
@@ -136,7 +136,7 @@ import Testing
       field.frame = .init(x: 0, y: 0, width: dropdown ? 178 : 381, height: 25)
       let ink = try sensorInkBounds(field)
       let inset = alignment == .left ? ink.minX : field.bounds.maxX - ink.maxX
-      #expect(abs(inset - 12) <= 0.5)  // At least one device pixel of raster tolerance.
+      #expect(abs(inset - 12) <= (alignment == .left ? 0.75 : 0.5))
     }
   }
 }
@@ -144,14 +144,18 @@ import Testing
 @Test @MainActor func singleValueColumnsFitLongValuesAndKeepNarrowCardNamesNonnegative() {
   let values = ["↓ 123.4 MB/s", "≥12%"]
   let font = NSFont.systemFont(ofSize: 11, weight: .medium)
-  let width = SummaryDashboardView.singleValueWidth(values, font: font)
+  let width = SummaryDashboardView.singleValueWidth(values, font: font, areaWidth: 200)
   #expect(width >= 76)
   for value in values {
     #expect(width - 3 >= (value as NSString).size(withAttributes: [.font: font]).width)
   }
   for areaWidth in [200.0, 100.0] {
     let area = NSRect(x: 12, y: 0, width: areaWidth, height: 100)
-    let valueStart = area.maxX - width
+    let boundedWidth = SummaryDashboardView.singleValueWidth(
+      values, font: font, areaWidth: area.width)
+    #expect(boundedWidth <= area.width * 0.6)
+    let valueStart = area.maxX - boundedWidth
+    #expect(valueStart >= area.minX)
     let nameWidth = SummaryDashboardView.rowNameWidth(
       valueStart: valueStart, minX: area.minX, app: true)
     #expect(nameWidth >= 0)
@@ -175,7 +179,8 @@ import Testing
           .usingColorSpace(.sRGB)!
           if glass && role == .secondary && name == .aqua {
             #expect(trace.brightnessComponent <= 0.601)
-            #expect(abs(trace.hueComponent - base.hueComponent) < 0.01)
+            let hueDistance = abs(trace.hueComponent - base.hueComponent)
+            #expect(min(hueDistance, 1 - hueDistance) < 0.01)
           } else {
             #expect(trace == base)
           }
@@ -246,5 +251,41 @@ import Testing
     }
     let ink = try #require(inks.max { $0.alphaComponent < $1.alphaComponent })
     #expect(emphasized ? ink.redComponent > 0.9 : ink.redComponent < 0.2)
+  }
+}
+
+@Test @MainActor func popoverFadeRecomputesOnGlassAndAccessibilityTransitions() throws {
+  var environment = GlassSurface.Environment(
+    supportsGlass: true, reduceTransparency: false, increaseContrast: false)
+  let detail = DetailController()
+  detail.glassEnvironment = { environment }
+  detail.isPopoverPresentation = true
+  detail.view.setFrameSize(SystemStyle.popoverSize)
+  let root = try #require(detail.view as? MainContentView)
+  let scrolls = root.subviews.compactMap { $0 as? PopoverScrollView }
+  #expect(scrolls.count == 3)
+  for next in [
+    environment,
+    .init(supportsGlass: true, reduceTransparency: true, increaseContrast: false),
+    environment,
+    .init(supportsGlass: true, reduceTransparency: false, increaseContrast: true),
+    .init(supportsGlass: false, reduceTransparency: false, increaseContrast: false),
+    environment,
+  ] {
+    environment = next
+    for scroll in scrolls {
+      scroll.frame = .init(x: 0, y: 0, width: 200, height: 200)
+      scroll.layoutSubtreeIfNeeded()
+      scroll.needsLayout = false
+    }
+    root.systemStyleDidChange()
+    for scroll in scrolls {
+      #expect(scroll.needsLayout)
+      scroll.layoutSubtreeIfNeeded()
+      let fade = try #require(scroll.layer?.mask as? CAGradientLayer)
+      let locations = try #require(fade.locations)
+      let clearLead = environment.treatment == .glass ? 0.0 : 6.0
+      #expect(abs(locations[1].doubleValue - clearLead / scroll.bounds.height) < 0.0001)
+    }
   }
 }

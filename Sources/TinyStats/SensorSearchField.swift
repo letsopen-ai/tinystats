@@ -57,6 +57,7 @@ import AppKit
     var text = rect.insetBy(dx: 12, dy: 0)
     // Align actual glyph ink, without NSTextFieldCell's extra drawing inset or side bearings.
     if alignment == .left || alignment == .natural {
+      // Keep whole-point ink anchoring consistent in detached and hosted fallback cells.
       text.origin.x = (text.origin.x - ink.minX).rounded()
       text.size.width += ink.minX
     } else if alignment == .right {
@@ -65,7 +66,6 @@ import AppKit
     let height = ceil((font?.ascender ?? 0) - (font?.descender ?? 0) + (font?.leading ?? 0))
     text.origin.y = rect.midY - height / 2
     text.size.height = height
-    // Keep whole-point ink anchoring consistent in detached and hosted fallback cells.
     return text
   }
   override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
