@@ -1,5 +1,7 @@
+import AppKit
 import Foundation
 import Testing
+import TinyStatsCore
 
 @testable import TinyStats
 
@@ -133,4 +135,34 @@ private func simulate(_ rgb: AccentPalette.RGB, _ matrix: [[Double]]) -> AccentP
     return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1 / 2.4) - 0.055
   }
   return .init(mapped[0], mapped[1], mapped[2])
+}
+
+@Test(arguments: Module.allCases.filter { $0 != .overview }) @MainActor
+func moduleIdentityPairsResolveAppearancesAndRetainContrast(_ module: Module) throws {
+  let palette = try #require(SystemStyle.modulePalettes[module])
+  for dark in [false, true] {
+    let appearance = try #require(NSAppearance(named: dark ? .darkAqua : .aqua))
+    let primary = AccentPalette.RGB(hex: dark ? palette.dark : palette.light)
+    let secondary = AccentPalette.RGB(hex: dark ? palette.darkSecondary : palette.lightSecondary)
+    appearance.performAsCurrentDrawingAppearance {
+      for (color, expected) in [(palette.primary, primary), (palette.secondary, secondary)] {
+        let actual = color.usingColorSpace(.sRGB)!
+        #expect(abs(actual.redComponent - expected.red) < 0.0001)
+        #expect(abs(actual.greenComponent - expected.green) < 0.0001)
+        #expect(abs(actual.blueComponent - expected.blue) < 0.0001)
+        #expect(actual.alphaComponent == 1)
+      }
+    }
+    #expect(abs(primary.lab.lightness - secondary.lab.lightness) >= 0.13)
+    for matrix in [protanopia, deuteranopia] {
+      #expect(simulate(primary, matrix).lab.distance(to: simulate(secondary, matrix).lab) >= 0.12)
+    }
+    for color in [primary, secondary] {
+      // Solid fallback/window and conservative neutral bounds; composited glass is measured
+      // separately from the owned-window captures, since its colour depends on the backdrop.
+      for background: UInt32 in dark ? [0x1F1F21, 0x343436] : [0xFFFFFF, 0xECECEE, 0xD5D5D5] {
+        #expect(color.contrast(against: .init(hex: background)) >= 3)
+      }
+    }
+  }
 }

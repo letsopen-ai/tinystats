@@ -469,8 +469,9 @@ import TinyStatsCore
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
     image?.draw(in: symbol, from: .zero, operation: .sourceOver, fraction: 1)
-    // Resolve in the current drawing appearance, then use the label hue at full opacity.
-    NSColor.labelColor.withAlphaComponent(1).setFill()
+    // Settings chips have a known semantic backing; real status items stay monochrome.
+    let module = (button as? MenuBarChip)?.module ?? .overview
+    SystemStyle.moduleAccent(module).setFill()
     symbol.fill(using: .sourceIn)
     NSGraphicsContext.current?.cgContext.endTransparencyLayer()
     NSGraphicsContext.restoreGraphicsState()

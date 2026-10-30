@@ -275,8 +275,10 @@ import TinyStatsCore
           second: labels.1.isEmpty ? [] : recent.map { $0[keyPath: second] },
           firstLabel: labels.0, secondLabel: labels.1, firstValue: values.0, secondValue: values.1,
           percent: percent, mirrored: mirrored,
-          firstColor: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
-          secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent,
+          firstColor: module == .network
+            ? SystemStyle.moduleSecondary(module) : SystemStyle.moduleAccent(module),
+          secondColor: module == .network
+            ? SystemStyle.moduleAccent(module) : SystemStyle.moduleSecondary(module),
           firstRole: module == .network ? .secondary : .primary,
           secondRole: module == .network ? .primary : .secondary,
           time: .init(recent.map(\.time), intervals: recent.map(\.sampleInterval)),
@@ -310,7 +312,7 @@ import TinyStatsCore
             + (app.pid == nil
               ? "" : " · \(app.processCount) \(app.processCount == 1 ? "process" : "processes")"),
           value: memory ? app.memory.map(Display.bytes) ?? "—" : app.cpuDisplayValue,
-          fraction: fraction,
+          fraction: fraction, color: SystemStyle.moduleAccent(module),
           accessibilityValue: !memory && app.cpuIncomplete > 0
             ? app.cpuDisplayValue + " · " + (app.cpuMeasurementHelp ?? "")
             : nil,
@@ -325,7 +327,7 @@ import TinyStatsCore
       return zip(processes, fractions).map { process, fraction in
         Reading(
           label: processName(process), value: Display.processPercent(process.cpu),
-          fraction: fraction)
+          fraction: fraction, color: SystemStyle.moduleAccent(module))
       }
     }
     func rateRows(_ names: [String], _ first: [Double?], _ second: [Double?]) -> [Reading] {
@@ -334,10 +336,12 @@ import TinyStatsCore
         Reading(
           label: names[index], value: Display.rate(first[index]),
           second: Display.rate(second[index]), fraction: fractions[index],
-          color: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
+          color: module == .network
+            ? SystemStyle.moduleSecondary(module) : SystemStyle.moduleAccent(module),
           role: module == .network ? .secondary : .primary,
           secondFraction: fractions[index + first.count],
-          secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent,
+          secondColor: module == .network
+            ? SystemStyle.moduleAccent(module) : SystemStyle.moduleSecondary(module),
           secondRole: module == .network ? .primary : .secondary)
       }
     }
@@ -351,7 +355,7 @@ import TinyStatsCore
         trend = Plot(
           first: miniRecent.map { $0[keyPath: key] }, second: [], firstLabel: label,
           secondLabel: "", firstValue: value, secondValue: "", percent: percent,
-          mirrored: false, firstColor: SystemStyle.accent,
+          mirrored: false, firstColor: SystemStyle.moduleAccent(module),
           time: .init(miniRecent.map(\.time), intervals: miniRecent.map(\.sampleInterval)),
           valueFormat: key == \.temperature
             ? .temperature(fahrenheit: settings.fahrenheit) : percent ? .percent : .rate)
@@ -365,13 +369,13 @@ import TinyStatsCore
       return [
         Gauge(
           label: "Device", value: Display.percent(gpu?.usage), percent: gpu?.usage,
-          color: SystemStyle.accent),
+          color: SystemStyle.moduleAccent(module)),
         Gauge(
           label: "Renderer", value: Display.percent(gpu?.rendererUsage),
-          percent: gpu?.rendererUsage, color: SystemStyle.accent),
+          percent: gpu?.rendererUsage, color: SystemStyle.moduleAccent(module)),
         Gauge(
           label: "Tiler", value: Display.percent(gpu?.tilerUsage), percent: gpu?.tilerUsage,
-          color: SystemStyle.secondaryAccent),
+          color: SystemStyle.moduleSecondary(module)),
       ]
     }
     func trafficRows() -> [Reading] {
@@ -401,14 +405,15 @@ import TinyStatsCore
       var readings: [Reading] = [
         .init(
           label: "Hottest temperature",
-          value: temperature(hottest?.value), color: SystemStyle.secondaryAccent)
+          value: temperature(hottest?.value), color: SystemStyle.moduleSecondary(module))
       ]
       let fans = s.sensors.filter {
         $0.kind == .fan && ($0.fanOwner == component || $0.fanOwner == nil)
       }
       readings += fans.prefix(3).map {
         .init(
-          label: $0.name, value: $0.formatted(fahrenheit: false), color: SystemStyle.secondaryAccent
+          label: $0.name, value: $0.formatted(fahrenheit: false),
+          color: SystemStyle.moduleSecondary(module)
         )
       }
       if fans.isEmpty { readings.append(.init(label: "Fan speed", value: "Unavailable")) }
@@ -472,12 +477,14 @@ import TinyStatsCore
         tile(
           "GPU cores", selectedGPU?.coreCount.map(String.init) ?? "—", .systemGray,
           detail: "Hardware count"),
-        tile("Active frequency", frequency("GPU"), SystemStyle.accent),
+        tile("Active frequency", frequency("GPU"), SystemStyle.moduleAccent(module)),
         tile(
           "Hottest GPU sensor", temperature(sensor(.gpu, .temperature)),
-          SystemStyle.secondaryAccent,
+          SystemStyle.moduleSecondary(module),
           fraction: sensor(.gpu, .temperature).map { $0 / 100 }, detail: temperatureScale),
-        tile("Allocated memory", selectedGPU?.memory.map(Display.bytes) ?? "—", SystemStyle.accent),
+        tile(
+          "Allocated memory", selectedGPU?.memory.map(Display.bytes) ?? "—",
+          SystemStyle.moduleAccent(module)),
       ]
       card(
         "HARDWARE", 164, 134, .tiles(hardware, columns: 2),
@@ -494,7 +501,7 @@ import TinyStatsCore
             ? "\(process.name) (\(process.pid))" : process.name,
           value: GPUProcessTimeSnapshot.formatted(process.millisecondsPerSecond),
           fraction: fraction,
-          color: SystemStyle.secondaryAccent,
+          color: SystemStyle.moduleSecondary(module),
           accessibilityValue: process.millisecondsPerSecond.map {
             String(format: "%.1f milliseconds of GPU time per second", $0)
           } ?? "Unavailable")
@@ -527,7 +534,7 @@ import TinyStatsCore
         : zip(processes, fractions).map { process, fraction in
           Reading(
             label: processName(process), value: Display.bytes(process.memory),
-            fraction: fraction, color: SystemStyle.accent)
+            fraction: fraction, color: SystemStyle.moduleAccent(module))
         }
       card(
         settings.processGrouping == .bundles ? "TOP APPS" : "TOP PROCESSES", 288, 124,
@@ -546,7 +553,7 @@ import TinyStatsCore
       func capacityTile(_ volume: VolumeReading, startup: Bool = false) -> Tile {
         tile(
           volume.name + (startup && volume.name != "Startup disk" ? " · Startup" : ""),
-          Display.bytes(volume.available) + " free", SystemStyle.secondaryAccent,
+          Display.bytes(volume.available) + " free", SystemStyle.moduleSecondary(module),
           fraction: volume.total > 0 ? volume.percent / 100 : nil,
           detail: (volume.total > 0 ? Display.percent(volume.percent) + " used · " : "")
             + Display.bytes(volume.total) + " capacity")
@@ -554,7 +561,7 @@ import TinyStatsCore
       let startup = s.startupVolume
       var volumes = [
         startup.map { capacityTile($0, startup: true) }
-          ?? tile("Startup", "—", SystemStyle.secondaryAccent, detail: "Volume unavailable")
+          ?? tile("Startup", "—", SystemStyle.moduleSecondary(module), detail: "Volume unavailable")
       ]
       volumes += s.volumes.lazy.filter { $0.path != "/" }.prefix(1).map { capacityTile($0) }
       let storageHeight: CGFloat = 106
@@ -656,10 +663,10 @@ import TinyStatsCore
           .gauges([
             .init(
               label: "Charge", value: Display.percent(battery.percent), percent: battery.percent,
-              color: SystemStyle.accent),
+              color: SystemStyle.moduleAccent(module)),
             .init(
               label: "Health", value: Display.percent(battery.health), percent: battery.health,
-              color: SystemStyle.secondaryAccent),
+              color: SystemStyle.moduleSecondary(module)),
           ]),
           trailing: BatteryMenuState.state(for: battery).title)
         card(
@@ -669,16 +676,17 @@ import TinyStatsCore
               tile(
                 "Remaining",
                 battery.minutesRemaining.map { "\($0 / 60)h \($0 % 60)m" }
-                  ?? "—", SystemStyle.accent),
+                  ?? "—", SystemStyle.moduleAccent(module)),
               tile(
                 "Battery power · signed",
                 battery.watts.map { String(format: "%.1f W", $0) }
-                  ?? "—", SystemStyle.secondaryAccent),
+                  ?? "—", SystemStyle.moduleSecondary(module)),
               tile(
-                "Cycle count", battery.cycles.map(String.init) ?? "—", SystemStyle.secondaryAccent),
+                "Cycle count", battery.cycles.map(String.init) ?? "—",
+                SystemStyle.moduleSecondary(module)),
               tile(
                 "Battery temperature", temperature(sensor(.battery, .temperature)),
-                SystemStyle.secondaryAccent),
+                SystemStyle.moduleSecondary(module)),
             ], columns: usesPopoverLayout ? 2 : 4))
       } else {
         card(
@@ -703,13 +711,14 @@ import TinyStatsCore
           shownPower.map {
             .init(
               label: $0.name, value: $0.formatted(fahrenheit: false),
-              color: SystemStyle.secondaryAccent)
+              color: SystemStyle.moduleSecondary(module))
           })
       } else {
         powerContent = .tiles(
           shownPower.map { reading in
             tile(
-              reading.name, reading.formatted(fahrenheit: false), SystemStyle.secondaryAccent,
+              reading.name, reading.formatted(fahrenheit: false),
+              SystemStyle.moduleSecondary(module),
               detail: reading.key.hasPrefix("ioreport:")
                 ? "macOS model estimate" : "Hardware sensor")
           }, columns: min(2, max(1, shownPower.count)))
@@ -731,7 +740,7 @@ import TinyStatsCore
             s.peripherals.prefix(4).map {
               .init(
                 label: $0.name, value: Display.percent($0.percent), percent: $0.percent,
-                color: SystemStyle.accent)
+                color: SystemStyle.moduleAccent(module))
             }),
         note: s.peripherals.isEmpty
           ? "No accessory battery readings"
@@ -954,8 +963,10 @@ import TinyStatsCore
       secondLabel: labels.1,
       firstValue: text(first), secondValue: second.map(text) ?? "", percent: percent,
       mirrored: module == .network || module == .disks,
-      firstColor: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
-      secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent,
+      firstColor: module == .network
+        ? SystemStyle.moduleSecondary(module) : SystemStyle.moduleAccent(module),
+      secondColor: module == .network
+        ? SystemStyle.moduleAccent(module) : SystemStyle.moduleSecondary(module),
       firstRole: module == .network ? .secondary : .primary,
       secondRole: module == .network ? .primary : .secondary,
       time: .init(

@@ -16,6 +16,7 @@ extension SummaryDashboardView {
   }
   struct OverviewTile {
     var value: Tile
+    var module: Module
     var symbol: String
     var segments: [SegmentedBarView.Segment]? = nil
     var composition = ""
@@ -74,17 +75,21 @@ extension SummaryDashboardView {
     let domain = end.addingTimeInterval(-300)...end
     let recent = history.suffix(300).filter { domain.contains($0.time) }
     let mini = Array(recent.suffix(90))
-    func trend(_ key: KeyPath<HistoryPoint, Double?>, label: String, value: String, percent: Bool)
+    func trend(
+      _ key: KeyPath<HistoryPoint, Double?>, label: String, value: String, percent: Bool,
+      module: Module
+    )
       -> Plot
     {
       .init(
         first: mini.map { $0[keyPath: key] }, second: [], firstLabel: label, secondLabel: "",
         firstValue: value, secondValue: "", percent: percent, mirrored: false,
+        firstColor: SystemStyle.moduleAccent(module),
         time: .init(mini.map(\.time), intervals: mini.map(\.sampleInterval)),
         valueFormat: percent ? .percent : .rate)
     }
     func tile(
-      _ label: String, _ value: String, _ detail: String, _ symbol: String,
+      _ label: String, _ value: String, _ detail: String, _ symbol: String, _ module: Module,
       key: KeyPath<HistoryPoint, Double?>? = nil, percent: Bool = false,
       segments: [SegmentedBarView.Segment]? = nil, composition: String = "",
       barCaption: String? = nil, help: String = ""
@@ -95,8 +100,11 @@ extension SummaryDashboardView {
           .init(
             value: .init(
               label: label, value: value, detail: detail,
-              trend: key.map { trend($0, label: label, value: value, percent: percent) }),
-            symbol: symbol, segments: segments, composition: composition, barCaption: barCaption)),
+              trend: key.map {
+                trend($0, label: label, value: value, percent: percent, module: module)
+              }),
+            module: module, symbol: symbol, segments: segments, composition: composition,
+            barCaption: barCaption)),
         help: help)
     }
     let memory = s.memory.flatMap { $0.total > 0 ? $0 : nil }
@@ -117,8 +125,11 @@ extension SummaryDashboardView {
       memory.map { m in
         let c = m.composition
         return [
-          .init(fraction: Double(c.app) / Double(m.total), color: SystemStyle.accent),
-          .init(fraction: Double(c.wired) / Double(m.total), color: SystemStyle.secondaryAccent),
+          .init(
+            fraction: Double(c.app) / Double(m.total), color: SystemStyle.moduleAccent(.memory)),
+          .init(
+            fraction: Double(c.wired) / Double(m.total), color: SystemStyle.moduleSecondary(.memory)
+          ),
           .init(
             fraction: Double(c.compressed) / Double(m.total), color: SystemStyle.neutralSeries),
         ]
@@ -143,7 +154,8 @@ extension SummaryDashboardView {
       first: recent.map(\.download), second: recent.map(\.upload),
       firstLabel: "Download", secondLabel: "Upload", firstValue: Display.rate(s.download),
       secondValue: Display.rate(s.upload),
-      percent: false, mirrored: false, secondColor: SystemStyle.secondaryAccent,
+      percent: false, mirrored: false, firstColor: SystemStyle.moduleAccent(.network),
+      secondColor: SystemStyle.moduleSecondary(.network),
       time: .init(recent.map(\.time), intervals: recent.map(\.sampleInterval), domain: domain),
       valueFormat: .rate, drawsTrace: true)
     return [
@@ -151,14 +163,16 @@ extension SummaryDashboardView {
       tile(
         "CPU", Display.percent(s.cpu?.usage),
         "User \(Display.percent(s.cpu?.user)), system \(Display.percent(s.cpu?.system))", "cpu",
+        .cpu,
         key: \.cpu, percent: true),
       tile(
         "GPU", Display.percent(gpu?.usage),
         "Renderer \(Display.percent(gpu?.rendererUsage)), tiler \(Display.percent(gpu?.tilerUsage))",
-        "square.3.layers.3d", key: \.gpu, percent: true),
+        "square.3.layers.3d", .gpu, key: \.gpu, percent: true),
       tile(
         "Memory", memory.map { Display.bytes($0.used) } ?? "—",
         memory.map { "used of \(Display.bytes($0.total))" } ?? "Memory unavailable", "memorychip",
+        .memory,
         segments: memorySegments, composition: memoryCaption,
         barCaption: composition.map {
           "App \(Display.bytes($0.app)) · wired \(Display.bytes($0.wired))\nCompressed \(Display.bytes($0.compressed))"
@@ -167,8 +181,10 @@ extension SummaryDashboardView {
         volume?.name ?? "Startup disk",
         volume.map { Display.bytes(min($0.available, $0.total)) } ?? "—",
         volume.map { "available of \(Display.bytes($0.total))" } ?? "Volume unavailable",
-        "internaldrive",
-        segments: volume.map { [.init(fraction: $0.percent / 100, color: SystemStyle.accent)] }
+        "internaldrive", .disks,
+        segments: volume.map {
+          [.init(fraction: $0.percent / 100, color: SystemStyle.moduleAccent(.disks))]
+        }
           ?? [],
         composition: volume.map { "\(Display.percent($0.percent)) used" }
           ?? "Storage capacity unavailable"),
@@ -181,23 +197,23 @@ extension SummaryDashboardView {
         cpuSensors.isEmpty
           ? "CPU sensors unavailable"
           : "Hottest of \(cpuSensors.count) CPU \(cpuSensors.count == 1 ? "sensor" : "sensors")",
-        "thermometer.medium", help: fanCaption),
+        "thermometer.medium", .sensors, help: fanCaption),
       tile(
         battery == nil ? "System power" : "Battery",
         battery.map { Display.percent($0.percent) } ?? power.map { $0.formatted(fahrenheit: false) }
           ?? "—",
         battery.map { BatteryMenuState.state(for: $0).title } ?? "AC power",
-        "bolt"),
+        "bolt", .battery),
       tile(
-        "Disk read", Display.rate(s.diskRead), "All physical disks", "internaldrive",
+        "Disk read", Display.rate(s.diskRead), "All physical disks", "internaldrive", .disks,
         key: \.diskRead),
       tile(
-        "Disk write", Display.rate(s.diskWrite), "", "internaldrive",
+        "Disk write", Display.rate(s.diskWrite), "", "internaldrive", .disks,
         key: \.diskWrite),
       tile(
         "Swap used", memory.map { Display.bytes($0.swapUsed) } ?? "—",
         memory.map { "Compressed \(Display.bytes($0.compressed))" } ?? "Memory unavailable",
-        "memorychip"),
+        "memorychip", .memory),
     ]
   }
 
@@ -247,13 +263,12 @@ extension SummaryDashboardView {
     }
   }
 
-  func drawOverviewSymbol(_ symbol: String, label: String, in rect: NSRect) {
+  func drawOverviewSymbol(_ symbol: String, label: String, module: Module, in rect: NSRect) {
     let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
       .withSymbolConfiguration(
         .init(pointSize: 13, weight: .regular).applying(
           .init(paletteColors: [
-            usesPopoverLayout && glassEnvironment().treatment == .glass
-              ? NSColor.labelColor.withAlphaComponent(0.65) : .secondaryLabelColor
+            SystemStyle.moduleAccent(module)
           ])))
     image?.draw(
       in: .init(x: rect.minX + 14, y: rect.minY + 12, width: 15, height: 15), from: .zero,
@@ -294,7 +309,7 @@ extension SummaryDashboardView {
     return .init(x: bar.minX, y: bar.maxY + 6, width: bar.width, height: 14)
   }
   func drawOverviewTile(_ tile: OverviewTile, in rect: NSRect) {
-    drawOverviewSymbol(tile.symbol, label: tile.value.label, in: rect)
+    drawOverviewSymbol(tile.symbol, label: tile.value.label, module: tile.module, in: rect)
     let large = rect.height >= 120
     drawOverviewValue(
       tile.value.value,
@@ -348,7 +363,7 @@ extension SummaryDashboardView {
       height: max(0, rect.height - 86))
   }
   func drawOverviewNetwork(_ plot: Plot, title: String, in rect: NSRect) {
-    drawOverviewSymbol("network", label: "Network", in: rect)
+    drawOverviewSymbol("network", label: "Network", module: .network, in: rect)
     text(
       title, rect: .init(x: rect.midX, y: rect.minY + 12, width: rect.width / 2 - 14, height: 17),
       color: .secondaryLabelColor, size: 11, alignment: .right)
