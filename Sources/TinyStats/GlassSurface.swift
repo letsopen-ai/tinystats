@@ -49,7 +49,9 @@ import TinyStatsCore
   override var isFlipped: Bool { role == .chips }
   // Decoration never intercepts drag, focus, pointer or AX interaction with its sibling controls.
   override func hitTest(_ point: NSPoint) -> NSView? {
-    role == .sidebar && treatment == .legacy ? super.hitTest(point) : nil
+    guard role == .sidebar, treatment == .legacy else { return nil }
+    let hit = super.hitTest(point)
+    return hit === self || hit === material ? nil : hit
   }
   @objc private func displayOptionsChanged() { updateTreatment() }
 

@@ -18,7 +18,7 @@ import Testing
   let cpu = try #require(buttons.first { $0.title == "CPU" })
   #expect(cpu.frame == NSRect(x: 10, y: 542, width: 112, height: 31))
   #expect(cpu.keyEquivalent == "2" && cpu.accessibilityLabel() == "CPU")
-  #expect(navigation.sidebarMaterial.hitTest(cpu.frame.origin) != nil)
+  #expect(navigation.sidebarMaterial.hitTest(.init(x: cpu.frame.midX, y: cpu.frame.midY)) === cpu)
   let detail = DetailController()
   detail.glassEnvironment = { environment }
   #expect(!detail.view.clipsToBounds && detail.view.isOpaque)
@@ -119,8 +119,7 @@ import Testing
   }
 }
 
-@Test @MainActor func namedSensorSummaryDedupesHeadlineAndExpandsSingletonWithoutLosingRows() throws
-{
+@Test @MainActor func namedSensorSummaryRetainsValuesAndExpandsSingletonWithoutLosingRows() throws {
   var snapshot = Snapshot()
   snapshot.sensors = [
     .init(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 45),
@@ -131,8 +130,7 @@ import Testing
     showsAll: false, selection: .hottest(.cpu))
   #expect(
     p.rows.contains {
-      $0.label == "CPU proximity" && $0.value.isEmpty
-        && $0.accessibilityLabel?.contains("45.0") == true
+      $0.label == "CPU proximity" && $0.value == "45.0°C"
     })
   #expect(p.rows.contains { $0.sensorIdentity == .reading("Tp01") && $0.value == "40.0°C" })
   #expect(!p.rows.contains { $0.value == "All readings" })
