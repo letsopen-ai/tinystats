@@ -154,7 +154,7 @@ struct MenuBarReadout {
 
 /// One immediate-mode view per status button. Symbols and fonts are bounded shared caches;
 /// graphs reuse the sampled history. No layers, animations or additional timers.
-@MainActor final class MenuBarReadoutView: NSView {
+@MainActor final class MenuBarReadoutView: SystemStyledView {
   var readouts: [MenuBarReadout] = []
   var paused = false
   private static let sidePadding: CGFloat = 1
@@ -266,8 +266,8 @@ struct MenuBarReadout {
   }
   var onAppearanceChange: (() -> Void)?
 
-  override func viewDidChangeEffectiveAppearance() {
-    super.viewDidChangeEffectiveAppearance()
+  override func systemStyleDidChange() {
+    super.systemStyleDidChange()
     needsDisplay = true
     onAppearanceChange?()
   }

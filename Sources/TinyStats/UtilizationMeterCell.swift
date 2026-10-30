@@ -4,7 +4,7 @@ import TinyStatsCore
 /// One immediate-mode drawing per reused table cell. No layers, animations, or progress timers.
 @MainActor final class UtilizationMeterCell: NSView {
   private(set) var reading: Double?
-  private(set) var tint = NSColor.systemBlue
+  private(set) var tint = SystemStyle.accent
   private(set) var text = "—"
   private static let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
   override init(frame: NSRect) {

@@ -139,7 +139,11 @@ import Testing
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
         context.cgContext.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
-        view.displayIgnoringOpacity(view.bounds, in: context)
+        try #require(NSAppearance(named: appearance)).performAsCurrentDrawingAppearance {
+          NSColor.windowBackgroundColor.setFill()
+          view.bounds.fill()
+          view.displayIgnoringOpacity(view.bounds, in: context)
+        }
         NSGraphicsContext.restoreGraphicsState()
         if module == .network {
           // The history graph lies at x12...508, y75...146 (flipped coordinates).
@@ -154,7 +158,7 @@ import Testing
             let x = 12 * scale + Int(layout.x(column) * CGFloat(scale)) + layout.barPixels
             let color = try #require(
               bitmap.colorAt(x: x, y: 100 * scale)?.usingColorSpace(.deviceRGB))
-            // In either appearance the empty graph/grid is neutral, never pink/blue.
+            // In either appearance the empty graph/grid is neutral.
             #expect(abs(color.redComponent - color.blueComponent) < 0.08)
           }
         }
@@ -179,8 +183,23 @@ import Testing
             let system = try #require(
               bitmap.colorAt(x: x, y: Int((graph.maxY - graph.height * 0.5) * CGFloat(scale)))?
                 .usingColorSpace(.deviceRGB))
-            #expect(user.blueComponent > user.redComponent + 0.3)
-            #expect(system.redComponent > system.blueComponent + 0.3)
+            var expectedUser = NSColor.clear
+            var expectedSystem = NSColor.clear
+            view.effectiveAppearance.performAsCurrentDrawingAppearance {
+              expectedUser = plot.firstColor.usingColorSpace(.deviceRGB) ?? .clear
+              expectedSystem = plot.secondColor.usingColorSpace(.deviceRGB) ?? .clear
+            }
+            // Both components follow the accent; tints composite over the neutral platter.
+            let userAlpha = expectedUser.alphaComponent
+            let systemAlpha = expectedSystem.alphaComponent
+            #expect(
+              abs(
+                (user.blueComponent - user.redComponent) - userAlpha
+                  * (expectedUser.blueComponent - expectedUser.redComponent)) < 0.12)
+            #expect(
+              abs(
+                (system.blueComponent - system.redComponent) - systemAlpha
+                  * (expectedSystem.blueComponent - expectedSystem.redComponent)) < 0.12)
           }
         }
         if let folder = ProcessInfo.processInfo.environment["TINYSTATS_CHART_CAPTURE_DIR"] {

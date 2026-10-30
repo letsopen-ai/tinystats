@@ -38,7 +38,7 @@ enum ChartValueFormat: Equatable {
 }
 
 /// One tracking area and one lazily created bubble per visible chart, no timers or event monitors.
-@MainActor class ChartHoverView: NSView {
+@MainActor class ChartHoverView: SystemStyledView {
   private var hoverTracking: NSTrackingArea?
   private var hoverScreenPoint: NSPoint?
   private var bubble: ChartHoverBubble?

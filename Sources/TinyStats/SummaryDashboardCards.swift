@@ -25,7 +25,7 @@ extension SummaryDashboardView {
     var label: String, value: String
     var second: String? = nil
     var fraction: Double? = nil
-    var color: NSColor = .systemBlue
+    var color: NSColor = SystemStyle.accent
     var secondFraction: Double? = nil
     var accessibilityValue: String? = nil
   }
@@ -47,7 +47,7 @@ extension SummaryDashboardView {
   struct Tile {
     var label: String, value: String
     var detail: String = ""
-    var color: NSColor = .systemBlue
+    var color: NSColor = SystemStyle.accent
     var fraction: Double? = nil
     var trend: Plot? = nil
   }
@@ -70,10 +70,11 @@ extension SummaryDashboardView {
   }
   struct Card {
     var frame: NSRect, title: String, trailing: String = "", content: Content, note: String = ""
+    var headerHeight: CGFloat = 31
     var contentRect: NSRect {
       .init(
-        x: frame.minX + 12, y: frame.minY + 31, width: frame.width - 24,
-        height: max(0, frame.height - 37 - (note.isEmpty ? 0 : 17)))
+        x: frame.minX + 12, y: frame.minY + headerHeight, width: frame.width - 24,
+        height: max(0, frame.height - headerHeight - 6 - (note.isEmpty ? 0 : 17)))
     }
     var spoken: String {
       var parts = [title, trailing]
@@ -212,12 +213,12 @@ extension SummaryDashboardView {
           row.fraction,
           rect: NSRect(
             x: valueStart + 2, y: y + pairedLayout.meterY,
-            width: barWidth - 4, height: 2), color: .systemPink)
+            width: barWidth - 4, height: 2), color: SystemStyle.secondaryAccent)
         meter(
           row.secondFraction,
           rect: NSRect(
             x: area.minX + area.width * 0.73 + 2,
-            y: y + pairedLayout.meterY, width: barWidth - 4, height: 2), color: .systemBlue)
+            y: y + pairedLayout.meterY, width: barWidth - 4, height: 2), color: SystemStyle.accent)
       }
       let textHeight = paired ? pairedLayout.textHeight : max(12, height)
       text(
@@ -231,14 +232,14 @@ extension SummaryDashboardView {
         rect: NSRect(
           x: valueStart, y: y,
           width: area.width * (paired ? 0.27 : 0.44) - 3, height: textHeight),
-        color: paired ? .systemPink : .labelColor, size: height < 18 ? 10 : 11,
+        color: .labelColor, size: height < 18 ? 10 : 11,
         weight: .medium, alignment: .right)
       if let second = row.second {
         text(
           second,
           rect: NSRect(
             x: area.minX + area.width * 0.73, y: y,
-            width: area.width * 0.27 - 3, height: textHeight), color: .systemBlue,
+            width: area.width * 0.27 - 3, height: textHeight), color: .labelColor,
           size: height < 18 ? 10 : 11, weight: .medium, alignment: .right)
       }
     }
@@ -258,7 +259,7 @@ extension SummaryDashboardView {
       let frame = NSRect(
         x: area.minX + CGFloat(index % columns) * (width + gap),
         y: area.minY + CGFloat(index / columns) * (height + gap), width: width, height: height)
-      tile.color.withAlphaComponent(0.07).setFill()
+      NSColor.quaternaryLabelColor.withAlphaComponent(0.12).setFill()
       NSBezierPath(roundedRect: frame, xRadius: 6, yRadius: 6).fill()
       let compact = height < 65
       let hasRing = tile.fraction != nil && width > 95
@@ -292,7 +293,7 @@ extension SummaryDashboardView {
           x: frame.minX + 7, y: frame.minY + textLayout.valueY,
           width: width - 14 - (hasRing ? diameter + 5 : 0),
           height: textLayout.valueHeight),
-        color: tile.color, size: height < 38 ? 13 : compact ? 17 : 23, weight: .semibold)
+        color: .labelColor, size: height < 38 ? 13 : compact ? 17 : 23, weight: .semibold)
       if let trend = tile.trend {
         let trendHeight: CGFloat = compact ? 12 : 25
         drawMiniHistory(
@@ -356,13 +357,42 @@ extension SummaryDashboardView {
   func drawMemory(_ memory: MemoryReading, in area: NSRect) {
     let c = memory.composition
     let segments: [(String, UInt64, NSColor)] = [
-      ("App · estimate", c.app, .systemBlue), ("Wired", c.wired, .systemPink),
-      ("Compressed", c.compressed, .systemOrange),
+      ("App · estimate", c.app, SystemStyle.accent),
+      ("Wired", c.wired, SystemStyle.secondaryAccent),
+      ("Compressed", c.compressed, SystemStyle.tertiaryAccent),
       ("Available · incl. cache", c.available, .systemGray),
     ]
+    if usesPopoverLayout {
+      SegmentedBarView.draw(
+        segments.map { _, bytes, color in
+          .init(
+            fraction: memory.total > 0 ? Double(bytes) / Double(memory.total) : nil, color: color)
+        }, in: .init(x: area.minX, y: area.minY + 8, width: area.width, height: 8))
+      for (index, segment) in segments.enumerated() {
+        let y = area.minY + 30 + CGFloat(index) * 23
+        segment.2.setFill()
+        NSBezierPath(ovalIn: .init(x: area.minX, y: y + 4, width: 7, height: 7)).fill()
+        text(
+          segment.0,
+          rect: .init(x: area.minX + 14, y: y, width: area.width * 0.65 - 14, height: 18), size: 12)
+        text(
+          Display.bytes(segment.1, precise: true),
+          rect: .init(x: area.minX + area.width * 0.65, y: y, width: area.width * 0.35, height: 18),
+          size: 12, alignment: .right)
+      }
+      text(
+        "Pressure · " + memory.pressureDescription,
+        rect: .init(x: area.minX, y: area.minY + 132, width: area.width, height: 20),
+        color: memory.pressure == 1
+          ? SystemStyle.nominal
+          : memory.pressure == 2
+            ? SystemStyle.warning
+            : memory.pressure == 4 ? SystemStyle.critical : .secondaryLabelColor, size: 12)
+      return
+    }
     let diameter: CGFloat = 140
     let rect = NSRect(x: area.minX + 12, y: area.minY + 8, width: diameter, height: diameter)
-    ring(0, rect: rect, color: .systemBlue, lineWidth: 11)
+    ring(0, rect: rect, color: SystemStyle.accent, lineWidth: 11)
     var start: CGFloat = -90
     if memory.total > 0 {
       for (_, bytes, color) in segments {
@@ -382,7 +412,7 @@ extension SummaryDashboardView {
       rect: .init(x: rect.minX, y: rect.midY - 21, width: diameter, height: 32), size: 27,
       weight: .semibold, alignment: .center)
     text(
-      "MEMORY USED", rect: .init(x: rect.minX, y: rect.midY + 13, width: diameter, height: 16),
+      "Memory used", rect: .init(x: rect.minX, y: rect.midY + 13, width: diameter, height: 16),
       color: .secondaryLabelColor, size: 10, alignment: .center)
     let x = area.minX + 180
     for (index, segment) in segments.enumerated() {
@@ -446,6 +476,44 @@ extension SummaryDashboardView {
     }
   }
   func drawCores(_ cpu: CPUReading, in area: NSRect) {
+    if usesPopoverLayout {
+      let order = Self.displayedCoreIndices(cpu)
+      let columns = min(12, max(1, order.count))
+      let cellWidth = area.width / CGFloat(columns)
+      let rows = max(1, (order.count + columns - 1) / columns)
+      let rowHeight = max(24, (area.height - 16) / CGFloat(rows))
+      for (position, index) in order.enumerated() {
+        let x = area.minX + CGFloat(position % columns) * cellWidth
+        let y = area.minY + CGFloat(position / columns) * rowHeight
+        let bar = NSRect(
+          x: x + (cellWidth - 12) / 2, y: y, width: 12, height: max(10, rowHeight - 18))
+        NSColor.quaternaryLabelColor.setFill()
+        NSBezierPath(roundedRect: bar, xRadius: 6, yRadius: 6).fill()
+        if let value = UtilizationMeterCell.normalized(cpu.cores[index]), value > 0 {
+          let height = bar.height * value / 100
+          SystemStyle.core(cpu.kind(at: index)).setFill()
+          NSBezierPath(
+            roundedRect: .init(x: bar.minX, y: bar.maxY - height, width: bar.width, height: height),
+            xRadius: min(6, height / 2), yRadius: min(6, height / 2)
+          ).fill()
+        }
+        text(
+          cpu.cores[index].map { String(format: "%.0f", $0) } ?? "—",
+          rect: .init(x: x, y: bar.maxY + 2, width: cellWidth, height: 12),
+          color: .secondaryLabelColor, size: 9, alignment: .center)
+      }
+      let kinds = CPUCoreKind.allCases.filter { kind in order.contains { cpu.kind(at: $0) == kind }
+      }
+      let width = area.width / CGFloat(max(1, kinds.count))
+      for (index, kind) in kinds.enumerated() {
+        let x = area.minX + CGFloat(index) * width
+        drawCoreMarker(kind, rect: .init(x: x, y: area.maxY - 9, width: 7, height: 7))
+        text(
+          kind.chartTitle, rect: .init(x: x + 11, y: area.maxY - 12, width: width - 11, height: 14),
+          color: .secondaryLabelColor, size: 9)
+      }
+      return
+    }
     let order = Self.displayedCoreIndices(cpu)
     for (index, rect) in Self.coreCells(cpu, area: area) {
       let kind = cpu.kind(at: index)
