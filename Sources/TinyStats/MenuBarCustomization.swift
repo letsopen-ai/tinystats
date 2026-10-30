@@ -14,7 +14,7 @@ import TinyStatsCore
   private let stripLabel = SystemSettingsForm.text("In menu bar", heading: true)
   private let paletteLabel = SystemSettingsForm.text("Available", heading: true)
   private let hint = SystemSettingsForm.text(
-    "Drag to add, reorder or return items to Available. Return/Space toggles; ⌥←/→ moves. Right-click for all actions."
+    "Drag to rearrange; drop on Available to hide an item. Press Option + arrow keys to move the selected item. Right-click for all actions."
   )
   private(set) var lastAnnouncement = ""
 
@@ -51,7 +51,9 @@ import TinyStatsCore
     SystemStyle.drawPlatter(bounds)
   }
   func update(order: [Module], animated: Bool = false) {
-    guard self.order != order else { return }
+    guard self.order != order || chips.values.contains(where: { $0.superview == nil }) else {
+      return
+    }
     let focused = window?.firstResponder as? MenuBarChip
     let oldFrames = chips.mapValues { ($0.superview, $0.frame) }
     self.order = order
@@ -113,17 +115,21 @@ import TinyStatsCore
   let inMenuBar: Bool
   private(set) var chips: [MenuBarChip] = []
   private(set) var insertion: Int?
+  private var targetFrames: [Module: NSRect] = [:]
   var contentWidth: CGFloat { chips.reduce(20) { $0 + $1.chipWidth + 8 } }
   override var isFlipped: Bool { true }
   init(inMenuBar: Bool) {
     self.inMenuBar = inMenuBar
     super.init(frame: .zero)
     registerForDraggedTypes([MenuBarCustomization.pasteboardType])
-    setAccessibilityElement(false)
+    setAccessibilityElement(true)
+    setAccessibilityRole(.group)
+    setAccessibilityLabel(inMenuBar ? "In menu bar" : "Available")
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   func setChips(_ chips: [MenuBarChip]) {
     self.chips = chips
+    targetFrames = targetFrames.filter { module, _ in chips.contains { $0.module == module } }
     for chip in chips where chip.superview !== self {
       chip.removeFromSuperview()
       addSubview(chip)
@@ -136,7 +142,7 @@ import TinyStatsCore
   }
   func positionChips(animated: Bool) {
     var x: CGFloat = 12
-    var y: CGFloat = 10
+    var y: CGFloat = 12
     NSAnimationContext.runAnimationGroup { context in
       context.duration =
         animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.16 : 0
@@ -144,13 +150,16 @@ import TinyStatsCore
         let width = chip.chipWidth
         if !inMenuBar && x > 12 && x + width > bounds.width - 8 {
           x = 12
-          y += 38
+          y += 36
         }
-        let frame = NSRect(x: x, y: y, width: width, height: 32)
-        if context.duration > 0 && chip.frame.width > 0 {
-          chip.animator().frame = frame
-        } else {
-          chip.frame = frame
+        let frame = NSRect(x: x, y: y, width: width, height: 28)
+        if animated || targetFrames[chip.module] != frame {
+          targetFrames[chip.module] = frame
+          if context.duration > 0 && chip.frame.width > 0 {
+            chip.animator().frame = frame
+          } else {
+            chip.frame = frame
+          }
         }
         x += width + 8
       }
@@ -160,10 +169,8 @@ import TinyStatsCore
     chips.firstIndex { point.x < $0.frame.midX } ?? chips.count
   }
   override func draw(_ dirtyRect: NSRect) {
-    let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
-    (inMenuBar
-      ? NSColor.windowBackgroundColor : NSColor.quaternaryLabelColor.withAlphaComponent(0.07))
-      .setFill()
+    let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+    NSColor.labelColor.withAlphaComponent(0.06).setFill()
     path.fill()
     NSColor.separatorColor.setStroke()
     path.lineWidth = 0.5
@@ -175,7 +182,7 @@ import TinyStatsCore
           insertion < chips.count
           ? chips[insertion].frame.minX - 5 : (chips.last?.frame.maxX ?? 12) + 3
         NSBezierPath(
-          roundedRect: .init(x: x, y: 7, width: 3, height: 38), xRadius: 1.5, yRadius: 1.5
+          roundedRect: .init(x: x, y: 14, width: 2, height: 24), xRadius: 1, yRadius: 1
         ).fill()
       } else {
         NSColor.controlAccentColor.setStroke()
@@ -184,7 +191,7 @@ import TinyStatsCore
       }
     }
     if chips.isEmpty {
-      let text = inMenuBar ? "Drop readouts here" : "All readouts are in the menu bar"
+      let text = inMenuBar ? "Drop readouts here" : "Drag items here to hide them"
       (text as NSString).draw(
         at: .init(x: 12, y: 18),
         withAttributes: [
@@ -241,11 +248,12 @@ import TinyStatsCore
 @MainActor final class MenuBarChip: NSButton, NSDraggingSource {
   let module: Module
   weak var owner: MenuBarCustomization?
+  private var dragOrigin: NSPoint?
   var chipWidth: CGFloat {
     max(
       78,
       (module.title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
-        + 40)
+        + 39)
   }
   override var acceptsFirstResponder: Bool { true }
   override var canBecomeKeyView: Bool { !isHiddenOrHasHiddenAncestor && isEnabled }
@@ -256,11 +264,13 @@ import TinyStatsCore
     title = module.title
     font = .systemFont(ofSize: 12)
     contentTintColor = .labelColor
-    image = NSImage(systemSymbolName: module.symbol, accessibilityDescription: nil)
+    image = NSImage(systemSymbolName: module.symbol, accessibilityDescription: nil)?
+      .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
     imagePosition = .imageLeading
     imageScaling = .scaleProportionallyDown
     isBordered = false
     setAccessibilityLabel("\(module.title) menu bar item")
+    setAccessibilityRole(.button)
     toolTip =
       "Drag to customize; Return/Space to add or remove; ⌥←/→ to move; right-click for more."
   }
@@ -309,14 +319,28 @@ import TinyStatsCore
     owner?.perform(action, for: module)
   }
   override func accessibilityPerformPress() -> Bool {
-    owner?.perform(.toggle, for: module) ?? false
+    // Exploring a chip must not change the enabled set. Named custom actions mutate it.
+    false
   }
   override func keyDown(with event: NSEvent) {
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     if [123, 124].contains(event.keyCode), !modifiers.intersection([.option, .command]).isEmpty {
       let action: MenuBarLayoutAction = event.keyCode == 123 ? .left : .right
-      owner?.perform(
+      if owner?.perform(
         modifiers.contains(.shift) ? (event.keyCode == 123 ? .start : .end) : action, for: module)
+        != true
+      {
+        NSSound.beep()
+      }
+    } else if [123, 124].contains(event.keyCode),
+      modifiers.intersection([.option, .command, .control, .shift]).isEmpty,
+      let owner
+    {
+      let peers = owner.strip.chips + owner.palette.chips
+      if let index = peers.firstIndex(where: { $0 === self }) {
+        let next = min(max(0, index + (event.keyCode == 123 ? -1 : 1)), peers.count - 1)
+        window?.makeFirstResponder(peers[next])
+      }
     } else if [36, 49, 76].contains(event.keyCode),
       modifiers.intersection([.command, .option, .control]).isEmpty
     {
@@ -345,21 +369,28 @@ import TinyStatsCore
   override var focusRingMaskBounds: NSRect { bounds }
   override func mouseDown(with event: NSEvent) {
     window?.makeFirstResponder(self)
-    let origin = convert(event.locationInWindow, from: nil)
-    while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
-      if next.type == .leftMouseUp { return }
-      let point = convert(next.locationInWindow, from: nil)
-      if hypot(point.x - origin.x, point.y - origin.y) < 4 { continue }
-      guard let owner, let bitmap = bitmapImageRepForCachingDisplay(in: bounds) else { return }
-      cacheDisplay(in: bounds, to: bitmap)
-      let image = NSImage(size: bounds.size)
-      image.addRepresentation(bitmap)
-      let item = NSDraggingItem(pasteboardWriter: owner.pasteboardItem(for: module))
-      item.setDraggingFrame(bounds, contents: image)
-      beginDraggingSession(with: [item], event: next, source: self)
-        .animatesToStartingPositionsOnCancelOrFail = true
-      return
-    }
+    dragOrigin = convert(event.locationInWindow, from: nil)
+  }
+  override func mouseUp(with event: NSEvent) { dragOrigin = nil }
+  override func mouseDragged(with event: NSEvent) {
+    guard let origin = dragOrigin else { return }
+    let point = convert(event.locationInWindow, from: nil)
+    guard hypot(point.x - origin.x, point.y - origin.y) >= 4,
+      let owner, let image = dragImage()
+    else { return }
+    dragOrigin = nil
+    let item = NSDraggingItem(pasteboardWriter: owner.pasteboardItem(for: module))
+    item.setDraggingFrame(bounds, contents: image)
+    beginDraggingSession(with: [item], event: event, source: self)
+      .animatesToStartingPositionsOnCancelOrFail = true
+  }
+  /// Capture afresh for each drag, including current appearance/accent; no cached drag image.
+  func dragImage() -> NSImage? {
+    guard let bitmap = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+    cacheDisplay(in: bounds, to: bitmap)
+    let image = NSImage(size: bounds.size)
+    image.addRepresentation(bitmap)
+    return image
   }
   func draggingSession(
     _ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext
@@ -372,6 +403,22 @@ import TinyStatsCore
 /// Keep native button text/symbol drawing, with enough inset for a rounded draggable chip.
 @MainActor private final class MenuBarChipCell: NSButtonCell {
   override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
-    super.drawInterior(withFrame: cellFrame.insetBy(dx: 8, dy: 0), in: controlView)
+    guard let button = controlView as? NSButton else { return }
+    let symbol = NSRect(x: cellFrame.minX + 10, y: cellFrame.midY - 6.5, width: 13, height: 13)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
+    image?.draw(in: symbol)
+    NSColor.labelColor.setFill()
+    symbol.fill(using: .sourceIn)
+    NSGraphicsContext.current?.cgContext.endTransparencyLayer()
+    NSGraphicsContext.restoreGraphicsState()
+    let text = button.title as NSString
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: button.font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor,
+    ]
+    let size = text.size(withAttributes: attributes)
+    text.draw(
+      at: .init(x: symbol.maxX + 6, y: floor(cellFrame.midY - size.height / 2)),
+      withAttributes: attributes)
   }
 }

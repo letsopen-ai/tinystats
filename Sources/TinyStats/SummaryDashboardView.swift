@@ -465,7 +465,8 @@ import TinyStatsCore
       }
       card(
         "TOP PROCESSES", 288, 124, rows.isEmpty ? .none : .rows(rows),
-        trailing: rows.isEmpty ? "No process readings yet" : "Memory · bars relative to largest")
+        trailing: rows.isEmpty ? "No readings" : "Memory",
+        note: rows.isEmpty ? "No process readings yet" : "Bars relative to largest footprint")
       card(
         "SWAP", 420, 34, .none,
         trailing: s.memory.map { Display.bytes($0.swapUsed) + " / " + Display.bytes($0.swapTotal) }
@@ -1022,7 +1023,8 @@ import TinyStatsCore
     return segments
   }
   func drawMiniHistory(
-    _ plot: Plot, in area: NSRect, upperBound: Double? = nil, filled: Bool = true
+    _ plot: Plot, in area: NSRect, upperBound: Double? = nil, filled: Bool = true,
+    dashed: Bool = false
   ) {
     NSColor.quaternaryLabelColor.withAlphaComponent(0.3).setFill()
     NSRect(x: area.minX, y: area.maxY - 0.5, width: area.width, height: 0.5).fill()
@@ -1045,6 +1047,7 @@ import TinyStatsCore
       plot.firstColor.withAlphaComponent(0.2).setFill()
       if filled { fill.fill() }
       plot.firstColor.setStroke()
+      if dashed { line.setLineDash([4, 3], count: 2, phase: 0) }
       line.lineWidth = 1.2
       line.stroke()
       if points.count == 1 {
@@ -1562,7 +1565,7 @@ import TinyStatsCore
         second.first = plot.second
         second.firstColor = plot.secondColor
         second.percent = false
-        drawMiniHistory(second, in: graph, upperBound: layout.maximum)
+        drawMiniHistory(second, in: graph, upperBound: layout.maximum, filled: false, dashed: true)
       }
     } else {
       let firstBars = NSBezierPath()

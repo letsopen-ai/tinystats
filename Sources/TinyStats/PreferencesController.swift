@@ -72,8 +72,11 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     view.onAction = { [weak self] module, action in
       guard let self else { return false }
       // The displayed native order is the starting point, including pre-existing ⌘-drag positions.
-      self.settings.readouts = self.displayedOrder
-      guard self.settings.customizeReadout(module, action: action) else { return false }
+      var updated = self.settings
+      updated.readouts = self.displayedOrder
+      guard updated.customizeReadout(module, action: action) else { return false }
+      updated.validate()
+      self.settings = updated
       self.individualOrder = self.settings.readouts
       for (module, toggle) in self.readouts {
         toggle.state = self.settings.readouts.contains(module) ? .on : .off
@@ -336,7 +339,10 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       previewScroll.topAnchor.constraint(equalTo: wallpaper.topAnchor, constant: 6),
       previewScroll.heightAnchor.constraint(equalToConstant: 42),
     ])
-    styleDisclosure.bezelStyle = .rounded
+    styleDisclosure.isBordered = false
+    styleDisclosure.alignment = .left
+    styleDisclosure.imagePosition = .imageLeading
+    styleDisclosure.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
     styleDisclosure.title = "Hide readout & style options"
     styleDisclosure.setAccessibilityLabel("Customize menu bar readouts and styles")
     styleDisclosure.setAccessibilityExpanded(true)
@@ -420,6 +426,9 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     styleOptions.isHidden.toggle()
     styleDisclosure.title =
       styleOptions.isHidden ? "Customize readouts & styles…" : "Hide readout & style options"
+    styleDisclosure.image = NSImage(
+      systemSymbolName: styleOptions.isHidden ? "chevron.right" : "chevron.down",
+      accessibilityDescription: nil)
     styleDisclosure.setAccessibilityExpanded(!styleOptions.isHidden)
   }
 

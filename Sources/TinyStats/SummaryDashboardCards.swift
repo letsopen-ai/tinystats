@@ -376,8 +376,8 @@ extension SummaryDashboardView {
     let segments: [(String, UInt64, NSColor)] = [
       ("App · estimate", c.app, SystemStyle.accent),
       ("Wired", c.wired, SystemStyle.secondaryAccent),
-      ("Compressed", c.compressed, SystemStyle.tertiaryAccent),
-      ("Available · incl. cache", c.available, .systemGray),
+      ("Compressed", c.compressed, SystemStyle.neutralSeries),
+      ("Available · incl. cache", c.available, SystemStyle.availableSeries),
     ]
     if usesPopoverLayout {
       SegmentedBarView.draw(
@@ -388,7 +388,13 @@ extension SummaryDashboardView {
       for (index, segment) in segments.enumerated() {
         let y = area.minY + 30 + CGFloat(index) * 23
         segment.2.setFill()
-        NSBezierPath(ovalIn: .init(x: area.minX, y: y + 4, width: 7, height: 7)).fill()
+        let marker = NSBezierPath(ovalIn: .init(x: area.minX, y: y + 4, width: 7, height: 7))
+        marker.fill()
+        if index == 3 {
+          NSColor.separatorColor.setStroke()
+          marker.lineWidth = 0.5
+          marker.stroke()
+        }
         text(
           segment.0,
           rect: .init(x: area.minX + 14, y: y, width: area.width * 0.65 - 14, height: 18), size: 12)

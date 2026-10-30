@@ -5,6 +5,9 @@ import TinyStatsCore
 @MainActor final class StatusItemController {
   private var items: [(module: Module, item: NSStatusItem, readout: MenuBarReadoutView)] = []
 
+  private var orderObservation = MenuBarOrderObservation()
+  private var rebuilding = false
+
   var firstButton: NSStatusBarButton? { items.first?.item.button }
 
   func entry(for sender: NSStatusBarButton) -> (module: Module, item: NSStatusItem)? {
@@ -24,6 +27,12 @@ import TinyStatsCore
     let entries = nativePositions
     guard entries.count == items.count, Set(entries.values).count == items.count else { return nil }
     return entries.sorted { $0.value > $1.value }.map(\.key)
+  }
+
+  /// Appearance callbacks during creation and old-but-complete post-rebuild frames are not edits.
+  var adoptableOrder: [Module]? {
+    guard !rebuilding else { return nil }
+    return orderObservation.accept(observedOrder)
   }
 
   private var nativePositions: [Module: Double] {
@@ -50,7 +59,9 @@ import TinyStatsCore
     settings: Settings, target: AnyObject, action: Selector, enforceOrder: Bool = false,
     onAppearanceChange: @escaping () -> Void
   ) {
-    var positions = nativePositions
+    rebuilding = true
+    defer { rebuilding = false }
+    var positions: [Module: Double] = [:]
     // Reuse saved slots exactly. Repeatedly deriving slots from laid-out button centers would
     // accumulate AppKit's placement offsets on every reorder and drift across the menu bar.
     for entry in items {
@@ -66,6 +77,7 @@ import TinyStatsCore
     removeAll()
     let modules = settings.readouts.isEmpty ? [.overview] : settings.readouts
     if enforceOrder {
+      orderObservation.enforce(modules)
       // AppKit has no public move API. Reuse its autosave placement convention rather than
       // private selectors, synthetic mouse events, or replacing the native status buttons.
       // Remove first: AppKit may save the old position while removing an item.
@@ -159,7 +171,8 @@ import TinyStatsCore
     }
   }
   func updatePreviewContext(_ preferences: PreferencesController, paused: Bool) {
-    let order = observedOrder ?? []
+    let order =
+      (orderObservation.pendingEnforcedOrder == nil && !rebuilding ? observedOrder : nil) ?? []
     preferences.updateMenuBarContext(
       appearance: items.first?.readout.effectiveAppearance, order: order,
       height: items.first?.readout.bounds.height ?? NSStatusBar.system.thickness, paused: paused)
@@ -169,18 +182,46 @@ import TinyStatsCore
 /// Remap only TinyStats' existing native slots. Distances grow from the right edge of the bar.
 enum MenuBarNativeOrder {
   static func positions(order: [Module], existing: [Module: Double]) -> [Module: Double] {
-    let valid = existing.filter { $0.value.isFinite && $0.value >= 0 && $0.value < 10_000_000 }
-    var slots = Array(Set(valid.values)).sorted(by: >)
-    // Removing items retains their peers' slots. Newly enabled items get space at the left.
-    if order.count < slots.count {
-      let retained = order.compactMap { valid[$0] }
-      if retained.count == order.count && Set(retained).count == order.count {
-        slots = retained.sorted(by: >)
-      } else {
-        slots = Array(slots.prefix(order.count))
+    // Removed modules must not donate their slots when enabling a different module.
+    // All values here are AppKit autosave preferences, never measured button centers.
+    let valid = existing.filter {
+      order.contains($0.key) && $0.value.isFinite && $0.value >= 0 && $0.value < 10_000_000
+    }
+    let slots = Array(Set(valid.values)).sorted(by: >)
+    let retained = order.filter { valid[$0] != nil }
+    var result = Dictionary(uniqueKeysWithValues: zip(retained, slots))
+    for (index, module) in order.enumerated() where result[module] == nil {
+      let left = order[..<index].last.flatMap { result[$0] }
+      let right = order.dropFirst(index + 1).compactMap { result[$0] }.first
+      switch (left, right) {
+      case (let left?, let right?): result[module] = (left + right) / 2
+      case (nil, let right?): result[module] = right + 60
+      case (let left?, nil):
+        if left > 0 {
+          result[module] = left > 60 ? left - 60 : left / 2
+        } else {
+          // A saved zero has no room to its right. Shift only this app's anchors.
+          result = result.mapValues { $0 + 60 }
+          result[module] = 0
+        }
+      case (nil, nil): result[module] = 100 + 60 * Double(order.count - index)
       }
     }
-    while slots.count < order.count { slots.insert((slots.first ?? 100) + 60, at: 0) }
-    return Dictionary(uniqueKeysWithValues: zip(order, slots))
+    return result
+  }
+}
+
+/// No timeout/polling: the existing refresh must see the requested layout before native
+/// frame changes can count as a later ⌘-drag. If placement fails, saved user intent wins.
+struct MenuBarOrderObservation {
+  private(set) var pendingEnforcedOrder: [Module]?
+  mutating func enforce(_ order: [Module]) { pendingEnforcedOrder = order }
+  mutating func accept(_ observed: [Module]?) -> [Module]? {
+    guard let observed, !observed.isEmpty else { return nil }
+    if let pendingEnforcedOrder {
+      guard observed == pendingEnforcedOrder else { return nil }
+      self.pendingEnforcedOrder = nil
+    }
+    return observed
   }
 }

@@ -52,7 +52,11 @@ import Testing
   let moveLeft = try #require(cpu.accessibilityCustomActions()?.first { $0.name == "Move left" })
   #expect(moveLeft.handler?() == true)
   #expect(editor.order == [.memory, .network, .cpu, .gpu])
-  #expect(cpu.accessibilityPerformPress())
+  #expect(!cpu.accessibilityPerformPress())
+  #expect(editor.order == [.memory, .network, .cpu, .gpu])
+  #expect(
+    cpu.accessibilityCustomActions()?.first { $0.name == "Remove from menu bar" }?.handler?()
+      == true)
   #expect(editor.order == [.memory, .network, .gpu])
   #expect(editor.lastAnnouncement == "CPU removed from menu bar.")
   #expect(cpu.accessibilityValue() as? String == "Available")
@@ -98,6 +102,10 @@ import Testing
           windowNumber: window.windowNumber, context: nil, characters: characters,
           charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)))
   }
+  try key(124, "\u{f703}")
+  #expect((window.firstResponder as? MenuBarChip)?.module == .memory)
+  try key(123, "\u{f702}")
+  #expect(window.firstResponder === cpu)
   try key(123, "\u{f702}", .option)
   #expect(result?.readouts == [.cpu, .network, .memory])
   #expect(window.firstResponder === cpu)
@@ -305,4 +313,77 @@ import Testing
   settings = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings))
   rebuild(enforce: false)
   expectNative(settings.readouts)
+}
+
+@Test func enforcedMenuBarOrderIgnoresCompleteTransitionalFrames() {
+  var observation = MenuBarOrderObservation()
+  let old: [Module] = [.cpu, .memory, .network]
+  let requested: [Module] = [.network, .cpu, .memory]
+  observation.enforce(requested)
+  #expect(observation.accept(nil) == nil)
+  #expect(observation.accept(old) == nil)
+  // A style/appearance refresh before AppKit finishes cannot undo the Settings drag.
+  #expect(observation.accept(old) == nil)
+  #expect(observation.accept([.cpu, .memory]) == nil)
+  #expect(observation.pendingEnforcedOrder == requested)
+  #expect(observation.accept(requested) == requested)
+  #expect(observation.pendingEnforcedOrder == nil)
+  #expect(observation.accept(old) == old)  // Later native ⌘-drag is eligible again.
+  observation.enforce([.memory, .cpu])
+  #expect(observation.accept(old) == nil)
+}
+
+@Test func nativeMenuBarSlotsRetainSurvivorsWhenAddingAndRemovingTogether() {
+  #expect(
+    MenuBarNativeOrder.positions(
+      order: [.memory, .gpu], existing: [.cpu: 500, .network: 300, .memory: 100]
+    ) == [.memory: 100, .gpu: 40])
+}
+
+@Test @MainActor func menuBarEmptyObservationAndInvalidActionDoNotChangeSavedOrDisplayedOrder()
+  throws
+{
+  _ = NSApplication.shared
+  let controller = PreferencesController(
+    settings: Settings(), interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
+  defer { controller.close() }
+  let root = try #require(controller.window?.contentView)
+  let editor = try #require(
+    layoutDescendants(root).compactMap { $0 as? MenuBarCustomization }.first)
+  var changes = 0
+  controller.onChange = { _ in changes += 1 }
+  for partial: [Module] in [[], [.network], [.network, .cpu]] {
+    controller.updateMenuBarContext(appearance: nil, order: partial, height: 24, paused: false)
+    #expect(editor.order == Settings().readouts)
+  }
+  controller.updateMenuBarContext(
+    appearance: nil, order: [.network, .cpu, .memory], height: 24, paused: false)
+  #expect(!editor.perform(.remove, for: .gpu))
+  controller.updateMenuBarContext(appearance: nil, order: [], height: 24, paused: false)
+  #expect(editor.order == Settings().readouts && changes == 0)
+}
+
+@Test @MainActor func menuBarEmptyEditorStillPositionsAvailableChipsAndExposesGroups() throws {
+  let editor = MenuBarCustomization(frame: .init(x: 0, y: 0, width: 640, height: 254))
+  let window = NSWindow(
+    contentRect: editor.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
+  window.contentView = editor
+  defer {
+    window.contentView = nil
+    window.close()
+  }
+  editor.update(order: [])
+  #expect(editor.strip.chips.isEmpty && editor.palette.chips.count == 9)
+  #expect(editor.palette.chips.allSatisfy { $0.frame.width > 0 && $0.frame.height == 28 })
+  #expect(editor.strip.accessibilityRole() == .group)
+  #expect(editor.palette.accessibilityLabel() == "Available")
+  let cpu = try #require(editor.chips[.cpu])
+  cpu.appearance = NSAppearance(named: .aqua)
+  let light = try #require(cpu.dragImage()?.tiffRepresentation)
+  cpu.appearance = NSAppearance(named: .darkAqua)
+  #expect(try #require(cpu.dragImage()?.tiffRepresentation) != light)
+  editor.palette.needsDisplay = false
+  NotificationCenter.default.post(name: NSColor.systemColorsDidChangeNotification, object: nil)
+  #expect(editor.palette.needsDisplay && cpu.needsDisplay)
 }

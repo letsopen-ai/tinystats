@@ -150,7 +150,7 @@ import Testing
       if let summary = views.compactMap({ $0 as? SummaryDashboardView }).first, !summary.isHidden {
         #expect(summary.usesPopoverLayout)
         #expect(summary.enclosingScrollView != nil)
-        #expect(summary.enclosingScrollView?.frame.minY == 68)
+        #expect(summary.enclosingScrollView?.frame.minY == 76)
         for card in summary.cards {
           #expect(card.frame.width == summary.bounds.width)
           #expect(summary.bounds.contains(card.frame))
@@ -474,9 +474,13 @@ import Testing
         if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
           let url = URL(fileURLWithPath: path, isDirectory: true)
           try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-          let image = try #require(
-            customization.bitmapImageRepForCachingDisplay(in: customization.bounds))
-          customization.cacheDisplay(in: customization.bounds, to: image)
+          #expect(SystemStyle.isDark(customization.effectiveAppearance) == (theme == .dark))
+          let crop = customization.convert(customization.bounds, to: root)
+          let image = try #require(root.bitmapImageRepForCachingDisplay(in: crop))
+          root.cacheDisplay(in: crop, to: image)
+          let backing = try #require(
+            image.colorAt(x: image.pixelsWide - 8, y: image.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+          #expect((backing.brightnessComponent < 0.5) == (theme == .dark))
           try #require(image.representation(using: .png, properties: [:])).write(
             to: url.appendingPathComponent("settings-menubar-customization-\(theme.rawValue).png"))
         }
@@ -674,6 +678,47 @@ import Testing
       #expect(!recorded.secondLabel.isEmpty)
     } else {
       #expect(recorded.second.isEmpty && recorded.secondLabel.isEmpty)
+    }
+  }
+}
+
+@Test @MainActor func dropdownReadingsKeepTheirTrailingValuesInsideThePlatter() throws {
+  let controller = DetailController()
+  controller.isPopoverPresentation = true
+  controller.showsAllReadings = true
+  controller.loadViewIfNeeded()
+  controller.view.setFrameSize(SystemStyle.popoverSize)
+  var snapshot = Snapshot()
+  snapshot.cpu = .init(usage: 23, cores: [31, 28], load: [1.84, 2.10, 2.31])
+  snapshot.uptime = 968400
+  controller.selected = .cpu
+  controller.update(snapshot, history: [])
+  controller.view.layoutSubtreeIfNeeded()
+  let table = try #require(
+    systemDescendants(controller.view).compactMap { $0 as? NSTableView }.first)
+  let scroll = try #require(table.enclosingScrollView)
+  #expect(table.rect(ofColumn: 1).maxX <= scroll.documentVisibleRect.maxX)
+  let trailing = table.convert(.init(x: table.rect(ofColumn: 1).maxX, y: 0), to: controller.view)
+  #expect(abs(trailing.x - (controller.view.bounds.maxX - 22)) < 1)
+  let value = try #require(
+    controller.tableView(table, viewFor: table.tableColumns[1], row: 0) as? NSTextField)
+  #expect(value.lineBreakMode == .byTruncatingHead)
+  #expect(value.stringValue == "1.84 / 2.10 / 2.31")
+  #expect(scroll.frame.maxX <= controller.view.bounds.maxX - 22)
+  let mask = try #require(scroll.layer?.mask as? CAGradientLayer)
+  #expect(mask.startPoint.y == 1 && mask.endPoint.y == 0)
+  #expect(scroll.contentInsets.bottom == 16)
+}
+
+@Test @MainActor func memoryNeutralSeriesResolveToDistinctInkInBothAppearances() throws {
+  for name in [NSAppearance.Name.aqua, .darkAqua] {
+    let appearance = try #require(NSAppearance(named: name))
+    appearance.performAsCurrentDrawingAppearance {
+      let compressed = SystemStyle.neutralSeries.usingColorSpace(.sRGB)
+      let available = SystemStyle.availableSeries.usingColorSpace(.sRGB)
+      #expect(compressed?.redComponent == (name == .darkAqua ? 1 : 0))
+      #expect(available?.redComponent == compressed?.redComponent)
+      #expect(compressed?.alphaComponent == 0.55 && available?.alphaComponent == 0.12)
     }
   }
 }

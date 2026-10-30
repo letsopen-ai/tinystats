@@ -319,7 +319,8 @@ import Testing
     return
   }
   #expect(processes.map(\.fraction) == [1, 0.5])
-  #expect(card.spoken.contains("Memory · bars relative to largest"))
+  #expect(
+    card.spoken.contains("Memory") && card.spoken.contains("Bars relative to largest footprint"))
 }
 
 @Test @MainActor func denseHistoryUsesAllRetainedSamplesWithThinSeparatedBars() throws {

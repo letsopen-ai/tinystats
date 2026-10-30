@@ -29,8 +29,17 @@ func derivedAccentPairIsDistinctReadableAndInGamut(_ fixture: SystemAccentFixtur
   for dark in [false, true] {
     let source = AccentPalette.RGB(hex: dark ? fixture.dark : fixture.light)
     let pair = AccentPalette.derive(from: source, dark: dark)
-    #expect(pair.primary.lab.distance(to: pair.secondary.lab) >= 0.12)
+    #expect(pair.primary.lab.distance(to: pair.secondary.lab) >= 0.18)
+    #expect(abs(pair.primary.lab.lightness - pair.secondary.lab.lightness) >= 0.1299)
+    #expect(pair.secondary.lab.chroma >= 0.09)
+    for matrix in [protanopia, deuteranopia] {
+      #expect(
+        simulate(pair.primary, matrix).lab.distance(to: simulate(pair.secondary, matrix).lab)
+          >= 0.12)
+    }
     for color in [pair.primary, pair.secondary] {
+      let hue = (color.lab.hue * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+      #expect(color.lab.chroma < 0.025 || color.lab.lightness >= 0.7 || !(85...125).contains(hue))
       #expect(
         [color.red, color.green, color.blue].allSatisfy { $0.isFinite && (0...1).contains($0) })
       for background in dark ? [0x1F1F21, 0x2A2A2D, 0x343436] : [0xFFFFFF, 0xECECEE] {
@@ -43,15 +52,10 @@ func derivedAccentPairIsDistinctReadableAndInGamut(_ fixture: SystemAccentFixtur
       }
     }
     if source.lab.chroma >= 0.025 {
-      let separation = abs(
-        atan2(
-          sin(pair.secondary.lab.hue - source.lab.hue), cos(pair.secondary.lab.hue - source.lab.hue)
-        ))
-      #expect(abs(separation - .pi / 2) < 0.001)
-      #expect(abs(pair.primary.lab.hue - source.lab.hue) < 0.001)
-    }
-    if source.contrast(against: AccentPalette.background(dark: dark)) >= 3.05 {
-      #expect(pair.primary == source)
+      let hue = (source.lab.hue * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+      if !(85...125).contains(hue) {
+        #expect(abs(pair.primary.lab.hue - source.lab.hue) < 0.001)
+      }
     }
   }
 }
@@ -75,7 +79,7 @@ func derivedAccentPairIsDistinctReadableAndInGamut(_ fixture: SystemAccentFixtur
     let reference = AccentPalette.derive(from: .init(0.5, 0.5, 0.5), dark: dark).secondary
     for gray in [0.0, 0.2, 0.6, 1.0] {
       let secondary = AccentPalette.derive(from: .init(gray, gray, gray), dark: dark).secondary
-      #expect(reference.lab.distance(to: secondary.lab) < 0.000001)
+      #expect(abs(reference.lab.hue - secondary.lab.hue) < 0.000001)
       #expect(abs(secondary.lab.hue * 180 / .pi + 110) < 0.001)
     }
   }
@@ -83,15 +87,16 @@ func derivedAccentPairIsDistinctReadableAndInGamut(_ fixture: SystemAccentFixtur
 
 @Test func documentedAccentHexPairsStayInSync() throws {
   let expected = [
-    ("#007AFF / #BD2B87", "#007AFF / #FD79C3"),
-    ("#953D96 / #AA5900", "#B35DB5 / #F7903A"),
-    ("#EC4495 / #8F6B00", "#F74F9E / #D9A500"),
-    ("#E0383E / #717900", "#FF5257 / #AFB800"),
-    ("#D26A00 / #0C8A1E", "#F7821B / #5FC961"),
-    ("#A98100 / #008570", "#FFC600 / #00CAAD"),
-    ("#419920 / #007DA4", "#62BA46 / #00BEF8"),
-    ("#878787 / #1F74BF", "#8C8C8C / #67B3FF"),
-    ("#007AFF / #BD2B87", "#007AFF / #FD79C3"),
+    ("#005FCA / #D16C00", "#007AFF / #FFA566"),
+    ("#873089 / #009393", "#B35DB5 / #00D8D9"),
+    ("#EC4495 / #004981", "#F74F9E / #90C6FF"),
+    ("#E0383E / #005DA1", "#FF5257 / #8FC6FF"),
+    ("#D26A00 / #0067B3", "#F7821B / #0081DE"),
+    ("#B57A00 / #0064AD", "#FFC600 / #54ABFF"),
+    ("#419920 / #872D9A", "#62BA46 / #F0AEFF"),
+    ("#878787 / #0063AC", "#8C8C8C / #89C3FF"),
+    ("#005FCA / #D16C00", "#007AFF / #FFA566"),
+
   ]
   let document = try String(
     contentsOf: URL(fileURLWithPath: #filePath)
@@ -106,4 +111,26 @@ func derivedAccentPairIsDistinctReadableAndInGamut(_ fixture: SystemAccentFixtur
       "| \(fixture.name) | \(AccentPalette.RGB(hex: fixture.light).hex) | \(expected.0) | \(AccentPalette.RGB(hex: fixture.dark).hex) | \(expected.1) |"
     #expect(document.contains(row))
   }
+}
+
+// Machado, Oliveira & Fernandes (2009), severity 1.0, published linear-sRGB matrices.
+// https://www.inf.ufrgs.br/~oliveira/pubs_files/CVD_Simulation/CVD_Simulation.html
+// Original test implementation of the mathematical transforms; no external code/library.
+private let protanopia = [
+  [0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216],
+  [-0.003882, -0.048116, 1.051998],
+]
+private let deuteranopia = [
+  [0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413],
+  [-0.011820, 0.042940, 0.968881],
+]
+private func simulate(_ rgb: AccentPalette.RGB, _ matrix: [[Double]]) -> AccentPalette.RGB {
+  let linear = [rgb.red, rgb.green, rgb.blue].map {
+    $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4)
+  }
+  let mapped = matrix.map { row in
+    let c = min(1, max(0, zip(row, linear).reduce(0) { $0 + $1.0 * $1.1 }))
+    return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1 / 2.4) - 0.055
+  }
+  return .init(mapped[0], mapped[1], mapped[2])
 }

@@ -341,7 +341,7 @@ struct MenuBarReadout {
         }
         drawHistory(item.values, in: chart, domain: domain, color: tint)
         drawHistory(
-          item.secondValues, in: chart, domain: domain, color: palette.secondary)
+          item.secondValues, in: chart, domain: domain, color: palette.secondary, dashed: true)
         if (item.values + item.secondValues).compactMap({ $0 }).isEmpty {
           text(palette: palette, "—", in: chart, font: Self.small, centered: true)
         }
@@ -666,7 +666,7 @@ struct MenuBarReadout {
     NSGraphicsContext.restoreGraphicsState()
   }
   private func drawHistory(
-    _ values: [Double?], in rect: NSRect, domain: GraphDomain, color: NSColor
+    _ values: [Double?], in rect: NSRect, domain: GraphDomain, color: NSColor, dashed: Bool = false
   ) {
     let path = NSBezierPath()
     var continuing = false
@@ -682,6 +682,7 @@ struct MenuBarReadout {
       continuing = true
     }
     color.setStroke()
+    if dashed { path.setLineDash([3, 2], count: 2, phase: 0) }
     path.lineWidth = 1
     path.stroke()
   }

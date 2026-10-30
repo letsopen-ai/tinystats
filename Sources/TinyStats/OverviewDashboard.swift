@@ -119,7 +119,7 @@ extension SummaryDashboardView {
           .init(fraction: Double(c.app) / Double(m.total), color: SystemStyle.accent),
           .init(fraction: Double(c.wired) / Double(m.total), color: SystemStyle.secondaryAccent),
           .init(
-            fraction: Double(c.compressed) / Double(m.total), color: SystemStyle.tertiaryAccent),
+            fraction: Double(c.compressed) / Double(m.total), color: SystemStyle.neutralSeries),
         ]
       } ?? []
     let memoryCaption =
@@ -355,7 +355,7 @@ extension SummaryDashboardView {
     var upload = plot
     upload.first = plot.second
     upload.firstColor = plot.secondColor
-    drawMiniHistory(upload, in: graph, upperBound: maximum, filled: false)
+    drawMiniHistory(upload, in: graph, upperBound: maximum, filled: false, dashed: true)
     text(
       "5 minutes ago",
       rect: .init(x: graph.minX, y: rect.maxY - 20, width: graph.width / 2, height: 14),

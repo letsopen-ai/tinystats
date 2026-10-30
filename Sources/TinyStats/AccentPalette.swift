@@ -96,15 +96,60 @@ enum AccentPalette {
 
   static func derive(from accent: RGB, dark: Bool) -> Pair {
     let source = accent.lab
-    let primary = readable(accent, dark: dark)
-    // A quarter turn keeps a relation to the user's hue while separating paired series.
-    // Graphite/unknown neutral hues have no stable angle: use a chromatic blue companion.
-    let hue = source.chroma < 0.025 ? 250 * .pi / 180 : source.hue + .pi / 2
-    let chroma = min(dark ? 0.18 : 0.20, max(0.14, source.chroma))
-    let secondary = Lab(
-      lightness: dark ? 0.75 : 0.55, a: chroma * cos(hue), b: chroma * sin(hue)
-    ).gamutMapped
-    return Pair(primary: primary, secondary: readable(secondary, dark: dark))
+    let hue = (source.hue * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+    let neutral = source.chroma < 0.025
+    // OKLCH sectors, not HSV: pink wraps through 360°, and purple sits below blue.
+    let companionHue: Double
+    if neutral {
+      companionHue = 250
+    } else if hue >= 200 && hue < 290 {
+      companionHue = 55
+    } else if hue >= 290 && hue < 335 {
+      companionHue = 195
+    } else if hue >= 110 && hue < 200 {
+      companionHue = 320
+    } else {
+      companionHue = 250
+    }
+    var primary = readable(accent, dark: dark)
+    // Contrast-corrected yellow otherwise becomes olive. Keep its warm identity as amber.
+    if (85...125).contains(hue), primary.lab.lightness < 0.7 {
+      primary = readable(
+        lch(primary.lab.lightness, source.chroma, 75), dark: dark)
+    }
+    // Cool companions can sit below a warm primary. Amber/teal need the upper end of
+    // the light appearance's readable range to stay vivid, so move the primary down
+    // only when necessary. Both inks keep at least 0.13 OKLab lightness separation.
+    // Pink loses luminance under protan simulation; the light-mode blue needs more separation.
+    let pink = !neutral && (hue >= 335 || hue < 15)
+    let preferred =
+      dark ? 0.80 : (pink ? 0.40 : companionHue == 55 ? 0.64 : companionHue == 195 ? 0.60 : 0.52)
+    let companion = readable(lch(preferred, 0.18, companionHue), dark: dark)
+    let p = primary.lab
+    let s = companion.lab
+    let secondary: RGB
+    if abs(p.lightness - s.lightness) >= 0.13 {
+      secondary = companion
+    } else if dark {
+      if companionHue == 250 && p.lightness >= 0.72 {
+        secondary = readable(lch(p.lightness - 0.13, 0.18, companionHue), dark: true)
+        if p.lightness - secondary.lab.lightness < 0.13 {
+          primary = lch(secondary.lab.lightness + 0.13, p.chroma, p.hue * 180 / .pi)
+        }
+      } else {
+        secondary = lch(p.lightness + 0.13, 0.18, companionHue)
+      }
+    } else if companionHue == 55 || companionHue == 195 {
+      primary = lch(s.lightness - 0.13, p.chroma, p.hue * 180 / .pi)
+      secondary = companion
+    } else {
+      secondary = lch(p.lightness - 0.13, 0.18, companionHue)
+    }
+    return Pair(primary: primary, secondary: secondary)
+  }
+  private static func lch(_ lightness: Double, _ chroma: Double, _ hue: Double) -> RGB {
+    let angle = hue * .pi / 180
+    return Lab(lightness: lightness, a: chroma * cos(angle), b: chroma * sin(angle)).gamutMapped
   }
   private static func readable(_ color: RGB, dark: Bool) -> RGB {
     let background = background(dark: dark)

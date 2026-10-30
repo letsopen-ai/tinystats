@@ -228,7 +228,7 @@ enum DetailReadingsBuilder {
       if let m = s.memory {
         memoryAmount("Active", m.active, m.total, SystemStyle.accent)
         memoryAmount("Wired", m.wired, m.total, SystemStyle.secondaryAccent)
-        memoryAmount("Compressed", m.compressed, m.total, SystemStyle.tertiaryAccent)
+        memoryAmount("Compressed", m.compressed, m.total, SystemStyle.neutralSeries)
         memoryAmount("Inactive · reclaimable", m.inactive, m.total, SystemStyle.secondaryAccent)
         memoryAmount("Purgeable · reclaimable", m.purgeable, m.total, .systemGray)
         memoryAmount("Free (includes speculative)", m.free, m.total, SystemStyle.accent)
