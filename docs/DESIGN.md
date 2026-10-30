@@ -39,6 +39,19 @@ Scalar summary, mini and recorded-history plots prepare immutable dates, domain 
 
 ## UI
 
+On macOS 27 and later, the dropdown uses one untinted, regular AppKit Liquid Glass background,
+shared by its content and existing icon-only footer. Neutral inset cards remain unchanged; glass
+is not layered on cards, footer buttons, Overview windows or Settings customization chips. This
+keeps the small monitoring UI legible without adding controls or changing either accent color.
+The glass content supplies an 82%-opaque semantic window-background wash to bound backdrop
+color behind small text; the effect itself has no accent tint. This wash follows drawing appearance.
+`GlassSurface` centralizes the macOS 27 runtime gate (the base SDK glass API is annotated 26.0).
+Older systems retain the original active, behind-window `.popover` visual effect. On 27+, Reduce
+Transparency or Increase Contrast replaces glass with solid semantic `windowBackgroundColor`,
+including when accessibility display options change while open. No preference or timer is added.
+Offscreen bitmap gallery images establish layout/ink, not compositor blur; the optional,
+permission-preflighted synthetic on-screen gallery records that effect separately.
+
 The first ordinary launch of a brand-new preferences domain (no saved `settings` object) presents a six-step native welcome tour. Existing profiles with saved settings and no `hasShownWelcome` flag silently record that flag without presenting the tour. The separate flag is recorded before presentation on new installs, so Close, Skip and Finish never re-trigger it; **Show welcome tour** in the app/right-click menus reopens it explicitly. Navigation alone changes no feature setting. Menu bar choices use a curated CPU, Memory, Network, Power, Time, Weather and Disks starter list, with Simple text / Compact bars presets and a horizontally scrolling Combined preview built from the existing renderer and empty placeholder readings. Advanced readouts remain in Settings → Menu Bar → Customize readouts & styles; saved advanced choices are preserved. Choices use the existing settings model and update immediately; History uses the existing worker persistence action. Weather is the primary Online opt-in; secondary optional advanced Internet checks setup and notification setup route to the existing editors/permission controls. Five short module cards introduce the core pages; Sensors is secondary Advanced guidance, and More modules… reveals History and raw-sensor guidance in a collapsed, session-only disclosure. Open Overview… and Open Menu Bar settings… lead to the existing detail/settings pages. The tour does not offer an account-calendar agenda. Login uses the same ServiceManagement path as General settings. The window uses semantic colors, native keyboard controls and accessibility labels, adds no timer/collector and requests no detail demand itself. Isolated previews require `--preview-onboarding` and can select steps 1–6 without changing the shown flag.
 General keeps local network-interface and world-clock controls primary. Internet checks and Calendar settings live in **Online & Time advanced**, a session-only disclosure above History that starts collapsed. Expanding it only reveals setup buttons; it does not enable requests, agenda collection or permissions. Internet checks and the account-calendar agenda are optional advanced features, off by default; existing explicit choices and Weather’s lifecycle remain unchanged.
 

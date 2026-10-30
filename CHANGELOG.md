@@ -4,6 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Use a single native Liquid Glass dropdown background on macOS 27+, including the existing icon-only footer. Keep neutral cards, window/Settings styling and accents; retain the original material on older macOS. Reduce Transparency and Increase Contrast select a solid background on 27+, updating while open.
+
 - Keep app CPU totals ranked when a helper has no reading, disclose unmeasured membership, preserve Network state on CPU/Memory grouping changes, and retain grouping keyboard focus across refreshes. Align app/broker rows and count columns; restore a visible Sensors scan-cap warning, concise paused headers and dropdown privacy accessibility values. Simplify chart/Sensors captions and empty states, fit power tiles to content and protect scrolling card edges while retaining the icon-only footer.
 
 - Simplify every dropdown to an icon-only footer and reclaim caption/fade space. Move privacy, cadence, sample cost and paused state to About this sample and accessible Pause/Resume help. Remove duplicate headline values, repeated physical-sensor rows and explanatory captions; retain scope caveats in hover/VoiceOver and All readings, visible partial traffic status, and Weather opt-in disclosures.

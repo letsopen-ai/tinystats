@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 import Testing
 
 @testable import TinyStats
@@ -32,6 +33,131 @@ import Testing
   }
   NSGraphicsContext.restoreGraphicsState()
   try #require(output.representation(using: .png, properties: [:])).write(to: url)
+}
+
+/// Review the solid accessibility fallback and unchanged legacy material alongside native glass.
+@Test @MainActor func systemGlassFallbackGallery() throws {
+  guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] else {
+    return
+  }
+  let folder = URL(fileURLWithPath: path, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  for theme in [AppTheme.light, .dark] {
+    for treatment in [GlassSurface.Treatment.legacy, .solid] {
+      let surface = GlassSurface(environment: {
+        .init(
+          supportsGlass: treatment != .legacy, reduceTransparency: treatment == .solid,
+          increaseContrast: false)
+      })
+      surface.frame = .init(origin: .zero, size: SystemStyle.popoverSize)
+      surface.appearance = theme.nativeAppearance
+      let title = NSTextField(labelWithString: "CPU · Paused")
+      title.font = .systemFont(ofSize: 13, weight: .semibold)
+      title.frame = .init(x: 22, y: 600, width: 280, height: 20)
+      surface.addSubview(title)
+      let caption = NSTextField(labelWithString: "No reading available")
+      caption.textColor = .secondaryLabelColor
+      caption.frame = .init(x: 22, y: 570, width: 280, height: 20)
+      surface.addSubview(caption)
+      try systemGalleryImage(
+        surface, to: folder.appendingPathComponent("glass-\(treatment)-\(theme.rawValue).png"))
+    }
+  }
+}
+
+/// Explicit gallery-only capture of our synthetic window. Never request screen-recording access,
+/// capture another app, or enable live collection. Bitmap caching alone cannot prove glass blur.
+@Test @MainActor func systemGlassOnscreenGallery() async throws {
+  guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"],
+    ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_GLASS_CAPTURE"] == "1"
+  else { return }
+  let folder = URL(fileURLWithPath: path, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  let report = folder.appendingPathComponent("glass-capture.txt")
+  guard #available(macOS 27, *), CGPreflightScreenCaptureAccess() else {
+    try
+      "On-screen glass capture unavailable: macOS 27 or existing screen-capture permission missing. No permission requested.\n"
+      .write(to: report, atomically: true, encoding: .utf8)
+    return
+  }
+  _ = NSApplication.shared
+  let window = NSWindow(
+    contentRect: .init(x: 80, y: 80, width: 520, height: 720), styleMask: [.borderless],
+    backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
+  let backdrop = GlassGalleryBackdrop(frame: .init(x: 0, y: 0, width: 520, height: 720))
+  window.contentView = backdrop
+  let controller = DetailController()
+  controller.isPopoverPresentation = true
+  controller.settings.processGrouping = .bundles
+  controller.view.frame = .init(x: 88, y: 40, width: 344, height: 640)
+  backdrop.addSubview(controller.view)
+  defer {
+    controller.view.removeFromSuperview()
+    window.orderOut(nil)
+    window.contentView = nil
+    window.close()
+  }
+  var snapshot = Snapshot()
+  snapshot.cpu = .init(usage: 23, cores: [30, 16], load: [1.2, 1.1, 1], user: 15, system: 8)
+  snapshot.cpuApps = [
+    .init(
+      name: "TextEdit", bundlePath: "/System/Applications/TextEdit.app", processCount: 2,
+      cpu: 12, memory: 220_000_000)
+  ]
+  snapshot.memoryApps = snapshot.cpuApps
+  snapshot.memory = .init(
+    total: 24_000_000_000, active: 9_000_000_000, inactive: 2_000_000_000, wired: 2_600_000_000,
+    compressed: 2_700_000_000, free: 7_700_000_000, speculative: 0, purgeable: 100_000_000,
+    swapUsed: 400_000_000, swapTotal: 1_000_000_000, pressure: 1)
+  window.orderFrontRegardless()
+  window.displayIfNeeded()
+  try await Task.sleep(for: .milliseconds(250))
+  let content = try await SCShareableContent.excludingDesktopWindows(
+    true, onScreenWindowsOnly: true)
+  let ownedWindow = try #require(
+    content.windows.first { $0.windowID == CGWindowID(window.windowNumber) })
+  let filter = SCContentFilter(desktopIndependentWindow: ownedWindow)
+  let config = SCStreamConfiguration()
+  config.width = 520
+  config.height = 720
+  config.showsCursor = false
+  config.ignoreShadowsSingleWindow = true
+  for theme in [AppTheme.light, .dark] {
+    window.appearance = theme.nativeAppearance
+    // Native material appearance transitions settle independently of AppKit layout.
+    window.displayIfNeeded()
+    try await Task.sleep(for: .milliseconds(750))
+    for module in [Module.overview, .cpu, .memory, .network] {
+      controller.selected = module
+      controller.update(snapshot, history: [])
+      controller.view.layoutSubtreeIfNeeded()
+      window.displayIfNeeded()
+      // One bounded compositor-settling wait in an explicit render fixture, no app timer.
+      try await Task.sleep(for: .milliseconds(450))
+      let stem = "glass-onscreen-\(module.rawValue)-\(theme.rawValue)"
+      let image = try await SCScreenshotManager.captureImage(
+        contentFilter: filter, configuration: config)
+      try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+        .write(to: folder.appendingPathComponent(stem + ".png"))
+      try systemGalleryImage(backdrop, to: folder.appendingPathComponent(stem + "-bitmap.png"))
+    }
+  }
+  try
+    "Captured only the owned synthetic borderless window using ScreenCaptureKit, with a colourful backdrop. Compare glass-onscreen PNGs with the paired cacheDisplay bitmap PNGs; this is visual evidence, not a blur assertion. Current treatment: \(GlassSurface.Environment.current.treatment).\n"
+    .write(to: report, atomically: true, encoding: .utf8)
+}
+
+@MainActor private final class GlassGalleryBackdrop: NSView {
+  override func draw(_ dirtyRect: NSRect) {
+    let colors: [NSColor] = [.systemBlue, .systemPurple, .systemOrange, .systemGreen]
+    for (index, color) in colors.enumerated() {
+      color.setFill()
+      NSRect(
+        x: CGFloat(index) * bounds.width / 4, y: 0, width: bounds.width / 4, height: bounds.height
+      ).fill()
+    }
+  }
 }
 
 @Test @MainActor func systemAccentPairResolvesInBothAppearancesAndKeepsCoreClassification() throws {

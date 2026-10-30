@@ -46,6 +46,26 @@ Sensor browser charts fit recorded values with numerical scale, current/min/max/
 
 ## Shared System presentation
 
+`GlassSurface` supplies the dropdown's single background on the main actor: regular, untinted
+`NSGlassEffectView` only inside `if #available(macOS 27, *)`, solid `windowBackgroundColor` when
+Reduce Transparency or Increase Contrast is enabled on 27+, and the original active,
+behind-window `.popover` `NSVisualEffectView` below 27. The SDK annotates the glass view/container
+and glass button bezel at 26.0; the product deliberately waits for 27. The helper replaces its
+one material child on accessibility display-option notifications, using non-owning selector
+observation removed at deinit. The effect's `contentView` draws an 82%-opaque semantic
+window-background wash for small-text contrast, resolving color in the current appearance; existing
+controller views stay above the background as siblings, preserving native focus and accessibility
+ownership. It hides on persistent-window promotion. Cards keep their neutral fill, and the footer
+shares the outer glass instead of adding another effect. Overview windows and Settings chips
+keep their existing treatment. Accent derivation, settings, collection and timers are unchanged.
+
+`GlassSurfaceTests` covers the policy matrix, original fallback configuration, live accessibility
+replacement/release and window promotion. The full `TINYSTATS_SYSTEM_RENDER_PATH` gallery covers
+light/dark dropdowns and fallback surfaces. Adding `TINYSTATS_SYSTEM_GLASS_CAPTURE=1` captures a
+synthetic borderless window with a colourful backdrop using ScreenCaptureKit, only if screen
+capture access is already granted. It never requests permission or captures another app. Paired
+bitmap captures expose offscreen material limitations; neither fixture samples live system data.
+
 `SystemStyle.swift` defines the approved System direction: 12-point platters, 10-point inset groups, 7-point controls, 12-point content insets, 8-point gaps, 30-point values and 13/11-point body/caption text. Accent providers resolve `controlAccentColor` in the drawing appearance, with the shared OKLCH secondary companion from `AccentPalette.swift`; semantic state colors remain reserved for actual states. Brand mint is confined to the logo/wordmark.
 
 `PlatterView` and `SystemStyle.drawPlatter` share the same neutral material-compatible surface. `SystemFormSection` / `SystemFormRow` provide inset groups with native trailing controls and row separators throughout Settings. `SegmentedBarView` supports bounded, clipped composition segments and omits unavailable/invalid fractions; the dropdown memory composition uses the same drawing helper. `ChartView` remains the reusable timestamped accent trace with honest gaps and existing inspection/accessibility; `SummaryDashboardView` retains the bounded paired plots and non-colour series markers. `MenuActionRow` remains a native NSButton with existing titles, accessibility identities and target/action semantics. In dropdowns it draws SF Symbols in 28-point square targets, with 7-point rounded neutral hover/pressed fills and native focus-ring masks. Leading navigation actions and trailing Pause/Resume occupy one 34-point bar below a hairline separator; module visibility is unchanged. Tooltips/AX labels and the list/grid and pause/play symbols track the next action. macOS 14 symbol fallbacks use simpler native symbols. Space/Return activate the focused control in the native key-view loop, without assigning global key equivalents. Persistent windows restore the existing titled controls and Overview toolbar.
