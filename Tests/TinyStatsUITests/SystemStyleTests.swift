@@ -114,9 +114,23 @@ import Testing
     controller.view.subviews.compactMap { $0 as? SummaryDashboardView }.first)
   #expect(!summary.usesPopoverLayout && summary.enclosingScrollView == nil)
   #expect(controller.view.subviews.first?.isHidden == false)
+  controller.selected = .overview
+  controller.view.layoutSubtreeIfNeeded()
+  let title = try #require(
+    controller.view.subviews.compactMap { $0 as? NSTextField }.first {
+      $0.stringValue == "Overview"
+    })
+  #expect(title.frame.minX == 154)
 }
 
 @Test @MainActor func systemPopoverRenderingGalleryPreservesMissingAndZeroReadings() throws {
+  _ = NSApplication.shared
+  let savedIcon = NSApp.applicationIconImage
+  let iconURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(
+      "Resources/TinyStats.icns")
+  NSApp.applicationIconImage = NSImage(contentsOf: iconURL)
+  defer { NSApp.applicationIconImage = savedIcon }
   let controller = DetailController()
   controller.isPopoverPresentation = true
   var snapshot = Snapshot()
@@ -130,6 +144,24 @@ import Testing
     total: 24_000_000_000, active: 9_000_000_000, inactive: 2_000_000_000, wired: 2_600_000_000,
     compressed: 2_700_000_000, free: 7_700_000_000, speculative: 0, purgeable: 100_000_000,
     swapUsed: 400_000_000, swapTotal: 1_000_000_000, pressure: 1)
+  snapshot.device = .init(model: "Mac mini", chip: "Apple M4", operatingSystem: "macOS 15.0")
+  snapshot.uptime = 11 * 86_400 + 5 * 3600
+  snapshot.gpus = [
+    .init(name: "Apple M4", usage: 8, memory: nil, coreCount: 10, rendererUsage: 6, tilerUsage: 3)
+  ]
+  snapshot.volumes = [
+    .init(name: "Macintosh HD", path: "/", total: 494_000_000_000, available: 193_000_000_000)
+  ]
+  snapshot.sensors = [
+    .init(key: "Tp01", name: "CPU die", kind: .temperature, value: 52),
+    .init(key: "F0Ac", name: "Fan 1", kind: .fan, value: 1034),
+    .init(key: "PSTR", name: "System total power", kind: .power, value: 6.8),
+  ]
+  snapshot.disks = [.init(id: 1, name: "disk0", read: 2_100_000, written: 640_000)]
+  snapshot.selectedInterface = "en0"
+  snapshot.download = 1_200_000
+  snapshot.upload = 48_000
+  snapshot.sampleMilliseconds = 3
   snapshot.processes = [
     .init(pid: 42, name: "Xcode", cpu: 38.2, memory: 0, read: nil, written: nil)
   ]
@@ -137,6 +169,9 @@ import Testing
     var point = snapshot.historyPoint
     point.time = Date(timeIntervalSince1970: Double(index * 2))
     point.cpu = index == 75 ? nil : Double(10 + index % 53)
+    point.gpu = index == 75 ? nil : Double(index % 19)
+    point.download = index == 75 ? nil : Double(500_000 + (index * 127_333) % 4_000_000)
+    point.upload = index == 75 ? nil : Double(10_000 + (index * 18_777) % 400_000)
     return point
   }
   controller.loadViewIfNeeded()
@@ -155,6 +190,27 @@ import Testing
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         try #require(bitmap.representation(using: .png, properties: [:])).write(
           to: url.appendingPathComponent("\(module.rawValue)-\(name.rawValue).png"))
+      }
+    }
+  }
+  controller.isPopoverPresentation = false
+  controller.selected = .overview
+  for size in [MainWindow.minimumSize, NSSize(width: 1000, height: 700)] {
+    controller.view.setFrameSize(size)
+    controller.update(snapshot, history: history)
+    for name in [NSAppearance.Name.aqua, .darkAqua] {
+      controller.view.appearance = NSAppearance(named: name)
+      controller.view.layoutSubtreeIfNeeded()
+      let bitmap = try #require(
+        controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds))
+      controller.view.cacheDisplay(in: controller.view.bounds, to: bitmap)
+      #expect(bitmap.pixelsWide >= Int(size.width) && bitmap.pixelsHigh >= Int(size.height))
+      if let directory = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
+        let url = URL(fileURLWithPath: directory, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let width = size.width == 1000 ? "" : "-\(Int(size.width))"
+        try #require(bitmap.representation(using: .png, properties: [:])).write(
+          to: url.appendingPathComponent("overview-window\(width)-\(name.rawValue).png"))
       }
     }
   }

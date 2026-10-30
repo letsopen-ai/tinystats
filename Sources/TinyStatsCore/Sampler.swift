@@ -5,6 +5,7 @@ import TinyStatsTraffic
 /// Own on a single serial queue. Hardware handles and all rate baselines stay on that queue.
 public final class Sampler {
   private let hardware = Hardware()
+  private let device = DeviceIdentity.read()
   private let silicon = SiliconTelemetry()
   private let healthReader = StorageHealthReader()
   private var wifiReader: WiFiReader?
@@ -92,6 +93,7 @@ public final class Sampler {
   ) -> Snapshot {
     let started = ProcessInfo.processInfo.systemUptime
     var snapshot = cached
+    snapshot.device = device
     snapshot.timestamp = Date()
     snapshot.uptime = started
     snapshot.cpu = readCPU(at: started)

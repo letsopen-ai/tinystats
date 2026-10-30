@@ -4,7 +4,8 @@ import Testing
 @testable import TinyStats
 @testable import TinyStatsCore
 
-@Test @MainActor func detailFooterKeepsPauseAndResumeWithoutQuit() throws {
+@Test @MainActor func detailPauseAndResumeUseOverviewToolbarAndOtherPageFootersWithoutQuit() throws
+{
   _ = NSApplication.shared
   let detail = DetailController()
   detail.onPause = { [weak detail] in detail?.paused.toggle() }
@@ -20,11 +21,17 @@ import Testing
         let buttons = detail.view.subviews.compactMap { $0 as? NSButton }
         #expect(!buttons.contains { $0.title.hasPrefix("Quit") })
         let footer = buttons.filter { $0.frame.minY < 50 }
-        #expect(footer.map(\.title) == ["Pause"])
-        let pause = try #require(footer.first)
+        #expect(footer.map(\.title) == (module == .overview ? [] : ["Pause"]))
+        let pause = try #require(buttons.first { $0.title == "Pause" })
+        let history = try #require(buttons.first { $0.title == "History…" })
+        if module == .overview {
+          #expect(pause.frame.minY == detail.view.bounds.height - 44)
+          #expect(!pause.frame.intersects(history.frame))
+          #expect(pause.image != nil && history.image != nil)
+        }
         #expect(!pause.isHiddenOrHasHiddenAncestor && pause.isEnabled)
         #expect(detail.view.bounds.contains(pause.frame))
-        #expect(detail.view.bounds.maxX - pause.frame.maxX == 28)
+        #expect(detail.view.bounds.maxX - pause.frame.maxX == (module == .overview ? 126 : 28))
         #expect(NSApp.sendAction(try #require(pause.action), to: pause.target, from: pause))
         #expect(detail.paused && pause.title == "Resume")
         detail.update(Snapshot(), history: [])
@@ -192,13 +199,13 @@ import Testing
       ])
     let advanced = try #require(
       navigation.sidebar.subviews.compactMap { $0 as? NSTextField }.first {
-        $0.stringValue == "ADVANCED"
+        $0.stringValue == "Advanced"
       })
     let weather = try #require(modules.first { $0.title == "Weather" })
     let sensors = try #require(modules.first { $0.title == "Sensors" })
     let settings = try #require(
       navigation.sidebar.subviews.compactMap { $0 as? NSTextField }.first {
-        $0.stringValue == "SETTINGS"
+        $0.stringValue == "Settings"
       })
     #expect(advanced.accessibilityLabel() == "ADVANCED")
     #expect(weather.frame.minY > advanced.frame.maxY)

@@ -276,9 +276,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       return
     }
     let width = max(0, w - 180)
-    titleLabel.frame.origin.y = h - 42
+    titleLabel.frame.origin = .init(x: 154, y: h - 42)
     readingsButton.frame.origin = .init(x: w - 132, y: h - 44)
-    historyButton.frame.origin = .init(x: w - 227, y: h - 44)
+    historyButton.frame = .init(
+      x: w - (selected == .overview ? 120 : 227), y: h - 44, width: selected == .overview ? 92 : 90,
+      height: selected == .overview ? 28 : 26)
     sensorSearch.frame = .init(x: 300, y: h - 44, width: max(0, w - 442), height: 26)
     networkGrouping?.frame.origin.y = h - 44
     weatherCityPicker?.frame = .init(x: 250, y: h - 44, width: max(0, w - 395), height: 26)
@@ -290,7 +292,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let chartHeight = (selected == .sensors ? 156.0 : 126.0) + max(0, h - 560) * 0.3
     chart.frame = .init(
       x: 156, y: h - (weather ? 191 : 124) - chartHeight, width: width, height: chartHeight)
-    summary?.frame = .init(x: 154, y: 56, width: width, height: max(0, h - 106))
+    summary?.frame = .init(
+      x: 154, y: selected == .overview ? 40 : 56, width: width,
+      height: max(0, h - (selected == .overview ? 96 : 106)))
     calendar?.frame = .init(
       x: 154, y: chart.frame.minY, width: min(600, width * 0.7), height: chartHeight)
     let tableHeight = weather && chart.isHidden ? h - 247 : chart.frame.minY - 66
@@ -299,8 +303,26 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let labelWidth: CGFloat = (selected == .network ? 240 : 280) + max(0, w - 700) * 0.55
     sizeColumn(table.tableColumns.first, to: min(columnsWidth, labelWidth))
     sizeColumn(table.tableColumns.last, to: max(0, columnsWidth - labelWidth))
-    footnoteLabel.frame.size.width = max(0, w - 345)
-    pauseButton.frame.origin.x = w - 100
+    footnoteLabel.frame = .init(
+      x: 156, y: selected == .overview ? 12 : 27,
+      width: selected == .overview ? width : max(0, w - 345), height: 18)
+    pauseButton.frame = .init(
+      x: w - (selected == .overview ? 216 : 100), y: selected == .overview ? h - 44 : 18,
+      width: selected == .overview ? 90 : 72, height: 28)
+    titleLabel.textColor = selected == .overview ? .labelColor : .secondaryLabelColor
+    if selected == .overview {
+      titleLabel.font = .systemFont(ofSize: 15, weight: .bold)
+      titleLabel.textColor = .labelColor
+      pauseButton.image = NSImage(
+        systemSymbolName: paused ? "play" : "pause", accessibilityDescription: nil)
+      historyButton.image = NSImage(
+        systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil)
+      pauseButton.imagePosition = .imageLeading
+      historyButton.imagePosition = .imageLeading
+    } else {
+      pauseButton.image = nil
+      historyButton.image = nil
+    }
   }
   /// A narrow material surface; the document scrolls, actions keep their full-width hit targets.
   private func layoutPopover() {
@@ -656,7 +678,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
           ? (showsAllReadings ? "Show summary" : "Show all readings and SMC keys")
           : showsAllReadings ? "Show summary" : "Show all readings")
     titleLabel.frame.size.width =
-      selected == .network ? 128 : selected == .weather ? 90 : selected == .sensors ? 142 : 300
+      selected == .overview && !isPopoverPresentation
+      ? max(0, view.bounds.width - 390)
+      : selected == .network ? 128 : selected == .weather ? 90 : selected == .sensors ? 142 : 300
     if selected == .weather { updateWeatherChoices() }
     chart.isHidden = selected == .clock
     if selected == .clock, calendar == nil {

@@ -59,6 +59,8 @@ extension SummaryDashboardView {
   }
   enum Content {
     case none
+    case device(DeviceHeader)
+    case overviewTile(OverviewTile)
     case message(String)
     case rows([Reading])
     case tiles([Tile], columns: Int)
@@ -80,6 +82,16 @@ extension SummaryDashboardView {
       var parts = [title, trailing]
       switch content {
       case .none: break
+      case .device(let header): parts += header.spoken
+      case .overviewTile(let tile):
+        parts += [tile.value.label + ": " + tile.value.value, tile.value.detail, tile.composition]
+        if let trend = tile.value.trend {
+          parts.append(
+            "\(trend.timeline.span) of recent trend history, "
+              + (trend.valueFormat.summary(
+                trend.first, indices: trend.timeline.indices, newestLabel: "Newest recorded")
+                ?? "No recorded values in this window"))
+        }
       case .message(let message): parts.append(message)
       case .rows(let rows):
         parts += rows.map {
@@ -135,12 +147,16 @@ extension SummaryDashboardView {
               plot.first, indices: timeline.indices, newestLabel: "Newest recorded")
               ?? "No recorded values in this window"),
           "\(plot.historySpan ?? timeline.span) history, \(timeline.indices.count) \(plot.bucketSeconds == nil ? "recorded samples" : plot.statistic.singular + " buckets"), \(plot.bucketSeconds.map { String(format: "%.0f second buckets", $0) } ?? timeline.cadenceDescription)",
-          plot.statistic == .average
-            ? "Pixel columns combine sample averages by valid observation counts; not time averages"
-            : plot.statistic == .minimum
-              ? "Pixel columns retain recorded minima when grouped"
-              : "Pixel columns retain sample peaks when grouped; CPU components stay from one observation",
-          "Gray markers mean missing or unsampled data; positive readings have a one-pixel minimum",
+          plot.drawsTrace
+            ? "Traces break at unavailable observations and collection gaps"
+            : plot.statistic == .average
+              ? "Pixel columns combine sample averages by valid observation counts; not time averages"
+              : plot.statistic == .minimum
+                ? "Pixel columns retain recorded minima when grouped"
+                : "Pixel columns retain sample peaks when grouped; CPU components stay from one observation",
+          plot.drawsTrace
+            ? "The full five-minute domain includes unsampled time"
+            : "Gray markers mean missing or unsampled data; positive readings have a one-pixel minimum",
         ]
         parts += plot.coverage
         if plot.uncollectedFraction.map({ $0 > 0 }) == true {

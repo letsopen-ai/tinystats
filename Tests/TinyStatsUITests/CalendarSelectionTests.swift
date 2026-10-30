@@ -126,7 +126,7 @@ import TinyStatsCore
   }
   controller.settings.calendarEvents = false
   picker.selectDate(day.end)
-  #expect(texts().contains { $0.hasPrefix("AGENDA") && $0.contains("23") })
+  #expect(texts().contains { $0.hasPrefix("Agenda") && $0.contains("23") })
   #expect(!texts().contains("Engineering review"))
 }
 

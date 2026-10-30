@@ -9,7 +9,7 @@ final class DetailNavigationCoordinator: NSObject {
   ]
   static let advancedModules: [Module] = [.sensors]
   let sidebar = NSVisualEffectView()
-  private let advancedLabel = NSTextField(labelWithString: "ADVANCED")
+  private let advancedLabel = NSTextField(labelWithString: "Advanced")
   var onSelectModule: ((Module) -> Void)?
   var onSettingsPage: ((PreferencesController.Page) -> Void)?
   private var moduleButtons: [Module: NSButton] = [:]
@@ -30,7 +30,7 @@ final class DetailNavigationCoordinator: NSObject {
     for module in Self.mainModules + Self.advancedModules {
       guard let index = Module.allCases.firstIndex(of: module) else { continue }
       if module == Self.advancedModules.first {
-        advancedLabel.font = .systemFont(ofSize: 9, weight: .semibold)
+        advancedLabel.font = .systemFont(ofSize: 11, weight: .semibold)
         advancedLabel.textColor = .tertiaryLabelColor
         advancedLabel.setAccessibilityLabel("ADVANCED")
         sidebar.addSubview(advancedLabel)
@@ -50,8 +50,8 @@ final class DetailNavigationCoordinator: NSObject {
       sidebar.addSubview(button)
       moduleButtons[module] = button
     }
-    let group = NSTextField(labelWithString: "SETTINGS")
-    group.font = .systemFont(ofSize: 9, weight: .semibold)
+    let group = NSTextField(labelWithString: "Settings")
+    group.font = .systemFont(ofSize: 11, weight: .semibold)
     group.textColor = .tertiaryLabelColor
     group.frame = .init(x: 17, y: 99, width: 100, height: 15)
     sidebar.addSubview(group)
