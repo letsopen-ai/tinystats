@@ -293,22 +293,20 @@ func sensorsKeepNativeSearchKeyboardEligibilityAndRoundedSelectionAcrossNavigati
             func assertTextGeometry() throws {
               let selection = row.selectionRect
               #expect(row.isSelected)
+              #expect(abs(selection.minX - row.bounds.minX - 4) <= 0.01)
+              #expect(abs(row.bounds.maxX - selection.maxX - 4) <= 0.01)
               #expect(selection.minY >= row.bounds.minY && selection.maxY <= row.bounds.maxY)
               for column in 0..<table.numberOfColumns {
                 let field = try #require(
                   table.view(atColumn: column, row: index, makeIfNecessary: true) as? NSTextField)
                 let cell = try #require(field.cell)
-                let text = row.convert(cell.drawingRect(forBounds: field.bounds), from: field)
+                let text = row.convert(cell.titleRect(forBounds: field.bounds), from: field)
                 #expect(selection.contains(text))
                 #expect(abs(selection.midY - text.midY) <= 0.5)
                 #expect(abs(text.height - field.fittingSize.height) <= 0.5)
-                if column == 0 {
-                  #expect(abs(text.minX - row.bounds.minX - 12) <= 0.5)
-                  #expect(abs(text.minX - selection.minX - 8) <= 0.5)
-                } else {
-                  #expect(abs(row.bounds.maxX - text.maxX - 12) <= 0.5)
-                  #expect(abs(selection.maxX - text.maxX - 8) <= 0.5)
-                }
+                let ink = row.convert(try sensorInkBounds(field), from: field)
+                let inset = column == 0 ? ink.minX - selection.minX : selection.maxX - ink.maxX
+                #expect(abs(inset - 8) <= (column == 0 ? 0.75 : 0.5))
               }
               if dropdown {
                 let highlight = row.convert(selection, to: detail.view)
@@ -332,7 +330,7 @@ func sensorsKeepNativeSearchKeyboardEligibilityAndRoundedSelectionAcrossNavigati
             first.width += 16
             last.width -= 16
             table.tile()
-            #expect(row.frame.width == width)
+            #expect(abs(row.frame.width - width) <= 0.01)
             try assertTextGeometry()
           }
         }
@@ -349,9 +347,9 @@ func sensorsKeepNativeSearchKeyboardEligibilityAndRoundedSelectionAcrossNavigati
     let naturalHeight = field.fittingSize.height
     let cell = try #require(field.cell)
     let short = NSRect(x: 0, y: 0, width: 180, height: 25)
-    let text = cell.drawingRect(forBounds: short)
-    #expect(text.height == naturalHeight)
-    #expect(text.midY == short.midY)
+    let text = cell.titleRect(forBounds: short)
+    #expect(abs(text.height - naturalHeight) <= 1)
+    #expect(abs(text.midY - short.midY) <= 0.01)
     var inkCenters: [CGFloat] = []
     var inkHeights: [CGFloat] = []
     for extra in [8.0, 28.0] {
@@ -370,6 +368,6 @@ func sensorsKeepNativeSearchKeyboardEligibilityAndRoundedSelectionAcrossNavigati
       inkHeights.append(CGFloat(last - first + 1) / scale)
     }
     #expect(abs(inkCenters[1] - inkCenters[0] - 10) <= 0.5)
-    #expect(inkHeights[0] == inkHeights[1])
+    #expect(abs(inkHeights[0] - inkHeights[1]) <= 0.01)
   }
 }

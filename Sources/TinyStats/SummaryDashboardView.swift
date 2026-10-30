@@ -335,8 +335,10 @@ import TinyStatsCore
           label: names[index], value: Display.rate(first[index]),
           second: Display.rate(second[index]), fraction: fractions[index],
           color: module == .network ? SystemStyle.secondaryAccent : SystemStyle.accent,
+          role: module == .network ? .secondary : .primary,
           secondFraction: fractions[index + first.count],
-          secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent)
+          secondColor: module == .network ? SystemStyle.accent : SystemStyle.secondaryAccent,
+          secondRole: module == .network ? .primary : .secondary)
       }
     }
     func tile(
@@ -1023,6 +1025,7 @@ import TinyStatsCore
     case .minimum: " · column minima"
     }
   }
+  var glassEnvironment: () -> GlassSurface.Environment = { .current }
   override func draw(_ dirtyRect: NSRect) {
     NSGraphicsContext.saveGraphicsState()
     defer { NSGraphicsContext.restoreGraphicsState() }
@@ -1036,7 +1039,8 @@ import TinyStatsCore
       card.frame = .init(
         x: original.frame.minX / zoom, y: original.frame.minY / zoom,
         width: original.frame.width / zoom, height: original.frame.height / zoom)
-      SystemStyle.drawPlatter(card.frame)
+      SystemStyle.drawPlatter(
+        card.frame, onGlass: usesPopoverLayout, environment: glassEnvironment())
       if isOverview {
         drawOverviewCard(card)
         continue
@@ -1087,7 +1091,8 @@ import TinyStatsCore
       case .message(let message):
         text(message, rect: content, color: .secondaryLabelColor, size: 11)
       case .none: break
-      case .rows: drawRows(displayedRows(in: original), in: content)
+      case .rows:
+        drawRows(displayedRows(in: original), in: content, processColumns: card.groupsProcesses)
       case .tiles(let tiles, let columns): drawTiles(tiles, columns: columns, in: content)
       case .gauges(let gauges): drawGauges(gauges, in: content)
       case .cores(let cpu): drawCores(cpu, in: content)
@@ -1110,10 +1115,11 @@ import TinyStatsCore
     size: CGFloat = 12, weight: NSFont.Weight = .regular, alignment: NSTextAlignment = .left
   ) {
     guard rect.width > 0, rect.height > 0 else { return }
-    (value as NSString).draw(
-      in: rect,
-      withAttributes: textStyles.attributes(
-        color: color, size: size, weight: weight, alignment: alignment))
+    let attributes = textStyles.attributes(
+      color: usesPopoverLayout && glassEnvironment().treatment == .glass
+        && color == .secondaryLabelColor
+        ? SystemStyle.glassSecondaryLabel : color, size: size, weight: weight, alignment: alignment)
+    (value as NSString).draw(in: rect, withAttributes: attributes)
   }
   /// Segment at every unavailable sample; never draw an invented bridge through a gap.
   static func historySegments(_ plot: Plot, upperBound: Double? = nil) -> [[NSPoint]] {
@@ -1171,15 +1177,22 @@ import TinyStatsCore
       fill.line(to: NSPoint(x: last.x, y: baseline))
       fill.line(to: NSPoint(x: first.x, y: baseline))
       fill.close()
-      plot.firstColor.withAlphaComponent(0.2).setFill()
+      plot.firstColor.withAlphaComponent(
+        GlassSurface.plotFillOpacity(
+          glass: usesPopoverLayout && glassEnvironment().treatment == .glass)
+      ).setFill()
       if filled ?? !plot.firstRole.dashed { fill.fill() }
-      plot.firstColor.setStroke()
+      let traceColor = SystemStyle.chartTraceColor(
+        plot.firstColor, role: plot.firstRole,
+        glass: usesPopoverLayout && glassEnvironment().treatment == .glass)
+      traceColor.setStroke()
       if plot.firstRole.dashed { line.setLineDash([4, 3], count: 2, phase: 0) }
-      line.lineWidth = 1.5
+      line.lineWidth = GlassSurface.traceWidth(
+        glass: usesPopoverLayout && glassEnvironment().treatment == .glass)
       line.stroke()
       if points.count == 1 {
         let dot = NSBezierPath(ovalIn: NSRect(x: first.x - 2, y: first.y - 2, width: 4, height: 4))
-        plot.firstRole.legendMarker.draw(in: dot.bounds, color: plot.firstColor)
+        plot.firstRole.legendMarker.draw(in: dot.bounds, color: traceColor)
       }
     }
   }
@@ -1555,8 +1568,11 @@ import TinyStatsCore
   private func drawPlot(_ plot: Plot, in area: NSRect) {
     guard area.height > 20 else { return }
     let paired = !plot.secondLabel.isEmpty
-    let firstColor = plot.firstColor
-    let secondColor = plot.secondColor
+    let glass = usesPopoverLayout && glassEnvironment().treatment == .glass
+    let firstColor = SystemStyle.chartTraceColor(
+      plot.firstColor, role: plot.firstRole, glass: glass)
+    let secondColor = SystemStyle.chartTraceColor(
+      plot.secondColor, role: plot.secondRole, glass: glass)
     let headline = area.height >= 90
     if headline {
       plotValue(

@@ -86,6 +86,12 @@ final class DetailNavigationCoordinator: NSObject {
     for control in controls {
       if control.superview !== host { host.addSubview(control) }
       (control as? NavigationButton)?.usesModernSelection = sidebarMaterial.treatment != .legacy
+      (control as? NavigationButton)?.usesGlassInk = sidebarMaterial.treatment == .glass
+      if let label = control as? NSTextField, label !== brand {
+        label.textColor =
+          sidebarMaterial.treatment == .glass
+          ? SystemStyle.glassSecondaryLabel : .tertiaryLabelColor
+      }
     }
     layout(in: sidebar.superview?.bounds ?? .init(x: 0, y: 0, width: 700, height: 560))
     sidebar.superview?.needsDisplay = true
@@ -154,6 +160,7 @@ final class DetailNavigationCoordinator: NSObject {
 
 /// Fixed icon slot and text baseline keep every sidebar label aligned.
 @MainActor final class NavigationButton: NSButton {
+  var usesGlassInk = false
   var usesModernSelection = false { didSet { needsDisplay = true } }
   override func draw(_ dirtyRect: NSRect) {
     if state == .on {
@@ -165,7 +172,7 @@ final class DetailNavigationCoordinator: NSObject {
     let color: NSColor =
       state == .on
       ? (usesModernSelection ? .alternateSelectedControlTextColor : .controlAccentColor)
-      : .secondaryLabelColor
+      : usesGlassInk ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor
     if let image {
       let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
         .applying(.init(paletteColors: [color]))

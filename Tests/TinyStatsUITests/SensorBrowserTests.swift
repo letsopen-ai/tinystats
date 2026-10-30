@@ -141,7 +141,9 @@ import Testing
 @Test @MainActor func sensorValueColumnsKeepAGutterAtEnlargedWindowWidths() throws {
   _ = NSApplication.shared
   let window = MainWindow()
-  let detail = DetailController()
+  var snapshot = Snapshot()
+  snapshot.sensors = [.init(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 52)]
+  let detail = DetailController(snapshot: snapshot, history: [])
   window.contentViewController = detail
   detail.selected = .sensors
   let scroll = try #require(detail.view.subviews.compactMap { $0 as? NSScrollView }.first)
@@ -151,14 +153,15 @@ import Testing
     detail.view.layoutSubtreeIfNeeded()
     let index = try #require(
       (0..<table.numberOfRows).first {
-        table.view(atColumn: 1, row: $0, makeIfNecessary: true) is NSTextField
+        guard let field = table.view(atColumn: 1, row: $0, makeIfNecessary: true) as? NSTextField
+        else { return false }
+        return !field.stringValue.isEmpty
       })
     let field = try #require(
       table.view(atColumn: 1, row: index, makeIfNecessary: true) as? NSTextField)
-    let cell = try #require(field.cell)
-    let text = scroll.contentView.convert(cell.drawingRect(forBounds: field.bounds), from: field)
-    // Sensors put the gutter inside the cell, so measure the text rather than unused column width.
-    #expect(abs(scroll.contentView.bounds.maxX - text.maxX - 12) <= 0.5)
+    let ink = scroll.contentView.convert(try sensorInkBounds(field), from: field)
+    // Measure the last inked column, with one explicit 2x device pixel of tolerance.
+    #expect(abs(scroll.contentView.bounds.maxX - ink.maxX - 12) <= 0.5)
   }
   window.close()
 }
