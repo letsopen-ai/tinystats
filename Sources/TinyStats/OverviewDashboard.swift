@@ -183,13 +183,13 @@ extension SummaryDashboardView {
         battery == nil ? "System power" : "Battery",
         battery.map { Display.percent($0.percent) } ?? power.map { $0.formatted(fahrenheit: false) }
           ?? "—",
-        battery.map { BatteryMenuState.state(for: $0).title } ?? "AC power · no internal battery",
+        battery.map { BatteryMenuState.state(for: $0).title } ?? "AC power",
         "bolt"),
       tile(
         "Disk read", Display.rate(s.diskRead), "All physical disks", "internaldrive",
         key: \.diskRead),
       tile(
-        "Disk write", Display.rate(s.diskWrite), "All physical disks", "internaldrive",
+        "Disk write", Display.rate(s.diskWrite), "", "internaldrive",
         key: \.diskWrite),
       tile(
         "Swap used", memory.map { Display.bytes($0.swapUsed) } ?? "—",
@@ -214,7 +214,7 @@ extension SummaryDashboardView {
       in: .init(x: rect.minX + 14, y: rect.minY + 12, width: 40, height: 40),
       from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     text(
-      header.model,
+      header.model + (paused ? " · Paused" : ""),
       rect: .init(x: rect.minX + 66, y: rect.minY + 14, width: deviceWidth - 8, height: 20),
       size: 15, weight: .semibold)
     text(
@@ -232,13 +232,14 @@ extension SummaryDashboardView {
       let x = compact ? statsX + CGFloat(index) * width : statsX + [0, 94, 214][index]
       let y = compact ? rect.minY + 62 : rect.minY + 17
       text(
-        item.0, rect: .init(x: x, y: y, width: compact ? width * 0.58 : width, height: 15),
+        compact ? ["Uptime", "Thermal", "Memory"][index] : item.0,
+        rect: .init(x: x, y: y, width: compact ? width * 0.48 : width, height: 15),
         color: .secondaryLabelColor, size: 11, alignment: compact ? .left : .right)
       text(
         item.1,
         rect: .init(
-          x: compact ? x + width * 0.55 : x, y: compact ? y : y + 19,
-          width: compact ? width * 0.45 - 10 : width, height: 18), color: item.2,
+          x: compact ? x + width * 0.48 : x, y: compact ? y : y + 19,
+          width: compact ? width * 0.52 - 6 : width, height: 18), color: item.2,
         size: compact ? 11 : 13, weight: .semibold, alignment: .right)
     }
   }

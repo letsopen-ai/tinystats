@@ -63,7 +63,7 @@ import Testing
   #expect(control.superview === summary)
   let card = try #require(summary.cards.first { $0.groupsProcesses })
   #expect(card.frame.contains(control.frame))
-  #expect(control.frame.minY == card.frame.minY + 5)
+  #expect(control.frame.minY == card.frame.minY + 9)
 }
 @Test @MainActor func bundleDashboardKeepsGraphicalRatesAndMakesScopeSpoken() throws {
   var snapshot = Snapshot()
@@ -130,9 +130,14 @@ import Testing
     controller.view.subviews.compactMap { $0 as? NSScrollView }.first?.documentView as? NSTableView)
   func rowStrings() -> [(String, String)] {
     (0..<table.numberOfRows).map { row in
-      (
-        (controller.tableView(table, viewFor: table.tableColumns[0], row: row) as? NSTextField)?
-          .stringValue ?? "",
+      let labelView = controller.tableView(table, viewFor: table.tableColumns[0], row: row)
+      let label =
+        (labelView as? NSTextField)?.stringValue
+        ?? (labelView as? ProcessAppLabelCell)?.accessibilityLabel()?.components(
+          separatedBy: " · "
+        ).prefix(2).joined(separator: " · ") ?? ""
+      return (
+        label,
         (controller.tableView(table, viewFor: table.tableColumns[1], row: row) as? NSTextField)?
           .stringValue ?? ""
       )
@@ -143,7 +148,7 @@ import Testing
     rows.contains {
       $0.0 == "Browser · 3 processes" && $0.1 == "↓ \(Display.rate(2048))  ↑ \(Display.rate(1024))"
     })
-  #expect(rows.contains { $0.0 == "Broker · 99" && $0.1 == "↓ 512 B/s  ↑ 256 B/s" })
+  #expect(rows.contains { $0.0 == "Broker · 1 process" && $0.1 == "↓ 512 B/s  ↑ 256 B/s" })
   #expect(!rows.contains { $0.0.contains("Duplicate sentinel") })
   #expect(rows.contains { $0.0 == "Scope" && $0.1 == "All interfaces + loopback" })
   #expect(rows.contains { $0.0 == "Shared services / WebKit" && $0.1.contains("not attributed") })
@@ -250,4 +255,89 @@ import Testing
       module: .memory, snapshot: sample, history: [], settings: settings, paused: true))
   #expect(memory.rows.first { $0.label == "App · 2 processes" }?.value == "—")
   #expect(memory.rows.contains { $0.label == "Shared pages" && $0.value == "May be counted twice" })
+}
+
+@Test @MainActor func cpuAndMemoryGroupingPreservesTrafficSnapshotAndRevision() throws {
+  for module in [Module.cpu, .memory] {
+    let detail = DetailController()
+    detail.selected = module
+    var sample = Snapshot()
+    sample.networkTraffic.availability = .ready
+    sample.networkTraffic.revision = "retained"
+    sample.networkTraffic.processes = [
+      .init(pid: 5, uniqueID: 6, name: "Broker", download: 10, upload: 20)
+    ]
+    detail.settings.networkTrafficRevision = "retained"
+    detail.update(sample, history: [])
+    let control = try #require(
+      groupingDescendants(detail.view).compactMap { $0 as? ProcessGroupingControl }.first)
+    control.selectedSegment = 1
+    #expect(NSApp.sendAction(try #require(control.action), to: control.target, from: control))
+    #expect(detail.snapshot.networkTraffic.availability == .ready)
+    #expect(detail.snapshot.networkTraffic.revision == "retained")
+    #expect(detail.snapshot.networkTraffic.processes.first?.pid == 5)
+    #expect(detail.snapshot.networkTraffic.processes.first?.download == 10)
+    #expect(detail.settings.networkTrafficRevision == "retained")
+  }
+}
+
+@Test @MainActor func readingsGroupingHeaderRetainsParentAndKeyboardFocusAcrossSamples() throws {
+  let detail = DetailController()
+  detail.selected = .cpu
+  detail.showsAllReadings = true
+  var sample = Snapshot()
+  sample.cpu = .init(usage: 10, cores: [10], load: [])
+  sample.processes = [.init(pid: 1, name: "Helper", cpu: 10, memory: 1, read: nil, written: nil)]
+  detail.update(sample, history: [])
+  let window = NSWindow(
+    contentRect: detail.view.bounds, styleMask: [.titled], backing: .buffered, defer: false)
+  window.isReleasedWhenClosed = false
+  window.contentViewController = detail
+  defer {
+    window.contentViewController = nil
+    window.close()
+  }
+  let table = try #require(groupingDescendants(detail.view).compactMap { $0 as? NSTableView }.first)
+  let rows = try #require(
+    DetailReadingsBuilder.build(
+      module: .cpu, snapshot: sample, history: [], settings: detail.settings, paused: false)
+  ).rows
+  let header = try #require(rows.firstIndex(where: { $0.processGroupingHeader }))
+  table.scrollRowToVisible(header)
+  let cell = try #require(table.view(atColumn: 1, row: header, makeIfNecessary: true))
+  let control = try #require(cell.subviews.compactMap { $0 as? ProcessGroupingControl }.first)
+  #expect(window.makeFirstResponder(control))
+  sample.processes[0].cpu = 20
+  detail.update(sample, history: [])
+  #expect(control.superview === cell && window.firstResponder === control)
+  sample.processes.append(.init(pid: 2, name: "Second", cpu: 1, memory: 1, read: nil, written: nil))
+  detail.update(sample, history: [])
+  #expect(window.firstResponder === control)
+  sample.cpuApps = [
+    .init(name: "App", processCount: 1, cpu: 20, memory: 1),
+    .init(name: "Second", processCount: 1, cpu: 1, memory: 1),
+  ]
+  detail.update(sample, history: [])
+  control.selectedSegment = 1
+  #expect(NSApp.sendAction(try #require(control.action), to: control.target, from: control))
+  let heading = table.view(atColumn: 0, row: header, makeIfNecessary: true) as? NSTextField
+  #expect(heading?.stringValue == "Top apps")
+  #expect(control.superview === cell && window.firstResponder === control)
+}
+
+@Test @MainActor func brokerTableCellReservesTheCountAndKeepsPIDProvenance() throws {
+  let cell = ProcessAppLabelCell(frame: .init(x: 0, y: 0, width: 165, height: 25))
+  cell.update(
+    .init(name: "Shared broker", icon: ProcessAppDisplayCache.placeholder), count: 1, path: nil,
+    provenance: "Shared broker · 99")
+  cell.needsLayout = true
+  cell.layoutSubtreeIfNeeded()
+  let fields = cell.subviews.compactMap { $0 as? NSTextField }
+  let name = try #require(fields.first { $0.stringValue == "Shared broker" })
+  let count = try #require(fields.first { $0.stringValue == "1" })
+  #expect(!name.frame.intersects(count.frame))
+  #expect(name.intrinsicContentSize.width <= name.frame.width)
+  #expect(count.toolTip == "1 process")
+  #expect(cell.accessibilityLabel()?.contains("Shared broker · 99") == true)
+  #expect(cell.accessibilityLabel()?.contains("1 process") == true)
 }

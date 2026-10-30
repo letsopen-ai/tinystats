@@ -300,6 +300,15 @@ public final class Sampler {
         mountID: $0.mount_id)
     }
   }
+  /// Keep native identity/path lookup and calculated readings in the same scan order.
+  static func processAppRows(
+    raw: [ts_process], readings: [ProcessReading],
+    bundle: (ts_process) -> ExecutableBundle.Bundle?
+  ) -> (cpu: [ProcessAppReading], memory: [ProcessAppReading]) {
+    guard raw.count == readings.count, zip(raw, readings).allSatisfy({ $0.pid == $1.pid })
+    else { return ([], []) }
+    return ProcessAppGrouping.rows(readings, bundles: raw.map(bundle))
+  }
   private func readProcesses(at time: Double, groupApps: Bool) -> (
     processes: [ProcessReading], cpu: [ProcessAppReading], memory: [ProcessAppReading]
   ) {
@@ -326,14 +335,14 @@ public final class Sampler {
     if groupApps {
       processBundleCache.beginScan()
       var buffer = [CChar](repeating: 0, count: 4096)
-      let bundles = raw.map { row -> ExecutableBundle.Bundle? in
+      apps = Self.processAppRows(raw: raw, readings: result) { row in
         guard ts_read_process_path(row.pid, row.started, &buffer, buffer.count) else { return nil }
-        let path = String(
-          bytes: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, encoding: .utf8)
+        let path = buffer.withUnsafeBufferPointer { bytes in
+          bytes.baseAddress.flatMap { String(validatingCString: $0) }
+        }
         return path.flatMap { processBundleCache.resolve($0) }
       }
       processBundleCache.endScan()
-      apps = ProcessAppGrouping.rows(result, bundles: bundles)
     } else {
       processBundleCache = .init()
     }

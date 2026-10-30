@@ -15,6 +15,7 @@ enum ChartSeriesRole {
     var color: NSColor
     var values: [Double?]
     var role: ChartSeriesRole = .primary
+    var displayName: String? = nil
   }
   var series: [Series] = [] {
     didSet {
@@ -138,9 +139,9 @@ enum ChartSeriesRole {
     }
     let font = NSFont.systemFont(ofSize: 10)
     var x = 0.0
-    for line in series {
+    for line in series where !fitsDataRange || hasData {
       let label =
-        line.role.legendGlyph + line.name
+        line.role.legendGlyph + (line.displayName ?? line.name)
         + (fitsDataRange ? " · " + valueFormat.string(line.values.last.flatMap { $0 }) : "")
       let string = NSMutableAttributedString(
         string: label, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
@@ -149,7 +150,7 @@ enum ChartSeriesRole {
       string.draw(at: NSPoint(x: x, y: bounds.height - 13))
       x += string.size().width + 14
     }
-    if fitsDataRange {
+    if fitsDataRange && hasData {
       let attrs: [NSAttributedString.Key: Any] = [
         .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular),
         .foregroundColor: NSColor.secondaryLabelColor,
@@ -164,11 +165,17 @@ enum ChartSeriesRole {
     }
     if !hasData {
       (emptyMessage as NSString).draw(
-        at: NSPoint(x: 12, y: area.midY - 6),
+        in: NSRect(x: 0, y: area.midY - 8, width: bounds.width, height: 18),
         withAttributes: [
           .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
+          .paragraphStyle: {
+            let style = NSMutableParagraphStyle()
+            style.alignment = .center
+            return style
+          }(),
         ])
     }
+    guard !fitsDataRange || hasData else { return }
     var label =
       caption
       ?? (times.count > 1 ? "\(Int(duration))s history · newest →" : "Waiting for the next reading")

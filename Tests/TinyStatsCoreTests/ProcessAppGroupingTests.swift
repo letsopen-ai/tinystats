@@ -53,8 +53,8 @@ private func appProcess(_ pid: Int32, cpu: Double? = 10, memory: UInt64 = 10) ->
       appProcess(3, cpu: 0, memory: 0),
     ], bundles: [bundle, bundle, nil])
   let app = try #require(rows.cpu.first { $0.pid == nil })
-  #expect(app.cpu == nil && app.memory == nil && app.processCount == 2)
-  #expect(rows.cpu.first?.pid == 3 && rows.cpu.first?.cpu == 0)
+  #expect(app.cpu == 10 && app.cpuIncomplete == 1 && app.memory == nil && app.processCount == 2)
+  #expect(rows.cpu.first?.pid == nil && rows.cpu.first?.cpu == 10)
   #expect(rows.memory.first?.pid == 3 && rows.memory.first?.memory == 0)
   #expect(ProcessAppGrouping.rows([appProcess(1)], bundles: []).cpu.isEmpty)
 }
@@ -89,4 +89,52 @@ private func appProcess(_ pid: Int32, cpu: Double? = 10, memory: UInt64 = 10) ->
   #expect(!ts_read_process_path(-1, identity.started, &buffer, buffer.count))
   #expect(!ts_read_process_path(getpid(), 0, &buffer, buffer.count))
   #expect(!ts_read_process_path(getpid(), identity.started, &buffer, 10))
+}
+
+@Test func partialCPUKeepsAppRankAndUnavailableAndOverflowStayHonest() throws {
+  let bundle = ExecutableBundle.bundle(for: "/X.app/Contents/x")
+  let input =
+    [appProcess(1, cpu: nil), appProcess(2, cpu: 80), appProcess(3, cpu: nil)]
+    + (4...13).map { appProcess(Int32($0), cpu: 50) }
+  let paths = [bundle, bundle, bundle] + [ExecutableBundle.Bundle?](repeating: nil, count: 10)
+  let rows = ProcessAppGrouping.rows(input, bundles: paths)
+  #expect(rows.cpu.first?.cpu == 80 && rows.cpu.first?.cpuIncomplete == 2)
+  #expect(rows.cpu.first?.processCount == 3 && rows.cpu.count == 8)
+  for invalid: Double? in [nil, .nan, .infinity, -1] {
+    let unmeasured = ProcessAppGrouping.rows([appProcess(1, cpu: invalid)], bundles: [bundle])
+    #expect(unmeasured.cpu.first?.cpu == nil && unmeasured.cpu.first?.cpuIncomplete == 1)
+  }
+  let overflow = ProcessAppGrouping.rows(
+    [
+      appProcess(1, cpu: .greatestFiniteMagnitude), appProcess(2, cpu: .greatestFiniteMagnitude),
+      appProcess(3, cpu: 1),
+    ],
+    bundles: [bundle, bundle, bundle])
+  #expect(overflow.cpu.first?.cpu == nil && overflow.cpu.first?.cpuIncomplete == 0)
+}
+
+@Test func samplerAppProjectionKeepsRawIdentityAndCalculatedReadingAligned() {
+  var raw = [ts_process(), ts_process(), ts_process()]
+  for index in raw.indices {
+    raw[index].pid = Int32(70 + index)
+    raw[index].started = UInt64(100 + index)
+  }
+  let readings = raw.enumerated().map {
+    appProcess($0.element.pid, cpu: Double($0.offset * 10), memory: UInt64($0.offset + 1))
+  }
+  var identities: [UInt64] = []
+  let result = Sampler.processAppRows(raw: raw, readings: readings) { row in
+    identities.append(row.started)
+    return row.pid == 71 ? ExecutableBundle.bundle(for: "/X.app/Contents/x") : nil
+  }
+  #expect(identities == [100, 101, 102])
+  #expect(result.cpu.first?.pid == 72 && result.cpu.first?.cpu == 20)
+  #expect(result.memory.first { $0.bundlePath != nil }?.memory == 2)
+  var lookups = 0
+  let invalid = Sampler.processAppRows(raw: raw, readings: readings.reversed()) { _ in
+    lookups += 1
+    return nil
+  }
+  #expect(invalid.cpu.isEmpty && lookups == 0)
+  #expect(Sampler.processAppRows(raw: raw, readings: []) { _ in nil }.memory.isEmpty)
 }

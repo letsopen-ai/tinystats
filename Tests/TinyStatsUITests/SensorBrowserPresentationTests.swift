@@ -32,12 +32,12 @@ private let browserFan = SensorReading(key: "F0Ac", name: "Fan 1", kind: .fan, v
   #expect(cpu.selection == .hottest(.cpu) && cpu.value == "65.0°C")
   #expect(
     cpu.subtitle
-      == "Hottest of 2 recognized CPU sensors · read-only · currently readable sensors only")
+      == "Hottest CPU sensor")
   #expect(browser([browserFan, browserGPU]).selection == .hottest(.gpu))
   #expect(browser([browserFan]).selection == .reading("F0Ac"))
   let kept = browser(readings, query: "nothing", selection: .reading("gone"))
   #expect(kept.selection == .reading("gone") && kept.value == "Sensor unavailable")
-  #expect(kept.subtitle == "gone · currently unavailable · read-only")
+  #expect(kept.subtitle == "gone · currently unavailable")
   #expect(kept.rows.map(\.label) == ["No matching sensors"])
   #expect(browser([], selection: .hottest(.cpu)).subtitle.contains("currently unavailable"))
 }
@@ -60,12 +60,12 @@ private let browserFan = SensorReading(key: "F0Ac", name: "Fan 1", kind: .fan, v
   let intel = SensorReading(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 40)
   let readings = [browserGPU, browserHotCPU, intel, browserCPU]
   let summary = browser(readings)
-  #expect(summary.title == "SENSORS · 4/4")
+  #expect(summary.title == "SENSORS" && summary.count == "4/4")
   #expect(
     summary.rows.contains { $0.label == "CPU proximity" && $0.sensorIdentity == .reading("TC0P") })
   #expect(!summary.rows.contains { $0.sensorIdentity == .reading("Te04") })
   let collapsed = try #require(
-    summary.rows.first { $0.label == "2 more CPU sensors · 45.0–65.0 °C" })
+    summary.rows.first { $0.help == "2 more CPU sensors · 45.0–65.0 °C" })
   #expect(collapsed.sensorIdentity == nil && collapsed.value == "All readings")
   #expect(collapsed.accessibilityLabel?.contains("45.0 to 65.0 degrees Celsius") == true)
   let all = browser(readings, all: true)
@@ -75,7 +75,7 @@ private let browserFan = SensorReading(key: "F0Ac", name: "Fan 1", kind: .fan, v
   #expect(all.subtitle.contains("· now Te0I"))
   for mode in [false, true] {
     let search = browser(readings, query: "te04", all: mode)
-    #expect(search.title == "SENSORS · 1/4")
+    #expect(search.title == "SENSORS" && search.count == "1/4")
     #expect(search.rows.map(\.label) == ["CPU", "CPU · Te04"])
     #expect(!search.rows.contains { $0.value == "All readings" })
     for query in ["proximity", "CPU", "°C", "temperature"] {
@@ -99,7 +99,7 @@ private let browserFan = SensorReading(key: "F0Ac", name: "Fan 1", kind: .fan, v
   #expect(unavailable.value == "Sensor unavailable")
   #expect(
     unavailable.rows.contains {
-      $0.value == "Unavailable" && $0.label.contains("No recognized CPU sensors · see All readings")
+      $0.value == "Unavailable" && $0.help == "No recognized CPU sensors · see All readings"
         && $0.sensorIdentity == nil
     })
   #expect(!unavailable.rows.contains { $0.sensorIdentity == .hottest(.gpu) })
@@ -109,7 +109,7 @@ private let browserFan = SensorReading(key: "F0Ac", name: "Fan 1", kind: .fan, v
     SensorReading(key: "PX00", name: "PX00", kind: .power, value: 0),
   ]
   let summary = browser(readings)
-  #expect(summary.rows.contains { $0.label == "2 more readings · power 1 · current 1" })
+  #expect(summary.rows.contains { $0.help == "2 more readings · power 1 · current 1" })
   let all = browser(readings + [browserFan], all: true)
   #expect(all.rows.contains { $0.value == "-0.50 A" })
   #expect(all.rows.contains { $0.value == "0.00 W" })
