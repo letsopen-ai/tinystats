@@ -29,7 +29,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let headlinePlatter = PlatterView()
   private let readingsPlatter = PlatterView()
   private let tracePlatter = PlatterView()
-  private let popoverMaterial = NSVisualEffectView()
+  private let popoverMaterial = GlassSurface()
   private let summaryScroll = PopoverScrollView()
   private let weatherScroll = PopoverScrollView()
   private let openWindowRow = MenuActionRow()
@@ -131,9 +131,6 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     view = MainContentView(frame: NSRect(x: 0, y: 0, width: 700, height: 560))
     view.setAccessibilityElement(true)
     view.setAccessibilityRole(.group)
-    popoverMaterial.material = .popover
-    popoverMaterial.blendingMode = .behindWindow
-    popoverMaterial.state = .active
     view.addSubview(popoverMaterial)
     for platter in [headlinePlatter, readingsPlatter, tracePlatter] { view.addSubview(platter) }
     summaryScroll.drawsBackground = false
