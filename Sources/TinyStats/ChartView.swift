@@ -10,6 +10,12 @@ enum ChartSeriesRole {
 }
 
 @MainActor final class ChartView: ChartHoverView {
+  var usesPanelGlass = false
+  var glassEnvironment: () -> GlassSurface.Environment = { .current }
+  private var secondaryInk: NSColor {
+    usesPanelGlass && glassEnvironment().treatment == .glass
+      ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor
+  }
   struct Series {
     var name: String
     var color: NSColor
@@ -120,7 +126,7 @@ enum ChartSeriesRole {
       let y = area.minY + area.height * zero
       baseline.move(to: .init(x: area.minX, y: y))
       baseline.line(to: .init(x: area.maxX, y: y))
-      NSColor.secondaryLabelColor.setStroke()
+      secondaryInk.setStroke()
       baseline.lineWidth = 0.8
       baseline.stroke()
     }
@@ -143,7 +149,10 @@ enum ChartSeriesRole {
         previous = true
         hasData = true
       }
-      line.color.setStroke()
+      SystemStyle.chartTraceColor(
+        line.color, role: line.role,
+        glass: usesPanelGlass && glassEnvironment().treatment == .glass
+      ).setStroke()
       if line.role.dashed { path.setLineDash([4, 3], count: 2, phase: 0) }
       path.lineWidth = 1.5
       path.lineJoinStyle = .round
@@ -156,16 +165,20 @@ enum ChartSeriesRole {
         line.role.legendGlyph + (line.displayName ?? line.name)
         + (fitsDataRange ? " · " + valueFormat.string(line.values.last.flatMap { $0 }) : "")
       let string = NSMutableAttributedString(
-        string: label, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+        string: label, attributes: [.font: font, .foregroundColor: secondaryInk])
       string.addAttribute(
-        .foregroundColor, value: line.color, range: NSRange(location: 0, length: 1))
+        .foregroundColor,
+        value: SystemStyle.chartTraceColor(
+          line.color, role: line.role,
+          glass: usesPanelGlass && glassEnvironment().treatment == .glass),
+        range: NSRange(location: 0, length: 1))
       string.draw(at: NSPoint(x: x, y: bounds.height - 13))
       x += string.size().width + 14
     }
     if fitsDataRange && hasData {
       let attrs: [NSAttributedString.Key: Any] = [
         .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular),
-        .foregroundColor: NSColor.secondaryLabelColor,
+        .foregroundColor: secondaryInk,
       ]
       for (value, y) in [(domain.upper, area.maxY - 11), (domain.lower, area.minY)] {
         (valueFormat.axisString(value) as NSString).draw(
@@ -174,14 +187,14 @@ enum ChartSeriesRole {
       if showsSummaryDecorations {
         (recordedSummary as NSString).draw(
           in: .init(x: 0, y: 15, width: bounds.width, height: 13),
-          withAttributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+          withAttributes: [.font: font, .foregroundColor: secondaryInk])
       }
     }
     if !hasData {
       (emptyMessage as NSString).draw(
         in: NSRect(x: 0, y: area.midY - 8, width: bounds.width, height: 18),
         withAttributes: [
-          .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
+          .font: NSFont.systemFont(ofSize: 12), .foregroundColor: secondaryInk,
           .paragraphStyle: {
             let style = NSMutableParagraphStyle()
             style.alignment = .center
@@ -198,6 +211,6 @@ enum ChartSeriesRole {
     }
     (label as NSString).draw(
       at: .init(x: 0, y: 0),
-      withAttributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+      withAttributes: [.font: font, .foregroundColor: secondaryInk])
   }
 }

@@ -29,6 +29,22 @@ enum SystemStyle {
   static let secondaryAccent = NSColor(name: nil) { appearance in
     resolvedPalette(in: appearance).secondary
   }
+  /// Keep the auto-derived hue, but cap light glass trace brightness for coloured backdrops.
+  static func chartTraceColor(_ color: NSColor, role: ChartSeriesRole, glass: Bool) -> NSColor {
+    guard glass, role == .secondary else { return color }
+    return NSColor(name: nil) { appearance in
+      guard !isDark(appearance) else { return color }
+      var resolved: NSColor = color
+      appearance.performAsCurrentDrawingAppearance {
+        resolved = color.usingColorSpace(.sRGB) ?? color
+      }
+      guard let rgb = resolved.usingColorSpace(.sRGB) else { return color }
+      let factor = min(1, 0.60 / max(0.001, rgb.brightnessComponent))
+      return NSColor(
+        srgbRed: rgb.redComponent * factor, green: rgb.greenComponent * factor,
+        blue: rgb.blueComponent * factor, alpha: rgb.alphaComponent)
+    }
+  }
   static let neutralSeries = NSColor(name: nil) { appearance in
     (isDark(appearance) ? NSColor.white : NSColor.black).withAlphaComponent(0.55)
   }
@@ -93,12 +109,27 @@ enum SystemStyle {
     case .unknown: .secondaryLabelColor
     }
   }
-  @MainActor static func drawPlatter(_ rect: NSRect) {
+  @MainActor static func cardFill(onGlass: Bool, environment: GlassSurface.Environment) -> NSColor {
+    if environment.treatment == .solid { return .controlBackgroundColor }
+    guard onGlass && environment.treatment == .glass else { return platterFill }
+    return glassCardFill
+  }
+  private static let glassCardFill = NSColor(name: nil) { appearance in
+    let dark = isDark(appearance)
+    return (dark ? NSColor.windowBackgroundColor : .labelColor)
+      .withAlphaComponent(GlassSurface.cardTintOpacity(dark: dark))
+  }
+  static let glassSecondaryLabel = NSColor(name: nil) { _ in
+    NSColor.labelColor.withAlphaComponent(GlassSurface.secondaryInkOpacity)
+  }
+  @MainActor static func drawPlatter(
+    _ rect: NSRect, onGlass: Bool = false, environment: GlassSurface.Environment = .current
+  ) {
     let path = NSBezierPath(
       roundedRect: rect.insetBy(dx: 0.25, dy: 0.25),
       xRadius: Radius.platter, yRadius: Radius.platter)
-    let solid = GlassSurface.Environment.current.treatment == .solid
-    (solid ? NSColor.controlBackgroundColor : platterFill).setFill()
+    let solid = environment.treatment == .solid
+    cardFill(onGlass: onGlass, environment: environment).setFill()
     path.fill()
     NSColor.separatorColor.withAlphaComponent(solid ? 1 : 0.35).setStroke()
     path.lineWidth = 0.5
@@ -149,7 +180,10 @@ enum SystemStyle {
 }
 
 @MainActor final class PlatterView: SystemStyledView {
-  override func draw(_ dirtyRect: NSRect) { SystemStyle.drawPlatter(bounds) }
+  var glassEnvironment: () -> GlassSurface.Environment = { .current }
+  override func draw(_ dirtyRect: NSRect) {
+    SystemStyle.drawPlatter(bounds, onGlass: true, environment: glassEnvironment())
+  }
 }
 
 /// Native inset group foundation for the later Settings panes.
@@ -280,12 +314,19 @@ enum SystemStyle {
   private var hovering = false
   private var iconName: String?
   var showsAccent = false { didSet { updateTint() } }
+  func refreshTint() { updateTint() }
   private func updateTint() {
     contentTintColor =
       usesIconPresentation
-      ? (showsAccent ? .controlAccentColor : hovering ? .labelColor : .secondaryLabelColor)
+      ? (showsAccent
+        ? .controlAccentColor
+        : hovering
+          ? .labelColor
+          : glassEnvironment().treatment == .glass
+            ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor)
       : .labelColor
   }
+  var glassEnvironment: () -> GlassSurface.Environment = { .current }
   var usesIconPresentation = false {
     didSet {
       guard oldValue != usesIconPresentation else { return }

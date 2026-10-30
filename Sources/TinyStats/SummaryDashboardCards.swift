@@ -26,8 +26,10 @@ extension SummaryDashboardView {
     var second: String? = nil
     var fraction: Double? = nil
     var color: NSColor = SystemStyle.accent
+    var role: ChartSeriesRole = .primary
     var secondFraction: Double? = nil
     var secondColor: NSColor = SystemStyle.secondaryAccent
+    var secondRole: ChartSeriesRole = .secondary
     var accessibilityValue: String? = nil
     var bundlePath: String? = nil
     var processCount: Int = 1
@@ -209,7 +211,25 @@ extension SummaryDashboardView {
       meterY = max(0, height - 3)
     }
   }
-  func drawRows(_ rows: ArraySlice<Reading>, in area: NSRect) {
+  /// Single-value rows share a measured column: 76pt minimum, bounded by 60% of the area.
+  static let rowValueWidth: CGFloat = 76
+  static func singleValueWidth(_ values: [String], font: NSFont, areaWidth: CGFloat) -> CGFloat {
+    min(
+      areaWidth * 0.6,
+      max(
+        rowValueWidth,
+        (values.map { ceil(($0 as NSString).size(withAttributes: [.font: font]).width) }
+          .max() ?? 0) + 3))
+  }
+  static func rowNameWidth(valueStart: CGFloat, minX: CGFloat, app: Bool) -> CGFloat {
+    max(0, valueStart - minX - 6 - (app ? 24 + ProcessAppLabelCell.countWidth + 3 : 0))
+  }
+  static func appCountRect(valueStart: CGFloat, y: CGFloat) -> NSRect {
+    .init(
+      x: valueStart - ProcessAppLabelCell.countWidth - 3, y: y,
+      width: ProcessAppLabelCell.countWidth, height: 16)
+  }
+  func drawRows(_ rows: ArraySlice<Reading>, in area: NSRect, processColumns: Bool = false) {
     guard !rows.isEmpty else {
       if area.height >= 14 {
         text("No readings to show", rect: area, color: .secondaryLabelColor, size: 11)
@@ -221,6 +241,12 @@ extension SummaryDashboardView {
     let valueAttributes: [NSAttributedString.Key: Any] = [
       .font: NSFont.systemFont(ofSize: height < 18 ? 10 : 11, weight: .medium)
     ]
+    let singleWidth =
+      processColumns
+      ? Self.singleValueWidth(
+        rows.filter { $0.second == nil }.map(\.value),
+        font: .systemFont(ofSize: height < 18 ? 10 : 11, weight: .medium), areaWidth: area.width)
+      : 0
     // Paired Apps values need only their measured ink width. Give the remaining
     // space to the name, retaining the independent four-digit count gutter.
     let firstWidth = min(
@@ -255,7 +281,9 @@ extension SummaryDashboardView {
       let valueStart =
         fitsApp
         ? area.maxX - firstWidth - secondWidth
-        : area.minX + area.width * (paired ? 0.43 : 0.56)
+        : paired
+          ? area.minX + area.width * 0.43
+          : processColumns ? area.maxX - singleWidth : area.minX + area.width * 0.56
       let secondStart = fitsApp ? area.maxX - secondWidth : area.minX + area.width * 0.73
       if paired {
         let barWidth = secondStart - valueStart
@@ -263,13 +291,18 @@ extension SummaryDashboardView {
           row.fraction,
           rect: NSRect(
             x: valueStart + 2, y: y + pairedLayout.meterY,
-            width: barWidth - 4, height: 2), color: row.color)
+            width: barWidth - 4, height: 2),
+          color: SystemStyle.chartTraceColor(
+            row.color, role: row.role,
+            glass: usesPopoverLayout && glassEnvironment().treatment == .glass))
         meter(
           row.secondFraction,
           rect: NSRect(
             x: secondStart + 2,
             y: y + pairedLayout.meterY, width: area.maxX - secondStart - 4, height: 2),
-          color: row.secondColor)
+          color: SystemStyle.chartTraceColor(
+            row.secondColor, role: row.secondRole,
+            glass: usesPopoverLayout && glassEnvironment().treatment == .glass))
       }
       var label = row.displayName ?? row.label
       if let fallback = row.displayName {
@@ -287,9 +320,7 @@ extension SummaryDashboardView {
           hints: nil)
         text(
           "\(row.processCount)",
-          rect: .init(
-            x: valueStart - ProcessAppLabelCell.countWidth - 3, y: textY,
-            width: ProcessAppLabelCell.countWidth, height: 16),
+          rect: Self.appCountRect(valueStart: valueStart, y: textY),
           color: .labelColor, size: 10, alignment: .right)
       }
       let textHeight = paired ? pairedLayout.textHeight : 16
@@ -297,8 +328,9 @@ extension SummaryDashboardView {
         label,
         rect: NSRect(
           x: area.minX + 3 + iconInset, y: textY,
-          width: valueStart - area.minX - 6 - iconInset
-            - (row.displayName == nil ? 0 : ProcessAppLabelCell.countWidth + 3), height: textHeight),
+          width: Self.rowNameWidth(
+            valueStart: valueStart, minX: area.minX, app: row.displayName != nil),
+          height: textHeight),
         size: height < 18 ? 10 : 11)
       text(
         row.value,
