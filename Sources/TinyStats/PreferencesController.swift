@@ -374,7 +374,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       sizeMenus[module] = size
       let icon = NSImageView(
         image: NSImage(systemSymbolName: module.symbol, accessibilityDescription: nil) ?? NSImage())
-      icon.contentTintColor = .secondaryLabelColor
+      icon.contentTintColor = SystemStyle.moduleAccent(module)
+      icon.identifier = NSUserInterfaceItemIdentifier("readout-icon-\(module.rawValue)")
       icon.widthAnchor.constraint(equalToConstant: 18).isActive = true
       let name = NSTextField(labelWithString: module.title)
       name.font = .systemFont(ofSize: 13)

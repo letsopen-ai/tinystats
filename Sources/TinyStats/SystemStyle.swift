@@ -51,15 +51,15 @@ enum SystemStyle {
     }
   }
   static let modulePalettes: [Module: ModulePalette] = [
-    .cpu: .init("CPU", 0xC92363, 0xFF81AD, 0x242775, 0x9BEAF5),
-    .memory: .init("Memory", 0x7538E8, 0xB99AFF, 0x673000, 0xFFE49A),
-    .network: .init("Network", 0x007078, 0x45DFDA, 0x4D206F, 0x9B8BE0),
-    .disks: .init("Disk", 0x986900, 0xFFD45A, 0x242775, 0x92A5FF),
-    .sensors: .init("Sensors", 0xB84408, 0xFFAF6A, 0x242775, 0x9B8BE0),
-    .battery: .init("Power", 0x477A00, 0xB2E84A, 0x242775, 0x9B8BE0),
-    .gpu: .init("GPU", 0x245CDA, 0x82B2FF, 0x673000, 0xFFE49A),
-    .clock: .init("Time", 0xA33ABC, 0xEA99F5, 0x242775, 0xFFE69F),
-    .weather: .init("Weather", 0x006DA6, 0x6BD2FF, 0x4D206F, 0x9B8BE0),
+    .cpu: .init("CPU", 0xC92363, 0xFF81AD, 0x0072A6, 0x9BEAF5),
+    .memory: .init("Memory", 0x7538E8, 0xB99AFF, 0xB45309, 0xFFE49A),
+    .network: .init("Network", 0x008478, 0x45DFDA, 0x6E46D6, 0x9B8BE0),
+    .disks: .init("Disk", 0xA16207, 0xFFD45A, 0x3F51D6, 0x92A5FF),
+    .sensors: .init("Sensors", 0xB84408, 0xFFAF6A, 0x3F51D6, 0x9B8BE0),
+    .battery: .init("Power", 0x4D7C0F, 0xB2E84A, 0x3F51D6, 0x9B8BE0),
+    .gpu: .init("GPU", 0x245CDA, 0x82B2FF, 0xB45309, 0xFFE49A),
+    .clock: .init("Time", 0xA33ABC, 0xEA99F5, 0xBC5B0C, 0xFFE69F),
+    .weather: .init("Weather", 0x006DA6, 0x6BD2FF, 0x7044F6, 0x9B8BE0),
   ]
   static func moduleAccent(_ module: Module) -> NSColor {
     modulePalettes[module]?.primary ?? .labelColor
@@ -72,9 +72,11 @@ enum SystemStyle {
       srgbRed: Double((hex >> 16) & 255) / 255,
       green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255, alpha: 1)
   }
-  /// Keep the auto-derived hue, but cap light glass trace brightness for coloured backdrops.
+  /// Measured module companions keep their vivid ink; unmeasured system/custom colours retain
+  /// the conservative light-glass brightness cap.
   static func chartTraceColor(_ color: NSColor, role: ChartSeriesRole, glass: Bool) -> NSColor {
     guard glass, role == .secondary else { return color }
+    if modulePalettes.values.contains(where: { $0.secondary == color }) { return color }
     return NSColor(name: nil) { appearance in
       guard !isDark(appearance) else { return color }
       var resolved: NSColor = color

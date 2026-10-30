@@ -269,7 +269,11 @@ extension SummaryDashboardView {
       let iconInset: CGFloat = row.displayName == nil ? 0 : 24
       let textY = paired ? y : y + (height - 16) / 2
       if !paired, let fraction = row.fraction, fraction.isFinite, fraction >= 0 {
-        row.color.withAlphaComponent(0.13).setFill()
+        let fillAlpha: CGFloat =
+          row.color == SystemStyle.moduleAccent(.cpu) && usesPopoverLayout
+            && glassEnvironment().treatment == .glass && !SystemStyle.isDark(effectiveAppearance)
+          ? 0.18 : 0.13
+        row.color.withAlphaComponent(fillAlpha).setFill()
         NSBezierPath(
           roundedRect: NSRect(
             x: area.minX + iconInset, y: y + max(0, (height - 22) / 2),

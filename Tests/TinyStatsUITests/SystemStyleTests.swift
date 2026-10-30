@@ -796,6 +796,13 @@ import Testing
             #expect((toggle.state == .on) == settings.readouts.contains(module))
           }
         }
+        for module in Module.allCases where module != .overview {
+          let icon = try #require(
+            views.compactMap { $0 as? NSImageView }.first {
+              $0.identifier?.rawValue == "readout-icon-\(module.rawValue)"
+            })
+          #expect(icon.contentTintColor == SystemStyle.moduleAccent(module))
+        }
         #expect(customization.palette.chips.map(\.module) == [.gpu, .battery, .clock])
         #expect(customization.strip.visibleRect.height >= 50)
         #expect(customization.palette.visibleRect.height >= 50)
