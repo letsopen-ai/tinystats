@@ -84,7 +84,7 @@ import Testing
   for module in [Module.cpu, .memory, .gpu, .disks, .network, .battery] {
     view.update(snapshot, history: [], settings: settings, module: module)
     for card in view.cards where !card.help.isEmpty {
-      #expect(card.note.isEmpty || card.note.hasPrefix("Partial · "))
+      #expect(card.note.isEmpty || card.note.hasPrefix("Partial"))
       #expect(card.spoken.contains(card.help))
       #expect(
         view.hoverText(at: .init(x: card.frame.minX + 2, y: card.frame.minY + 2))?
@@ -156,7 +156,7 @@ import Testing
     let card = try #require(view.cards.first { $0.groupsProcesses })
     #expect(view.displayedRows(in: card).count == 8)
     #expect(card.contentRect.height >= 8 * 25)
-    if module == .network { #expect(card.note == "Partial · TCP/UDP") }
+    if module == .network { #expect(card.note == "Partial") }
   }
   snapshot.networkTraffic = .init()
   view.update(snapshot, history: [], settings: settings, module: .network)
@@ -184,4 +184,140 @@ import Testing
       #expect(presentation.selection == .reading("PSTR"))
     }
   }
+}
+
+@Test @MainActor func sampleCompactValuesAndHelpFollowPausePrivacyAndCadenceChanges() throws {
+  let detail = DetailController()
+  detail.isPopoverPresentation = true
+  detail.selected = .overview
+  var sample = Snapshot()
+  for paused in [false, true, false] {
+    for privacy in 0..<4 {
+      detail.settings.connectivityChecks = privacy == 1
+      detail.settings.publicIPChecks = privacy == 2
+      detail.settings.weather.enabled = privacy == 3
+      detail.settings.pingCheck.enabled = privacy == 0
+      detail.settings.interval = 5
+      detail.paused = paused
+      detail.update(sample, history: [])
+      let pause = try #require(
+        detail.view.subviews.compactMap { $0 as? MenuActionRow }.first {
+          $0.title == (paused ? "Resume" : "Pause")
+        })
+      let rows = DetailReadingsBuilder.sampleRows(
+        snapshot: sample, settings: detail.settings, paused: paused)
+      let privacyRow = try #require(rows.first { $0.label == "Privacy" })
+      #expect(privacyRow.compactValue == (privacy == 0 ? "Network checks" : "Internet enabled"))
+      #expect(rows.first { $0.label == "Monitoring" }?.compactValue == (paused ? "Paused" : nil))
+      #expect(rows.first?.sampleSection == true)
+      #expect(pause.toolTip?.hasPrefix(pause.title + "\n") == true)
+      #expect(pause.accessibilityHelp()?.contains("Privacy: " + privacyRow.value) == true)
+      #expect(pause.accessibilityHelp()?.contains("Configured cadence: 5s") == true)
+      #expect(detail.view.accessibilityValue() as? String == pause.accessibilityHelp())
+    }
+  }
+  sample.sampleMilliseconds = .nan
+  detail.update(sample, history: [])
+  #expect(
+    (detail.view.accessibilityValue() as? String)?.contains("Last sample cost: Unavailable") == true
+  )
+}
+
+@Test @MainActor func sensorsScanCapIsVisibleInHighlightsAndExcludesModelChannels() {
+  var sample = Snapshot()
+  sample.sensors = (0..<127).map {
+    .init(key: "T\($0)", name: "CPU", kind: .temperature, value: 40)
+  }
+  sample.sensors.append(.init(key: "ioreport:gpu", name: "GPU model power", kind: .power, value: 3))
+  func browser() -> SensorBrowserPresentation.Presentation {
+    SensorBrowserPresentation.build(
+      snapshot: sample, timeline: SensorTimeline(), settings: Settings(), query: "",
+      showsAll: false, selection: nil)
+  }
+  #expect(!browser().rows.contains { $0.label == "Sensors may be missing" })
+  sample.sensors.append(.init(key: "T127", name: "CPU", kind: .temperature, value: 40))
+  let rows = browser().rows
+  #expect(rows.filter { $0.label == "Sensors may be missing" }.count == 1)
+  #expect(rows.first?.label == "HIGHLIGHTS")
+  #expect(rows.first { $0.label == "Sensors may be missing" }?.sensorIdentity == nil)
+}
+
+@Test @MainActor func rowCardsFitEmptyMessagesAndDiscloseTruncation() {
+  let view = SummaryDashboardView(frame: .zero)
+  view.usesPopoverLayout = true
+  for count in 0...15 {
+    let rows = (0..<count).map { SummaryDashboardView.Reading(label: "Row \($0)", value: "1") }
+    var card = SummaryDashboardView.Card(frame: .zero, title: "Rows", content: .rows(rows))
+    card.headerHeight = 36
+    card.frame.size.height = view.popoverCardHeight(card, canonical: .zero)
+    #expect(card.frame.height >= 64)
+    let displayed = view.displayedRows(in: card)
+    #expect(card.contentRect.height >= max(14, CGFloat(displayed.count) * 25))
+    #expect(displayed.count == min(12, count))
+    if count > 12 { #expect(displayed.last?.label == "+\(count - 11) more") }
+  }
+}
+
+@MainActor private final class SampleReloadProbe: NSTableView {
+  var fullReloads = 0
+  var partialRows = IndexSet()
+  override func reloadData() {
+    fullReloads += 1
+    super.reloadData()
+  }
+  override func reloadData(forRowIndexes rowIndexes: IndexSet, columnIndexes: IndexSet) {
+    partialRows = rowIndexes
+    super.reloadData(forRowIndexes: rowIndexes, columnIndexes: columnIndexes)
+  }
+}
+
+@Test @MainActor func cachedSampleSectionReloadsOnlyChangedRowsAndRestoresSelectionWhenItGrows()
+  throws
+{
+  let table = SampleReloadProbe()
+  let detail = DetailController(table: table)
+  detail.selected = .sensors
+  detail.showsAllReadings = true
+  var sample = Snapshot()
+  sample.uptime = 10
+  sample.sensorsSampledAt = 10
+  sample.sensors = [.init(key: "PSTR", name: "System total power", kind: .power, value: 0)]
+  detail.update(sample, history: [])
+  detail.loadViewIfNeeded()
+  let full = table.fullReloads
+  let selected = table.selectedRow
+  sample.sampleMilliseconds = 12
+  detail.update(sample, history: [])
+  #expect(table.fullReloads == full && table.partialRows.count == 1)
+  #expect(table.selectedRow == selected)
+  let index = try #require(table.partialRows.first)
+  let label = detail.tableView(table, viewFor: table.tableColumns[0], row: index) as? NSTextField
+  #expect(label?.stringValue == "Last sample cost")
+  // Exercise the structural fallback with cached delivery; it must restore selection too.
+  sample.sensors += (0..<127).map {
+    .init(key: "T\($0)", name: "CPU", kind: .temperature, value: 40)
+  }
+  detail.update(sample, history: [])
+  #expect(table.fullReloads == full + 1 && table.selectedRow == selected)
+}
+
+@Test @MainActor func sensorRangeTooltipUsesWrittenRangeRatherThanVoiceOverPronunciation() throws {
+  let detail = DetailController()
+  detail.selected = .sensors
+  var sample = Snapshot()
+  sample.sensors = [
+    .init(key: "Te04", name: "CPU · Te04", kind: .temperature, value: 40),
+    .init(key: "Te05", name: "CPU · Te05", kind: .temperature, value: 50),
+  ]
+  detail.update(sample, history: [])
+  let table = try #require(
+    detail.view.subviews.compactMap { $0 as? NSScrollView }.compactMap {
+      $0.documentView as? NSTableView
+    }.first)
+  let cell = try #require(
+    (0..<table.numberOfRows).compactMap {
+      detail.tableView(table, viewFor: table.tableColumns[0], row: $0) as? NSTextField
+    }.first { $0.stringValue == "2 more sensors" })
+  #expect(cell.toolTip?.contains("40.0–50.0") == true)
+  #expect(cell.accessibilityLabel()?.contains("40.0 to 50.0") == true)
 }

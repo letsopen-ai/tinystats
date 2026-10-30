@@ -275,7 +275,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       guard let self, self.settings.processGrouping != mode else { return }
       self.interruptCycleProbe()
       self.settings.processGrouping = mode
-      self.settings.networkTrafficRevision = UUID().uuidString
+      if self.detail?.selected == .network {
+        self.settings.networkTrafficRevision = UUID().uuidString
+      }
       self.detail?.settings = self.settings
       self.settings.save(to: Self.preferenceStore)
       self.preferences?.updateProcessGrouping(mode, revision: self.settings.networkTrafficRevision)

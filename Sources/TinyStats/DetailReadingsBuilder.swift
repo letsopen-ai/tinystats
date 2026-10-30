@@ -13,8 +13,11 @@ struct DetailRow: Equatable {
   var processGroupingHeader = false
   var bundlePath: String?
   var processCount: Int = 1
+  var appName: String?
   var accessibilityLabel: String?
   var compactValue: String?
+  var help: String?
+  var sampleSection = false
 }
 
 /// Formats existing local observations; never collects, persists, or requests permission.
@@ -41,7 +44,7 @@ enum DetailReadingsBuilder {
         "\(s.thermalState) thermal state · up \(Display.duration(s.uptime))"
     case .cpu:
       result.value = Display.percent(s.cpu?.usage)
-      result.subtitle = "Of total capacity · \(s.cpu?.cores.count ?? 0) logical cores"
+      result.subtitle = "Of total capacity"
     case .gpu:
       result.value = Display.percent(s.gpus.compactMap(\.usage).max())
       result.subtitle = s.gpus.map(\.name).joined(separator: " · ")
@@ -79,7 +82,7 @@ enum DetailReadingsBuilder {
       : settings.pingCheck.enabled ? "Network checks enabled" : "Local only"
     let cost = snapshot.sampleMilliseconds
     var rows: [DetailRow] = [
-      .init(label: "ABOUT THIS SAMPLE", value: "", heading: true),
+      .init(label: "ABOUT THIS SAMPLE", value: "", heading: true, sampleSection: true),
       .init(
         label: "Privacy", value: privacy,
         compactValue: privacy == "Internet requests enabled"
@@ -153,11 +156,14 @@ enum DetailReadingsBuilder {
       result.rows[result.rows.count - 1].processGroupingHeader = type != .disks
       if type == .cpu && !apps {
         result.rows[result.rows.count - 1].accessibilityLabel = "TOP CPU · BARS = MAC CAPACITY"
+        result.rows[result.rows.count - 1].help = "Bars show Mac capacity"
       } else if type == .disks {
         result.rows[result.rows.count - 1].accessibilityLabel = "TOP DISK I/O · READ + WRITE"
+        result.rows[result.rows.count - 1].help = "Disk read and write"
       }
       if type == .memory && !apps {
         result.rows[result.rows.count - 1].accessibilityLabel = "Top memory · physical footprint"
+        result.rows[result.rows.count - 1].help = "Physical footprint"
       }
       if apps {
         let groups = type == .cpu ? s.cpuApps : s.memoryApps
@@ -176,7 +182,12 @@ enum DetailReadingsBuilder {
             row(app.label, app.memory.map(Display.bytes) ?? "—")
           }
           result.rows[result.rows.count - 1].bundlePath = app.bundlePath
+          result.rows[result.rows.count - 1].appName = app.name
           result.rows[result.rows.count - 1].processCount = app.processCount
+          if type == .cpu, app.cpuIncomplete > 0 {
+            result.rows[result.rows.count - 1].help =
+              "Sum of measured members · \(app.cpuIncomplete) unmeasured processes"
+          }
           result.rows[result.rows.count - 1].accessibilityLabel =
             app.label + (app.bundlePath.map { " · " + $0 } ?? "")
         }
@@ -262,7 +273,10 @@ enum DetailReadingsBuilder {
         }
       }
       componentSensors(.cpu)
-      section("CPU COOLING · SHARED / UNASSIGNED INCLUDED")
+      section("CPU COOLING")
+      result.rows[result.rows.count - 1].help = "Shared / unassigned fans included"
+      result.rows[result.rows.count - 1].accessibilityLabel =
+        "CPU cooling · shared / unassigned fans included"
       for fan in s.sensors where fan.kind == .fan && (fan.fanOwner == .cpu || fan.fanOwner == nil) {
         row(fan.name, fan.formatted(fahrenheit: false))
       }
@@ -292,7 +306,10 @@ enum DetailReadingsBuilder {
       }
       row(s.gpuTime.message, "")
       row("Accessible creating processes · helpers separate", "Not GPU/core utilization")
-      section("GPU COOLING · SHARED / UNASSIGNED INCLUDED")
+      section("GPU COOLING")
+      result.rows[result.rows.count - 1].help = "Shared / unassigned fans included"
+      result.rows[result.rows.count - 1].accessibilityLabel =
+        "GPU cooling · shared / unassigned fans included"
       for fan in s.sensors where fan.kind == .fan && (fan.fanOwner == .gpu || fan.fanOwner == nil) {
         row(fan.name, fan.formatted(fahrenheit: false))
       }
@@ -442,6 +459,7 @@ enum DetailReadingsBuilder {
           row(
             bundle.label, "↓ \(Display.rate(bundle.download))  ↑ \(Display.rate(bundle.upload))")
           result.rows[result.rows.count - 1].bundlePath = bundle.bundlePath
+          result.rows[result.rows.count - 1].appName = bundle.name
           result.rows[result.rows.count - 1].processCount = bundle.processCount
           result.rows[result.rows.count - 1].accessibilityLabel =
             bundle.label + (bundle.bundlePath.map { " · " + $0 } ?? "")

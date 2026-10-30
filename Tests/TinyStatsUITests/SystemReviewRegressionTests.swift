@@ -103,15 +103,15 @@ import Testing
   let detail = reviewPopover(.sensors, snapshot: snapshot)
   let labels = reviewDescendants(detail.view).compactMap { $0 as? NSTextField }
   let title = try #require(
-    labels.first { $0.stringValue.hasPrefix("Sensors ·") || $0.stringValue.hasPrefix("SENSORS ·") })
-  #expect(title.stringValue == "Sensors · 1/1")
-  #expect(title.accessibilityLabel() == "SENSORS · 1/1")
+    labels.first { $0.stringValue == "Sensors" })
+  #expect(title.stringValue == "Sensors")
+  #expect(title.accessibilityLabel() == "SENSORS")
   detail.paused = true
-  #expect(title.stringValue == "Sensors · 1/1 · paused")
-  #expect(title.accessibilityLabel() == "SENSORS · 1/1 · PAUSED")
+  #expect(title.stringValue == "Sensors · paused")
+  #expect(title.accessibilityLabel() == "SENSORS · PAUSED")
   detail.selected = .cpu
   #expect(title.stringValue == "CPU · Paused")
-  #expect(title.accessibilityLabel() != "SENSORS · 1/1 · PAUSED")
+  #expect(title.accessibilityLabel() != "SENSORS · PAUSED")
 }
 
 @Test @MainActor func popoverTraceCaptionsDiscloseScaleSpanEmptyUnavailableAndZero() throws {

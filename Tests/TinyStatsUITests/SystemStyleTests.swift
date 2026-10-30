@@ -821,7 +821,7 @@ import Testing
   let mask = try #require(scroll.layer?.mask as? CAGradientLayer)
   #expect(scroll.layer?.isGeometryFlipped == true)
   #expect(mask.startPoint.y == 1 && mask.endPoint.y == 0)
-  #expect(scroll.contentInsets.bottom == 16)
+  #expect(scroll.contentInsets.bottom == 22)
   // Reserve nonzero cell spacing too, without changing proportions or horizontal extent.
   table.intercellSpacing.width = 3
   controller.view.needsLayout = true
@@ -869,7 +869,7 @@ import Testing
   let bottom = try #require(
     bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh - 3)?.usingColorSpace(.sRGB))
   let transition = try #require(
-    bitmap.colorAt(x: bitmap.pixelsWide / 2, y: Int(Double(bitmap.pixelsHigh) * 0.92))?
+    bitmap.colorAt(x: bitmap.pixelsWide / 2, y: Int(Double(bitmap.pixelsHigh) * 0.86))?
       .usingColorSpace(.sRGB))
   #expect(transition.redComponent > 0.20 && transition.redComponent < 0.80)
   #expect(top.redComponent > 0.95)
@@ -1049,7 +1049,7 @@ import Testing
           systemDescendants(controller.view).compactMap { $0 as? ProcessGroupingControl }.first)
         let card = try #require(summary.cards.first { $0.groupsProcesses })
         #expect(control.superview === summary && card.frame.contains(control.frame))
-        #expect(control.frame.minY == card.frame.minY + 5)
+        #expect(control.frame.minY == card.frame.minY + 9)
         #expect(
           control.label(forSegment: 0) == "Processes" && control.label(forSegment: 1) == "Apps")
         #expect(
@@ -1079,6 +1079,9 @@ import Testing
         let windowControl = try #require(windowSummary.groupingControl)
         #expect(windowCard.frame.contains(windowControl.frame))
         try capture(windowController.view, name: stem + "-window")
+        controller.paused = true
+        controller.view.layoutSubtreeIfNeeded()
+        try capture(controller.view, name: stem + "-summary-paused")
         if mode == .bundles {
           controller.showsAllReadings = true
           controller.paused = true
@@ -1152,4 +1155,59 @@ import Testing
     #expect(!summary.cards.filter { $0.groupsProcesses }.map(\.spoken).joined().contains("Outer"))
   }
   #expect(chosen == [.bundles, .processes, .bundles, .processes, .bundles, .processes])
+}
+
+@Test @MainActor func systemSensorStatesGalleryAndScrolledFade() throws {
+  guard let directory = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] else {
+    return
+  }
+  let folder = URL(fileURLWithPath: directory, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  let detail = DetailController()
+  detail.isPopoverPresentation = true
+  detail.selected = .sensors
+  detail.view.setFrameSize(SystemStyle.popoverSize)
+  for state in ["empty", "populated", "scan-limit"] {
+    var sample = Snapshot()
+    sample.sensors =
+      state == "empty"
+      ? []
+      : [
+        .init(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 45),
+        .init(key: "F0Ac", name: "Fan 1", kind: .fan, value: 1200),
+      ]
+    if state == "scan-limit" {
+      sample.sensors += (0..<126).map {
+        .init(key: "Te\($0)", name: "CPU", kind: .temperature, value: 50)
+      }
+    }
+    for index in 0..<3 {
+      sample.uptime = Double(100 + index * 6)
+      sample.timestamp = Date(timeIntervalSince1970: 1_700_000_000 + sample.uptime)
+      sample.sensorsSampledAt = sample.uptime
+      detail.update(sample, history: [])
+    }
+    for all in [false, true] {
+      detail.showsAllReadings = all
+      for paused in [false, true] {
+        detail.paused = paused
+        for theme in [AppTheme.light, .dark] {
+          detail.view.appearance = theme.nativeAppearance
+          detail.view.layoutSubtreeIfNeeded()
+          let stem =
+            "sensors-\(state)-\(all ? "readings" : "summary")-\(paused ? "paused" : "running")-\(theme.rawValue)"
+          try systemGalleryImage(detail.view, to: folder.appendingPathComponent(stem + ".png"))
+          if state == "scan-limit", all {
+            let table = try #require(
+              systemDescendants(detail.view).compactMap { $0 as? NSTableView }.first)
+            table.scrollRowToVisible(min(20, table.numberOfRows - 1))
+            detail.view.layoutSubtreeIfNeeded()
+            try systemGalleryImage(
+              detail.view, to: folder.appendingPathComponent(stem + "-scrolled.png"))
+            table.scrollRowToVisible(0)
+          }
+        }
+      }
+    }
+  }
 }

@@ -106,14 +106,14 @@ import Testing
   }
 }
 
-@Test @MainActor func drawCoresIncludesEveryKindMarkerAndTitleInItsLegendRow() throws {
+@Test @MainActor func drawCoresKeepsClassifiedLegendsAndOmitsTheUnclassifiedCaption() throws {
   let view = SummaryDashboardView(frame: .zero)
   let cpu = CPUReading(
     usage: 30, cores: [12, 48, nil], load: [],
     coreKinds: [.efficiency, .performance, .unknown])
   let area = NSRect(x: 12, y: 12, width: 480, height: 80)
   let size = NSSize(width: 504, height: 104)
-  let titles = ["Efficiency", "Performance", "Unclassified"]
+  let titles = ["Efficiency", "Performance"]
   for appearance in [NSAppearance.Name.aqua, .darkAqua] {
     for scale in [1, 2] {
       let actual = try legendBitmap(
@@ -124,20 +124,20 @@ import Testing
       let expected = try legendBitmap(
         appearance: appearance, scale: scale, size: size, flipped: true
       ) {
-        for (index, kind) in CPUCoreKind.allCases.enumerated() {
-          let x = area.minX + CGFloat(index) * 160
+        for (index, kind) in [CPUCoreKind.efficiency, .performance].enumerated() {
+          let x = area.minX + CGFloat(index) * 240
           view.drawCoreMarker(kind, rect: .init(x: x, y: area.maxY - 9, width: 7, height: 7))
           view.text(
             titles[index] + " " + Display.percent(cpu.cores[index]),
-            rect: .init(x: x + 12, y: area.maxY - 12, width: 146, height: 14),
+            rect: .init(x: x + 12, y: area.maxY - 12, width: 226, height: 14),
             color: .labelColor, size: 10)
         }
       }
       for index in titles.indices {
-        let x = area.minX + CGFloat(index) * 160
+        let x = area.minX + CGFloat(index) * 240
         for rect in [
           NSRect(x: x, y: area.maxY - 9, width: 7, height: 7),
-          NSRect(x: x + 12, y: area.maxY - 12, width: 146, height: 14),
+          NSRect(x: x + 12, y: area.maxY - 12, width: 226, height: 14),
         ] {
           let mask = try legendMask(actual, rect: rect, scale: scale)
           #expect(mask.contains(true))
@@ -309,8 +309,8 @@ import Testing
               return false
             })
           let coreArea = coreCard.contentRect
-          for index in CPUCoreKind.allCases.indices {
-            let x = coreArea.minX + CGFloat(index) * coreArea.width / 3
+          for index in 0..<2 {
+            let x = coreArea.minX + CGFloat(index) * coreArea.width / 2
             let markerCenter = try legendPixel(
               bitmap, at: .init(x: (x + 3.5) * scale, y: (coreArea.maxY - 5.5) * scale))
             let rowBackground = try legendPixel(

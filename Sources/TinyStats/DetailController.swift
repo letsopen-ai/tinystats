@@ -74,6 +74,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   }
   var onProcessGrouping: ((TrafficGrouping) -> Void)?
   private var processGroupingControl: ProcessGroupingControl?
+  private let processGroupingHeader = NSView()
+  private let sensorCountLabel = NSTextField(labelWithString: "")
   private let appDisplayCache = ProcessAppDisplayCache()
   var onWeatherCity: ((WeatherLocation?) -> Void)?
   var onWeatherEnabled: ((Bool) -> Void)?
@@ -127,6 +129,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let readingsButton = MenuActionRow()
   override func loadView() {
     view = MainContentView(frame: NSRect(x: 0, y: 0, width: 700, height: 560))
+    view.setAccessibilityElement(true)
+    view.setAccessibilityRole(.group)
     popoverMaterial.material = .popover
     popoverMaterial.blendingMode = .behindWindow
     popoverMaterial.state = .active
@@ -211,6 +215,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     sensorSearch.delegate = self
     add(sensorSearch, x: 300, y: 516, w: 376, h: 26)
     sensorSearch.isHidden = true
+    sensorCountLabel.font = .systemFont(ofSize: 11)
+    sensorCountLabel.textColor = .secondaryLabelColor
+    sensorCountLabel.alignment = .right
+    view.addSubview(sensorCountLabel)
+    sensorCountLabel.isHidden = true
     navigation.layout(in: view.bounds)
     configurePresentation()
     refresh()
@@ -283,6 +292,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private func layoutContent() {
     let w = view.bounds.width
     let h = view.bounds.height
+    sensorCountLabel.frame = .init(x: 250, y: h - 42, width: 44, height: 20)
     guard w > 0, h > 0 else { return }
     navigation?.layout(in: view.bounds)
     if isPopoverPresentation && !showsSettings {
@@ -377,6 +387,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     if selected == .weather && !showsAllReadings { titleLabel.isHidden = true }
     var top = h - (compact ? 10 : 118)
     if selected == .sensors {
+      sensorCountLabel.frame = .init(x: w - x - 82, y: h - 39, width: 82, height: 20)
       top -= 32
       sensorSearch.frame = .init(x: inset, y: top + 4, width: width, height: 26)
     }
@@ -457,9 +468,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   @objc private func selectProcessGrouping(_ sender: NSSegmentedControl) {
     let mode: TrafficGrouping = sender.selectedSegment == 1 ? .bundles : .processes
     settings.processGrouping = mode
-    snapshot.networkTraffic = .init()
-    snapshot.networkTraffic.grouping = mode
-    snapshot.networkTraffic.message = "Collecting a new complete traffic interval."
+    if selected == .network {
+      snapshot.networkTraffic = .init()
+      snapshot.networkTraffic.grouping = mode
+      snapshot.networkTraffic.message = "Collecting a new complete traffic interval."
+    }
     onProcessGrouping?(mode)
     refresh()
   }
@@ -574,8 +587,33 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private func reloadRows() {
     reloadingRows = true
     defer { reloadingRows = false }
-    if selected != .sensors || rows != displayedRows {
-      table.reloadData()
+    if rows != displayedRows {
+      let header = rows.firstIndex(where: \.processGroupingHeader)
+      let sameHeader =
+        header != nil && header == displayedRows.firstIndex(where: \.processGroupingHeader)
+      let focused =
+        view.window?.firstResponder === processGroupingControl && processGroupingControl != nil
+      if rows.count == displayedRows.count, sameHeader {
+        let changed = IndexSet(
+          rows.indices.filter { $0 != header && rows[$0] != displayedRows[$0] })
+        table.reloadData(
+          forRowIndexes: changed, columnIndexes: IndexSet(integersIn: 0..<table.numberOfColumns))
+        if let header, rows[header] != displayedRows[header],
+          let label = table.view(atColumn: 0, row: header, makeIfNecessary: false) as? NSTextField
+        {
+          // Even a single-column header reload can resign its sibling's first responder.
+          // Unrealized headings read the current row when the table asks for them later.
+          label.stringValue = SystemStyle.sectionTitle(rows[header].label)
+          label.toolTip = rows[header].help ?? label.stringValue
+          label.setAccessibilityLabel(rows[header].accessibilityLabel ?? rows[header].label)
+        }
+      } else {
+        table.reloadData()
+        if focused, let header, let control = processGroupingControl {
+          _ = table.view(atColumn: 1, row: header, makeIfNecessary: true)
+          view.window?.makeFirstResponder(control)
+        }
+      }
       displayedRows = rows
     }
     if selected == .sensors, let key = selectedSensorIdentity,
@@ -592,9 +630,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let id = NSUserInterfaceItemIdentifier(tableColumn?.identifier.rawValue ?? "label")
     let row = rows[index]
     if id.rawValue == "value", row.processGroupingHeader, let control = processGroupingControl {
-      let header = NSView(
-        frame: .init(x: 0, y: 0, width: tableColumn?.width ?? 135, height: table.rowHeight))
-      header.addSubview(control)
+      let header = processGroupingHeader
+      header.frame = .init(x: 0, y: 0, width: tableColumn?.width ?? 135, height: table.rowHeight)
+      if control.superview !== header { header.addSubview(control) }
       control.isHidden = false
       control.frame = .init(
         x: max(0, header.bounds.width - ProcessGroupingControl.width), y: 3,
@@ -602,15 +640,22 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       control.autoresizingMask = [.minXMargin]
       return header
     }
-    if id.rawValue == "label", let path = row.bundlePath {
+    if id.rawValue == "label", let fallback = row.appName {
       let cellID = NSUserInterfaceItemIdentifier("process-app-label")
       let cell =
         table.makeView(withIdentifier: cellID, owner: self) as? ProcessAppLabelCell
         ?? ProcessAppLabelCell(frame: .zero)
       cell.identifier = cellID
-      let fallback = row.label.components(separatedBy: " · ")[0]
-      cell.update(
-        appDisplayCache.entry(path: path, fallback: fallback), count: row.processCount, path: path)
+      let entry =
+        row.bundlePath.map { appDisplayCache.entry(path: $0, fallback: fallback) }
+        ?? .init(name: fallback, icon: ProcessAppDisplayCache.placeholder)
+      cell.update(entry, count: row.processCount, path: row.bundlePath, provenance: row.label)
+      if let help = row.help {
+        cell.toolTip = (cell.toolTip ?? "") + " · " + help
+        cell.setAccessibilityHelp(help)
+      } else {
+        cell.setAccessibilityHelp(nil)
+      }
       return cell
     }
     if id.rawValue == "value", let reading = row.meter {
@@ -620,6 +665,12 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         ?? UtilizationMeterCell(frame: .zero)
       cell.identifier = meterID
       cell.update(label: row.label, reading: reading.value, color: reading.color, text: row.value)
+      if let help = row.help {
+        cell.toolTip = row.value + " · " + help
+        cell.setAccessibilityHelp(help)
+      } else {
+        cell.setAccessibilityHelp(nil)
+      }
       return cell
     }
     let cell =
@@ -638,10 +689,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     cell.textColor = row.heading ? .secondaryLabelColor : .labelColor
     cell.alignment = isValue ? .right : .left
     cell.lineBreakMode = .byTruncatingTail
-    cell.toolTip = isValue ? row.value : cell.stringValue
+    cell.toolTip = row.help ?? (isValue ? row.value : cell.stringValue)
     if !isValue, let spoken = row.accessibilityLabel {
       cell.setAccessibilityLabel(spoken)
-      cell.toolTip = spoken
+      cell.toolTip = row.help ?? cell.stringValue
     } else {
       cell.setAccessibilityLabel(isValue ? row.value : row.label)
     }
@@ -719,6 +770,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     weatherControls?.isHidden = selected != .weather
     historyButton.isHidden = !HistoryController.modules.contains(selected) && selected != .overview
     sensorSearch.isHidden = selected != .sensors
+    sensorCountLabel.isHidden = selected != .sensors
     if selected == .sensors { historyButton.isHidden = true }
     readingsButton.isHidden = selected == .overview
     readingsButton.title =
@@ -796,12 +848,13 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
           [.gpu, .network, .disks, .battery].contains(selected)
           ? nil
           : (
-            selected.title, headline.value,
+            titleLabel.stringValue, headline.value,
             selected == .memory
               ? snapshot.memory.map { "of " + Display.bytes($0.total) } ?? headline.subtitle
               : headline.subtitle
           )
       }
+      summary?.paused = paused
       summary?.groupingControl = groupsProcesses ? processGroupingControl : nil
       summary?.update(s, history: history, settings: settings, module: selected)
       if !rows.isEmpty {
@@ -815,7 +868,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       updateSampleHelp()
       return
     }
-    if groupsProcesses { processGroupingControl?.removeFromSuperview() }
+    if groupsProcesses, processGroupingControl?.superview === summary {
+      processGroupingControl?.removeFromSuperview()
+    }
     chart.fitsDataRange = selected == .sensors
     chart.times = history.map(\.time)
     chart.upperBound = 100
@@ -867,11 +922,13 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       chart.valueFormat = .unit(presentation.unit)
       chart.emptyMessage =
         presentation.available ? "No readings yet" : "No sensor readings to chart"
-      chart.caption = "Recent history · this window"
+      chart.caption = ""
       chart.toolTip = "Read-only · history while this window is open · hover for values"
       chart.setAccessibilityHelp(chart.toolTip)
       titleLabel.stringValue = SystemStyle.sectionTitle(presentation.title)
       titleLabel.setAccessibilityLabel(presentation.title)
+      sensorCountLabel.stringValue = presentation.count
+      sensorCountLabel.toolTip = "Matching sensors / readable sensors"
       rows = presentation.rows
     case .weather:
       let weather = s.weather.filtered(settings: settings.weather, suspended: paused)
@@ -1087,9 +1144,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     openWindowRow.title = "Open \(selected.title) in TinyStats"
     for button in [historyButton, openWindowRow, pauseButton] {
       button.setAccessibilityLabel(button.title)
-      button.toolTip = button.title
+      if button !== pauseButton { button.toolTip = button.title }
     }
     readingsButton.toolTip = readingsButton.accessibilityLabel()
+    updateSampleHelp()
     guard isPopoverPresentation else { return }
     historyButton.setIcon("clock.arrow.circlepath", fallback: "clock")
     openWindowRow.setIcon("arrow.up.forward.app", fallback: "macwindow")
@@ -1104,20 +1162,20 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     pauseButton.setIcon(paused ? "play.fill" : "pause", fallback: paused ? "play" : "pause")
   }
   private func updateSampleRows() {
-    guard let start = rows.firstIndex(where: { $0.label == "ABOUT THIS SAMPLE" }) else { return }
+    guard let start = rows.firstIndex(where: \.sampleSection) else { return }
     let sample = DetailReadingsBuilder.sampleRows(
       snapshot: snapshot, settings: settings, paused: paused)
     let previous = Array(rows[start...])
     guard previous != sample else { return }
     rows.replaceSubrange(start..., with: sample)
-    displayedRows = rows
     if previous.count == sample.count {
       let changed = IndexSet(
         sample.indices.filter { sample[$0] != previous[$0] }.map { start + $0 })
       table.reloadData(
         forRowIndexes: changed, columnIndexes: IndexSet(integersIn: 0..<table.numberOfColumns))
+      displayedRows = rows
     } else {
-      table.reloadData()
+      reloadRows()
     }
   }
   private func updateSampleHelp() {
@@ -1129,6 +1187,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     // module, including Overview, which intentionally has no All readings action.
     pauseButton.toolTip = pauseButton.title + "\n" + information
     pauseButton.setAccessibilityHelp(information)
+    view.setAccessibilityLabel(selected.title + " details")
+    view.setAccessibilityValue(information)
   }
 }
 
@@ -1150,7 +1210,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     didSet {
       guard oldValue != fadesBottom else { return }
       automaticallyAdjustsContentInsets = false
-      contentInsets = .init(top: 0, left: 0, bottom: fadesBottom ? 16 : 0, right: 0)
+      contentInsets = .init(top: 0, left: 0, bottom: fadesBottom ? 22 : 0, right: 0)
       wantsLayer = fadesBottom
       layer?.mask = fadesBottom ? fade : nil
       needsLayout = true
@@ -1162,12 +1222,13 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     fade.frame = bounds
-    // Fade directly into the icon bar gutter without a second clear footer buffer.
+    // Six clear points hide cut card rims before the sixteen-point ramp.
     fade.colors = [
-      NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor,
+      NSColor.clear.cgColor, NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor,
     ]
     fade.locations = [
-      0, NSNumber(value: min(1, 16 / max(1, bounds.height))), 1,
+      0, NSNumber(value: min(1, 6 / max(1, bounds.height))),
+      NSNumber(value: min(1, 22 / max(1, bounds.height))), 1,
     ]
     // NSScrollView has a flipped backing layer: normalized y=1 is the footer edge.
     fade.startPoint = .init(x: 0.5, y: 1)
