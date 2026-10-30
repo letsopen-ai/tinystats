@@ -53,6 +53,20 @@ import Testing
       for control in controls {
         #expect(navigation.sidebar.bounds.insetBy(dx: 0, dy: 8).contains(control.frame))
       }
+      let advanced = try #require(
+        controls.compactMap { $0 as? NSTextField }.first {
+          $0.stringValue == "Advanced"
+        })
+      let gap =
+        navigation.sidebarMaterial.treatment == .legacy
+        ? 0 : DetailNavigationCoordinator.modernAdvancedSectionGap
+      #expect(
+        advanced.frame
+          == NSRect(
+            x: 17, y: navigation.sidebar.bounds.height - 382 - gap, width: 100, height: 15))
+      let weather = try #require(
+        controls.compactMap { $0 as? NSButton }.first { $0.title == "Weather" })
+      #expect(weather.frame.minY - advanced.frame.maxY == 4 + gap)
       let ordered = controls.sorted { $0.frame.minY < $1.frame.minY }
       for pair in zip(ordered, ordered.dropFirst()) {
         #expect(pair.0.frame.maxY <= pair.1.frame.minY)
@@ -229,6 +243,72 @@ func sensorsKeepNativeSearchKeyboardEligibilityAndRoundedSelectionAcrossNavigati
       #expect(try alpha(1, 12) == 0)
       #expect(try alpha(4, 1) == 0)
       #expect(try alpha(150, 0) == 0)
+    }
+  }
+}
+
+@Test @MainActor func sensorSelectionContainsAndCentersRealizedTextCells() throws {
+  let environments = [
+    GlassSurface.Environment(
+      supportsGlass: true, reduceTransparency: false, increaseContrast: false),
+    .init(supportsGlass: true, reduceTransparency: true, increaseContrast: false),
+    .init(supportsGlass: true, reduceTransparency: false, increaseContrast: true),
+    .init(supportsGlass: false, reduceTransparency: false, increaseContrast: false),
+  ]
+  for environment in environments {
+    for theme in [AppTheme.light, .dark] {
+      for dropdown in [true, false] {
+        let table = NSTableView()
+        let detail = DetailController(table: table)
+        detail.glassEnvironment = { environment }
+        detail.isPopoverPresentation = dropdown
+        detail.selected = .sensors
+        detail.view.appearance = theme.nativeAppearance
+        detail.view.setFrameSize(dropdown ? SystemStyle.popoverSize : MainWindow.minimumSize)
+        var snapshot = Snapshot()
+        snapshot.sensors = [
+          .init(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 45),
+          .init(key: "F0Ac", name: "Fan", kind: .fan, value: 1200),
+        ]
+        detail.update(snapshot, history: [])
+        for all in [false, true] {
+          detail.showsAllReadings = all
+          detail.view.layoutSubtreeIfNeeded()
+          table.layoutSubtreeIfNeeded()
+          // Exercise both the initial highlight and a later row, including row reuse.
+          let indices = (0..<table.numberOfRows).filter {
+            detail.tableView(table, shouldSelectRow: $0)
+          }
+          #expect(!indices.isEmpty)
+          for index in indices {
+            table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+            table.layoutSubtreeIfNeeded()
+            let row = try #require(
+              table.rowView(atRow: index, makeIfNecessary: true) as? SensorBrowserRowView)
+            row.layoutSubtreeIfNeeded()
+            let selection = row.selectionRect
+            #expect(row.isSelected)
+            #expect(selection.minY >= row.bounds.minY && selection.maxY <= row.bounds.maxY)
+            for column in 0..<table.numberOfColumns {
+              let cell = try #require(
+                table.view(atColumn: column, row: index, makeIfNecessary: true) as? NSTextField)
+              let frame = row.convert(cell.bounds, from: cell)
+              #expect(selection.contains(frame))
+              #expect(abs(selection.midY - frame.midY) <= 0.5)
+              #expect(frame.height == cell.fittingSize.height)
+            }
+            if dropdown {
+              let highlight = row.convert(selection, to: detail.view)
+              let card = try #require(
+                detail.view.subviews.compactMap { $0 as? PlatterView }.first {
+                  !$0.isHidden && $0.frame.contains(highlight)
+                })
+              #expect(abs(highlight.minX - card.frame.minX - 4) <= 0.5)
+              #expect(abs(card.frame.maxX - highlight.maxX - 4) <= 0.5)
+            }
+          }
+        }
+      }
     }
   }
 }
