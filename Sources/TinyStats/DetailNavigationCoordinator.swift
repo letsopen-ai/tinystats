@@ -86,7 +86,6 @@ final class DetailNavigationCoordinator: NSObject {
     let host = sidebarMaterial.legacyContentView ?? sidebar
     for control in controls {
       if control.superview !== host { host.addSubview(control) }
-      (control as? NavigationButton)?.usesModernSelection = sidebarMaterial.treatment != .legacy
       (control as? NavigationButton)?.usesGlassInk = sidebarMaterial.treatment == .glass
       if let label = control as? NSTextField, label !== brand {
         label.textColor =
@@ -163,7 +162,6 @@ final class DetailNavigationCoordinator: NSObject {
 @MainActor final class NavigationButton: NSButton {
   var module: Module?
   var usesGlassInk = false
-  var usesModernSelection = false { didSet { needsDisplay = true } }
   override func draw(_ dirtyRect: NSRect) {
     if state == .on {
       NSColor.labelColor.withAlphaComponent(0.10).setFill()

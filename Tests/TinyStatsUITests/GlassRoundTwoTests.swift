@@ -170,10 +170,10 @@ extension NSColor {
   let navigation = DetailNavigationCoordinator(environment: {
     .init(supportsGlass: true, reduceTransparency: false, increaseContrast: false)
   })
-  navigation.updateSelection(.overview)
+  navigation.updateSelection(.cpu)
   let button = try #require(
     navigation.sidebar.subviews.compactMap { $0 as? NavigationButton }
-      .first { $0.title == "Overview" })
+      .first { $0.module == .cpu })
   for name in [NSAppearance.Name.aqua, .darkAqua] {
     button.appearance = NSAppearance(named: name)
     let bitmap = try roundTwoBitmap(button)
@@ -187,8 +187,8 @@ extension NSColor {
       #expect(abs(fill.component(component) - expected.component(component)) < 0.02)
     }
     // Selection is neutral so the fixed module identity glyph remains readable.
-    #expect(button.module == .overview)
-    let ink = try roundTwoColor(.labelColor, in: button.effectiveAppearance)
+    #expect(button.module == .cpu)
+    let ink = try roundTwoColor(SystemStyle.moduleAccent(.cpu), in: button.effectiveAppearance)
     let background = try roundTwoColor(.windowBackgroundColor, in: button.effectiveAppearance)
     let composite = NSColor(
       srgbRed: fill.redComponent * 0.1 + background.redComponent * 0.9,

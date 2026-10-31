@@ -313,6 +313,7 @@ import TinyStatsCore
               ? "" : " · \(app.processCount) \(app.processCount == 1 ? "process" : "processes")"),
           value: memory ? app.memory.map(Display.bytes) ?? "—" : app.cpuDisplayValue,
           fraction: fraction, color: SystemStyle.moduleAccent(module),
+          lightGlassFillAlpha: memory ? 0.13 : 0.18,
           accessibilityValue: !memory && app.cpuIncomplete > 0
             ? app.cpuDisplayValue + " · " + (app.cpuMeasurementHelp ?? "")
             : nil,
@@ -327,7 +328,7 @@ import TinyStatsCore
       return zip(processes, fractions).map { process, fraction in
         Reading(
           label: processName(process), value: Display.processPercent(process.cpu),
-          fraction: fraction, color: SystemStyle.moduleAccent(module))
+          fraction: fraction, color: SystemStyle.moduleAccent(module), lightGlassFillAlpha: 0.18)
       }
     }
     func rateRows(_ names: [String], _ first: [Double?], _ second: [Double?]) -> [Reading] {

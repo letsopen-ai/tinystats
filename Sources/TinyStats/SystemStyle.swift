@@ -72,11 +72,13 @@ enum SystemStyle {
       srgbRed: Double((hex >> 16) & 255) / 255,
       green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255, alpha: 1)
   }
-  /// Measured module companions keep their vivid ink; unmeasured system/custom colours retain
+  /// Measured module colours keep their vivid ink; unmeasured system/custom colours retain
   /// the conservative light-glass brightness cap.
   static func chartTraceColor(_ color: NSColor, role: ChartSeriesRole, glass: Bool) -> NSColor {
     guard glass, role == .secondary else { return color }
-    if modulePalettes.values.contains(where: { $0.secondary == color }) { return color }
+    if modulePalettes.values.contains(where: { $0.primary == color || $0.secondary == color }) {
+      return color
+    }
     return NSColor(name: nil) { appearance in
       guard !isDark(appearance) else { return color }
       var resolved: NSColor = color

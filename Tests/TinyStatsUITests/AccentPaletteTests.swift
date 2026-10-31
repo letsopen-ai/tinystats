@@ -160,8 +160,13 @@ func moduleIdentityPairsResolveAppearancesAndRetainContrast(_ module: Module) th
     #expect(abs(primary.lab.lightness - secondary.lab.lightness) >= (dark ? 0.13 : 0.025))
     appearance.performAsCurrentDrawingAppearance {
       for glass in [false, true] {
-        let trace = SystemStyle.chartTraceColor(palette.secondary, role: .secondary, glass: glass)
-        #expect(trace.usingColorSpace(.sRGB) == palette.secondary.usingColorSpace(.sRGB))
+        // Overview Memory uses primary palette ink with the secondary (dashed) role.
+        for color in [palette.primary, palette.secondary] {
+          for role in [ChartSeriesRole.primary, .secondary] {
+            let trace = SystemStyle.chartTraceColor(color, role: role, glass: glass)
+            #expect(trace.usingColorSpace(.sRGB) == color.usingColorSpace(.sRGB))
+          }
+        }
       }
     }
     for matrix in [protanopia, deuteranopia] {

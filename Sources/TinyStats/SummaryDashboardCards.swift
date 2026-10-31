@@ -26,6 +26,7 @@ extension SummaryDashboardView {
     var second: String? = nil
     var fraction: Double? = nil
     var color: NSColor = SystemStyle.accent
+    var lightGlassFillAlpha: CGFloat = 0.13
     var role: ChartSeriesRole = .primary
     var secondFraction: Double? = nil
     var secondColor: NSColor = SystemStyle.secondaryAccent
@@ -270,9 +271,9 @@ extension SummaryDashboardView {
       let textY = paired ? y : y + (height - 16) / 2
       if !paired, let fraction = row.fraction, fraction.isFinite, fraction >= 0 {
         let fillAlpha: CGFloat =
-          row.color == SystemStyle.moduleAccent(.cpu) && usesPopoverLayout
+          usesPopoverLayout
             && glassEnvironment().treatment == .glass && !SystemStyle.isDark(effectiveAppearance)
-          ? 0.18 : 0.13
+          ? row.lightGlassFillAlpha : 0.13
         row.color.withAlphaComponent(fillAlpha).setFill()
         NSBezierPath(
           roundedRect: NSRect(
