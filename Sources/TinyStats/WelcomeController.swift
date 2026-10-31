@@ -81,9 +81,7 @@ enum WelcomePresentation {
   private static let starterModules: [Module] = [
     .cpu, .memory, .network, .battery, .clock, .weather, .disks,
   ]
-  private let presetSelector = NSSegmentedControl(
-    labels: ["Separate", "One"], trackingMode: .selectOne,
-    target: nil, action: nil)
+  private let presetSelector = MenuBarLayoutIcons.control()
   private var preview: MenuBarPreviewView?
   private var previewScroll: NSScrollView?
   // A fixed, empty fixture: unavailable readings stay unavailable, with no sampler demand.

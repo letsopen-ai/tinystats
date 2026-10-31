@@ -91,6 +91,10 @@ import TinyStatsCore
         positions[entry.module] = number.doubleValue
       }
     }
+    if !separateItems && settings.separateItems {
+      positions = MenuBarNativeOrder.savedPositions(
+        order: settings.readouts, defaults: .standard, autosaveName: autosaveName)
+    }
     removeAll()
     separateItems = settings.separateItems
     orderObservation = MenuBarOrderObservation()
@@ -203,6 +207,23 @@ import TinyStatsCore
 
 /// Remap only TinyStats' existing native slots. Distances grow from the right edge of the bar.
 enum MenuBarNativeOrder {
+  /// Restore module slots when leaving One without creating or inspecting native status items.
+  static func savedPositions(
+    order: [Module], defaults: UserDefaults, autosaveName: (Module) -> String
+  ) -> [Module: Double] {
+    var positions: [Module: Double] = [:]
+    for module in order {
+      let key = "NSStatusItem Preferred Position " + autosaveName(module)
+      if let number = defaults.object(forKey: key) as? NSNumber,
+        CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite,
+        number.doubleValue >= 0, number.doubleValue < 10_000
+      {
+        positions[module] = number.doubleValue
+      }
+    }
+    return positions
+  }
+
   static func positions(order: [Module], existing: [Module: Double]) -> [Module: Double] {
     // Removed modules must not donate their slots when enabling a different module.
     // All values here are AppKit autosave preferences, never measured button centers.
