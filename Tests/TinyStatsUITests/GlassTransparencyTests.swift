@@ -208,7 +208,7 @@ import Testing
   #expect(caption.maxY < rect.maxY - 34)  // Preserve the existing legend clearance.
 }
 
-@Test @MainActor func menuBarShowSwitchesUseNativeDrawingAndInheritHostAppearance() throws {
+@Test @MainActor func menuBarModuleChipsInheritHostAppearanceWithoutRedundantShowSwitches() throws {
   for theme in [AppTheme.light, .dark] {
     let detail = DetailController()
     detail.view.appearance = theme.nativeAppearance
@@ -220,12 +220,13 @@ import Testing
       editor.close()
     }
     detail.showSettingsView(try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
-    let switches = transparencyViews(detail.view).compactMap { $0 as? SystemSettingSwitch }
-    #expect(switches.count == 9)
-    for control in switches {
+    let chips = transparencyViews(detail.view).compactMap { $0 as? MenuBarChip }
+    #expect(chips.count == 9)
+    #expect(!transparencyViews(detail.view).contains { $0 is SystemSettingSwitch })
+    for control in chips {
       #expect(control.appearance == nil)
       #expect(SystemStyle.isDark(control.effectiveAppearance) == (theme == .dark))
-      #expect(control.isEnabled && control.controlSize == .small)
+      #expect(control.isEnabled)
     }
   }
 }

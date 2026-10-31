@@ -31,13 +31,11 @@ import Testing
   #expect(gpu.accessibilityCustomActions()?.first?.handler?() == true)
   #expect(editor.order == [.cpu, .memory, .network, .gpu])
   #expect(changes.last?.readouts == editor.order)
-  let gpuSwitch = try #require(
-    views.compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "GPU" })
   let gpuStyle = try #require(
-    views.compactMap { $0 as? NSPopUpButton }.first {
+    views.compactMap { $0 as? MenuBarStylePicker }.first {
       $0.accessibilityLabel() == "GPU menu bar style"
     })
-  #expect(gpuSwitch.state == .on && gpuStyle.isEnabled)
+  #expect(editor.order.contains(.gpu) && gpuStyle.isEnabled)
   #expect(preview.renderers.count == 4)
   let menu = try #require(cpu.menu(for: NSEvent()))
   #expect(
@@ -52,14 +50,15 @@ import Testing
   let moveLeft = try #require(cpu.accessibilityCustomActions()?.first { $0.name == "Move left" })
   #expect(moveLeft.handler?() == true)
   #expect(editor.order == [.memory, .network, .cpu, .gpu])
-  #expect(!cpu.accessibilityPerformPress())
+  #expect(cpu.accessibilityPerformPress())
+  #expect(controller.selectedStyleModule == .cpu)
   #expect(editor.order == [.memory, .network, .cpu, .gpu])
   #expect(
     cpu.accessibilityCustomActions()?.first { $0.name == "Remove from menu bar" }?.handler?()
       == true)
   #expect(editor.order == [.memory, .network, .gpu])
   #expect(editor.lastAnnouncement == "CPU removed from menu bar.")
-  #expect(cpu.accessibilityValue() as? String == "Available")
+  #expect(cpu.accessibilityValue() as? String == "Available, Editing styles")
   // A native/menu refresh while the context menu is open must not turn Remove into Add.
   let staleRemove = menu.items[0]
   let previousWrites = changes.count
@@ -439,7 +438,7 @@ import Testing
       }
       let disclosure = try #require(
         views.compactMap { $0 as? NSButton }.first {
-          $0.accessibilityLabel() == "Customize menu bar readouts and styles"
+          $0.accessibilityLabel() == "Customize menu bar styles"
         })
       let nextFrame = editor.convert(disclosure.bounds, from: disclosure)
       #expect(nextFrame.minY >= editor.bounds.maxY + 8)
@@ -447,7 +446,7 @@ import Testing
   }
 }
 
-@Test @MainActor func menuBarRingFixtureKeepsShowOnAndOnlyDisablesFont() throws {
+@Test @MainActor func menuBarRingFixtureKeepsMembershipAndOnlyDisablesFont() throws {
   _ = NSApplication.shared
   var settings = Settings()
   settings.styles["cpu"] = .ring
@@ -457,17 +456,16 @@ import Testing
   let root = try #require(controller.window?.contentView)
   root.layoutSubtreeIfNeeded()
   let views = layoutDescendants(root)
-  let toggle = try #require(
-    views.compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "CPU" })
+  let tray = try #require(views.compactMap { $0 as? MenuBarCustomization }.first)
   let style = try #require(
-    views.compactMap { $0 as? NSPopUpButton }.first {
+    views.compactMap { $0 as? MenuBarStylePicker }.first {
       $0.accessibilityLabel() == "CPU menu bar style"
     })
   let font = try #require(
     views.compactMap { $0 as? NSPopUpButton }.first {
       $0.accessibilityLabel() == "CPU menu bar font size"
     })
-  #expect(toggle.state == .on && toggle.isEnabled)
+  #expect(tray.order.contains(.cpu))
   #expect(style.isEnabled && style.titleOfSelectedItem == MenuBarStyle.ring.title)
   #expect(!font.isEnabled)
 }

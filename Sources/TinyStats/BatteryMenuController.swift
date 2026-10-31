@@ -15,7 +15,7 @@ import TinyStatsCore
   private let scroll = NSScrollView()
   private let context = NSTextField(wrappingLabelWithString: "")
   private var formatMenus: [BatteryMenuState: NSPopUpButton] = [:]
-  private var styleMenus: [BatteryMenuState: NSPopUpButton] = [:]
+  private var styleMenus: [BatteryMenuState: MenuBarStylePicker] = [:]
   private var barAppearance: NSAppearance?
   private var barHeight = NSStatusBar.system.thickness
   private var paused = false
@@ -76,11 +76,10 @@ import TinyStatsCore
       let value = NSPopUpButton()
       value.addItems(withTitles: BatteryMenuFormat.allCases.map(\.title))
       value.setAccessibilityLabel("\(state.title) battery format")
-      let style = NSPopUpButton()
-      style.addItems(withTitles: MenuBarStyle.available(for: .battery).map(\.title))
+      let style = MenuBarStylePicker(module: .battery, settings: settings, batteryState: state)
       style.setAccessibilityLabel("\(state.title) battery style")
-      for control in [value, style] {
-        control.font = .systemFont(ofSize: 11)
+      value.font = .systemFont(ofSize: 11)
+      for control in [value as NSControl, style] {
         control.target = self
         control.action = #selector(changed)
       }
@@ -104,10 +103,19 @@ import TinyStatsCore
     var stateRows: [SystemFormRow] = []
     for state in BatteryMenuState.allCases {
       if let value = formatMenus[state], let style = styleMenus[state] {
-        stateRows.append(
-          form.row(
-            state == .externalPower ? "On AC" : state.title,
-            form.controls([value, style], widths: [180, 230])))
+        let group = NSStackView(views: [
+          form.controls(
+            [SystemSettingsForm.text(state.title, heading: true), value], widths: [140, 180]),
+          style,
+        ])
+        group.orientation = .vertical
+        group.alignment = .leading
+        group.spacing = 8
+        for child in group.arrangedSubviews {
+          child.translatesAutoresizingMaskIntoConstraints = false
+          child.widthAnchor.constraint(equalTo: group.widthAnchor).isActive = true
+        }
+        stateRows.append(form.row("", group))
       }
     }
     _ = SystemSettingsForm(
@@ -157,7 +165,7 @@ import TinyStatsCore
       "Value formats apply to text styles. Gauges, icons and plain histories show battery level."
     for state in BatteryMenuState.allCases {
       formatMenus[state]?.selectItem(withTitle: settings.batteryMenu[state].format.title)
-      styleMenus[state]?.selectItem(withTitle: settings.batteryMenu[state].style.title)
+      styleMenus[state]?.update(settings: settings)
       formatMenus[state]?.isEnabled =
         settings.batteryMenu.customizeStates && settings.batteryMenu[state].style.showsBatteryValue
       formatMenus[state]?.toolTip = "Choose a text style to display this value."
@@ -172,7 +180,7 @@ import TinyStatsCore
       if let field = formatMenus[state], let style = styleMenus[state] {
         value[state] = .init(
           format: BatteryMenuFormat.allCases[max(0, field.indexOfSelectedItem)],
-          style: MenuBarStyle.available(for: .battery)[max(0, style.indexOfSelectedItem)])
+          style: style.selectedStyle ?? settings.batteryMenu[state].style)
       }
     }
     value.validate()
@@ -203,7 +211,8 @@ import TinyStatsCore
     let reading = MenuBarReadout.make(
       module: .battery, snapshot: snapshot, settings: settings,
       history: isExample ? [] : history)
-    preview.update(groups: [[reading]], paused: isExample ? false : paused, height: barHeight)
+    preview.update(
+      groups: [[reading]], paused: isExample ? false : paused, height: barHeight)
     preview.frame.size = .init(width: max(610, preview.preferredWidth), height: max(36, barHeight))
     preview.needsDisplay = true
     let state =

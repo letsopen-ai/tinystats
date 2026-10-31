@@ -14,6 +14,12 @@ import Testing
     batteryViews(root).compactMap { $0 as? NSPopUpButton }.first { $0.accessibilityLabel() == name }
   )
 }
+@MainActor private func batteryStyle(_ root: NSView, _ name: String) throws -> MenuBarStylePicker {
+  try #require(
+    batteryViews(root).compactMap { $0 as? MenuBarStylePicker }.first {
+      $0.accessibilityLabel() == name
+    })
+}
 @MainActor private func batteryAction(_ control: NSControl) throws {
   let action = try #require(control.action)
   #expect(NSApplication.shared.sendAction(action, to: control.target, from: control))
@@ -122,14 +128,14 @@ func batteryFormatEditorPreviewsExamplesWithoutSavingFakeReadingsOrEnablingReado
   try batteryAction(customize)
   let chargedFormat = try batteryPopup(editorRoot, "Charged battery format")
   #expect(!chargedFormat.isEnabled)
-  let chargedStyle = try batteryPopup(editorRoot, "Charged battery style")
+  let chargedStyle = try batteryStyle(editorRoot, "Charged battery style")
   chargedStyle.selectItem(withTitle: MenuBarStyle.value.title)
   try batteryAction(chargedStyle)
   #expect(chargedFormat.isEnabled)
   let format = try batteryPopup(editorRoot, "On battery battery format")
   format.selectItem(withTitle: BatteryMenuFormat.time.title)
   try batteryAction(format)
-  let style = try batteryPopup(editorRoot, "On battery battery style")
+  let style = try batteryStyle(editorRoot, "On battery battery style")
   style.selectItem(withTitle: MenuBarStyle.value.title)
   try batteryAction(style)
   #expect(saved?.batteryMenu.draining == .init(format: .time, style: .value))
@@ -138,10 +144,10 @@ func batteryFormatEditorPreviewsExamplesWithoutSavingFakeReadingsOrEnablingReado
   let renderer = try #require(
     batteryViews(root).compactMap { $0 as? MenuBarPreviewView }.first?.renderers.first)
   #expect(renderer.readouts.first?.style == .value && renderer.readouts.first?.value == "4:10")
-  #expect(try !batteryPopup(root, "Power menu bar style").isEnabled)
+  #expect(try !batteryStyle(root, "Power menu bar style").isEnabled)
   customize.state = .off
   try batteryAction(customize)
-  #expect(try batteryPopup(root, "Power menu bar style").isEnabled)
+  #expect(try batteryStyle(root, "Power menu bar style").isEnabled)
   #expect(renderer.readouts.first?.style == .stacked && renderer.readouts.first?.value == "72%")
   parent.close()
   #expect(!window.isVisible)

@@ -4,6 +4,14 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Match the dropdown logo’s optical weight to its neighbouring icons; verify footer tooltips and VoiceOver labels in every module/state and add matching help to Weather and calendar actions. Preview version 0.36.3 (66).
+
+- Fix the upside-down dropdown logo; verify footer, Overview and Welcome orientation against the source artwork. Put the Menu Bar preview beside Layout in one compact row, remove the Spacing setting and always use 0pt side padding / 1pt gaps. Ignore obsolete saved spacing values and omit the key on save. Preview version 0.36.2 (65).
+
+- Add Separate / One menu bar layout and saved spacing without changing module styles; place the TinyStats logo first in dropdown footers. Preview version 0.36.1 (64).
+
+- Replace module display-style text menus with accessible production-renderer picture tiles, including Battery power states and the welcome tour. Preview examples follow appearance and font settings; compact the bottom Battery/Clock actions into one row. Bump the preview to 0.36.0 (63).
+
 - Add appearance-aware candy module identity palettes to existing glyphs, charts and meters. Separate the light CPU/GPU companions from GPU/Sensors primaries and warm light Disk to marigold, preserving the existing contrast and series-separation guards. Use a neutral 10% label-colour sidebar selection and module-coloured footer icon hover and paused Play. Keep status-item text and graphics monochrome, including CPU efficiency/performance core bars: efficiency uses 50% opacity and core-kind boundaries gain a 2pt gap. Native controls retain the system accent; text and semantic states retain their existing colours.
 
 - Make macOS 26+ glass more transparent: dropdown wash 60% light / 70% dark, sidebar 55% / 65%, and native grouped chips at 0% extra wash (previously inherited the sidebar wash). Compose inset cards with 2.5% light label-colour / 24% dark window-background tints to preserve backdrop hue without seams; strengthen glass-only secondary ink. Preserve legacy and accessibility fallback fills and native control accents; retain measured module palette ink while darkening unmeasured system/custom light-glass secondary traces and matching legend marks/meters for contrast, and recompute the scroll fade when accessibility treatment changes.

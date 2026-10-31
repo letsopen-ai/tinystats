@@ -66,7 +66,7 @@ import Testing
       "weather":{"enabled":false},"persistHistory":false,"styles":{"cpu":"ring"}}
       """
     let settings = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
-    #expect(settings.readouts == [.weather, .sensors, .cpu] && settings.separateItems)
+    #expect(settings.readouts == [.weather, .sensors, .cpu] && settings.separateItems == separate)
     #expect(
       !settings.weather.enabled && !settings.persistHistory && settings.style(for: .cpu) == .ring)
     #expect(

@@ -63,10 +63,27 @@ import Testing
   #expect(!settings.needsMenuBarHistory)
 }
 
-@Test func legacyCombinedMenuMigratesToNativeReadoutItems() throws {
+@Test func savedCombinedMenuRemainsOne() throws {
   let legacy = try JSONDecoder().decode(
     Settings.self,
     from: Data(#"{"separateItems":false,"readouts":["cpu","memory","network"]}"#.utf8))
-  #expect(legacy.separateItems && Settings().separateItems)
+  #expect(!legacy.separateItems && Settings().separateItems)
   #expect(legacy.readouts == [.cpu, .memory, .network])
+}
+
+@Test func obsoleteMenuBarSpacingIsIgnoredAndOmittedOnSave() throws {
+  for value in ["\"tight\"", "\"standard\"", "\"relaxed\"", "\"future\"", "false", "null", "{}"] {
+    let settings = try JSONDecoder().decode(
+      Settings.self,
+      from: Data(
+        "{\"separateItems\":false,\"menuBarSpacing\":\(value),\"styles\":{\"cpu\":\"ring\"}}".utf8))
+    #expect(!settings.separateItems && settings.style(for: .cpu) == .ring)
+    let encoded = try JSONEncoder().encode(settings)
+    let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    #expect(object["menuBarSpacing"] == nil)
+    #expect(try JSONDecoder().decode(Settings.self, from: encoded) == settings)
+  }
+  for json in [#"{}"#, #"{"separateItems":"false","menuBarSpacing":false}"#] {
+    #expect(try JSONDecoder().decode(Settings.self, from: Data(json.utf8)).separateItems)
+  }
 }

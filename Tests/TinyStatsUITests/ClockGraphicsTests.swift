@@ -87,8 +87,8 @@ private func graphicDate(_ text: String) -> Date { ISO8601DateFormatter().date(f
           let width = view.preferredWidth
           let before = try clockPixels(view)
           view.readouts = ClockMenuRenderer.readouts(settings: settings, at: later)
-          // Stacked clocks retain a 29-point content floor plus two edge points.
-          #expect(view.preferredWidth == width && width >= 31 && width < 400)
+          // Stacked clocks retain a 29-point content floor with no compact edge padding.
+          #expect(view.preferredWidth == width && width >= 29 && width < 400)
           let after = try clockPixels(view)
           #expect(before != after)
         }

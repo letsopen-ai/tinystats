@@ -81,6 +81,12 @@ import Testing
     return
   }
   _ = NSApplication.shared
+  let previousBrandIcon = NSApp.applicationIconImage
+  NSApp.applicationIconImage = NSImage(
+    contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(
+        "Resources/TinyStats.icns"))
+  defer { NSApp.applicationIconImage = previousBrandIcon }
   let savedPolicy = NSApp.activationPolicy()
   _ = NSApp.setActivationPolicy(.accessory)
   NSApp.finishLaunching()
@@ -166,7 +172,9 @@ import Testing
     ("main-window", .overview, false, false, 0),
     ("main-sensors", .sensors, false, false, 0),
     ("main-sensors-readings", .sensors, false, false, 0),
-    ("settings-menu-bar", .overview, false, true, 0),
+    ("settings-menu-bar-cpu", .cpu, false, true, 0),
+    ("settings-menu-bar-memory", .memory, false, true, 0),
+    ("settings-menu-bar-power", .battery, false, true, 0),
   ]
   let cases =
     surfaces
@@ -216,26 +224,18 @@ import Testing
             settings: controller.settings, interfaces: [],
             snapshot: snapshot, history: [], initialPage: .menuBar)
           preferences = editor
+          editor.selectStyleModule(module)
           controller.showSettingsView(
             try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
         }
         controller.view.layoutSubtreeIfNeeded()
-        // Exercise the existing insertion marker above real compositor glass, using
-        // only a private synthetic drag payload in our own fixture window.
-        var insertionDrag: ReadoutDrag?
-        if settingsPage {
-          let editor = try #require(
-            systemDescendants(controller.view).compactMap { $0 as? MenuBarCustomization }.first)
-          let cpu = try #require(editor.chips[.cpu])
-          let memory = try #require(editor.chips[.memory])
-          let drag = ReadoutDrag()
-          drag.draggingSource = cpu
-          #expect(drag.draggingPasteboard.writeObjects([editor.pasteboardItem(for: .cpu)]))
-          drag.draggingLocation = editor.strip.convert(
-            .init(x: memory.frame.minX, y: memory.frame.midY), to: nil)
-          #expect(editor.strip.draggingEntered(drag) == .move)
-          insertionDrag = drag
+        for tile in systemDescendants(controller.view).compactMap({ $0 as? MenuBarStyleTile }) {
+          tile.increaseContrast = { fallback == 2 }
         }
+        if let preferences, module != .cpu {
+          systemRevealStyleEditor(preferences, in: controller.view)
+        }
+        controller.view.layoutSubtreeIfNeeded()
         window.makeKey()
         window.displayIfNeeded()
         try await Task.sleep(for: .milliseconds(450))
@@ -244,6 +244,17 @@ import Testing
         let stem = "glass-onscreen-\(surface)\(gradient ? "-gradient" : "")-\(theme.rawValue)"
         let image = try await SCScreenshotManager.captureImage(
           contentFilter: filter, configuration: config)
+        if surface == "cpu", gradient {
+          // Crop only our fixture's footer from the real compositor capture over its gradient.
+          let crop = CGRect(
+            x: controller.view.frame.minX, y: 780 - controller.view.frame.minY - 54,
+            width: controller.view.bounds.width, height: 54)
+          let footer = try #require(image.cropping(to: crop))
+          try #require(
+            NSBitmapImageRep(cgImage: footer).representation(using: .png, properties: [:])
+          )
+          .write(to: folder.appendingPathComponent("footer-glass-gradient-\(theme.rawValue).png"))
+        }
         try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
           .write(to: folder.appendingPathComponent(stem + ".png"))
         try systemGalleryImage(backdrop, to: folder.appendingPathComponent(stem + "-bitmap.png"))
@@ -255,7 +266,6 @@ import Testing
             to: folder.appendingPathComponent(
               "glass-onscreen-settings-menu-bar-active-\(theme.rawValue).png"))
         }
-        insertionDrag?.draggingPasteboard.releaseGlobally()
         controller.view.removeFromSuperview()
         preferences?.disposeEmbedded()
         preferences?.close()
@@ -372,6 +382,9 @@ import Testing
       let open = try #require(buttons.first { $0.title == "Open \(module.title) in TinyStats" })
       #expect(controller.view.bounds.contains(open.frame))
       #expect(open.frame.width == 28)
+      #expect((open as? MenuActionRow)?.usesBrandIcon == true)
+      #expect(open.image?.size == NSSize(width: 16, height: 16))
+      #expect(open.image?.isTemplate == false && open.contentTintColor == nil)
       #expect(NSApp.sendAction(try #require(open.action), to: open.target, from: open))
       let actions = buttons.compactMap { $0 as? MenuActionRow }.sorted {
         $0.frame.minX < $1.frame.minX
@@ -379,7 +392,7 @@ import Testing
       let hasHistory = [.overview, .cpu, .gpu, .memory, .disks, .network, .battery].contains(module)
       let optionTitle = module == .clock ? "Calendar…" : allReadings ? "Summary" : "All readings"
       let expected =
-        (hasHistory ? ["History…"] : []) + [open.title]
+        [open.title] + (hasHistory ? ["History…"] : [])
         + (module == .overview ? [] : [optionTitle]) + ["Pause"]
       #expect(actions.map(\.title) == expected)
       for action in actions {
@@ -570,6 +583,12 @@ import Testing
 
 @Test @MainActor func systemDropdownIconHoverAndPressRenderInBothAppearances() throws {
   _ = NSApplication.shared
+  let previousBrandIcon = NSApp.applicationIconImage
+  NSApp.applicationIconImage = NSImage(
+    contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(
+        "Resources/TinyStats.icns"))
+  defer { NSApp.applicationIconImage = previousBrandIcon }
   let controller = DetailController()
   controller.isPopoverPresentation = true
   controller.loadViewIfNeeded()
@@ -578,25 +597,59 @@ import Testing
   controller.view.layoutSubtreeIfNeeded()
   let button = try #require(
     controller.view.subviews.compactMap { $0 as? MenuActionRow }.first { $0.title == "History…" })
+  let brand = try #require(
+    controller.view.subviews.compactMap { $0 as? MenuActionRow }.first { $0.usesBrandIcon })
+  let brandImage = try #require(brand.image)
+  brand.setBrandIcon()
+  #expect(brand.image === brandImage)
+  #expect(brand.frame.minX < button.frame.minX)
   let event = try #require(
     NSEvent.enterExitEvent(
       with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0,
       windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
   for name in [NSAppearance.Name.aqua, .darkAqua] {
     controller.view.appearance = NSAppearance(named: name)
-    func render(_ state: String) throws -> Data {
+    var wroteZoom = false
+    func render(_ state: String, scale: Int = 2) throws -> Data {
       let rect = NSRect(x: 0, y: 0, width: 344, height: 54)
-      let bitmap = try #require(controller.view.bitmapImageRepForCachingDisplay(in: rect))
-      controller.view.cacheDisplay(in: rect, to: bitmap)
+      let bitmap = try #require(
+        NSBitmapImageRep(
+          bitmapDataPlanes: nil, pixelsWide: 344 * scale, pixelsHigh: 54 * scale,
+          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+          colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+      bitmap.size = rect.size
+      controller.view.effectiveAppearance.performAsCurrentDrawingAppearance {
+        controller.view.cacheDisplay(in: rect, to: bitmap)
+      }
       let png = try #require(bitmap.representation(using: .png, properties: [:]))
       if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
         let url = URL(fileURLWithPath: path, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        try png.write(to: url.appendingPathComponent("footer-\(state)-\(name.rawValue).png"))
+        try png.write(
+          to: url.appendingPathComponent("footer-\(state)-\(name == .aqua ? "light" : "dark").png"))
+        if state == "normal", scale == 2, !wroteZoom {
+          wroteZoom = true
+          // Four times the actual 2x pixels, including History/readings/Pause for comparison.
+          let zoom = try #require(
+            NSBitmapImageRep(
+              bitmapDataPlanes: nil, pixelsWide: bitmap.pixelsWide * 4,
+              pixelsHigh: bitmap.pixelsHigh * 4, bitsPerSample: 8, samplesPerPixel: 4,
+              hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
+              bitsPerPixel: 0))
+          for y in 0..<zoom.pixelsHigh {
+            for x in 0..<zoom.pixelsWide {
+              zoom.setColor(try #require(bitmap.colorAt(x: x / 4, y: y / 4)), atX: x, y: y)
+            }
+          }
+          try #require(zoom.representation(using: .png, properties: [:])).write(
+            to: url.appendingPathComponent(
+              "footer-logo-zoom-\(name == .aqua ? "light" : "dark").png"))
+        }
       }
       return png
     }
     let normal = try render("normal")
+    _ = try render("normal-1x", scale: 1)
     button.mouseEntered(with: event)
     let hover = try render("hover")
     button.highlight(true)
@@ -604,6 +657,10 @@ import Testing
     #expect(normal != hover && hover != pressed)
     button.highlight(false)
     button.mouseExited(with: event)
+    #expect(try render("normal") == normal)
+    brand.mouseEntered(with: event)
+    #expect(try render("logo-hover") != normal)
+    brand.mouseExited(with: event)
     #expect(try render("normal") == normal)
     #expect(button.accessibilityLabel() == "History…")
     button.isEnabled = false
@@ -780,6 +837,8 @@ import Testing
     controller.onChange = { _ in changes += 1 }
     let root = try #require(controller.window?.contentView)
     // Request a key fixture window; the test runner may still receive inactive native ink.
+    // AppKit can constrain windows to the current test display's available screen height.
+    #expect(root.bounds.width == 740 && root.bounds.height == 660)
     controller.window?.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
     for page in [PreferencesController.Page.general, .menuBar] {
@@ -787,7 +846,7 @@ import Testing
       root.layoutSubtreeIfNeeded()
       let views = systemDescendants(root)
       #expect(views.contains { $0 is SystemFormSection })
-      #expect(views.contains { $0 is NSSwitch })
+      #expect(views.contains { page == .general ? $0 is NSSwitch : $0 is MenuBarChip })
       if page == .menuBar {
         let customization = try #require(views.compactMap { $0 as? MenuBarCustomization }.first)
         #expect(customization.strip.chips.map(\.module) == settings.readouts)
@@ -863,7 +922,8 @@ import Testing
       }
       let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
       root.cacheDisplay(in: root.bounds, to: bitmap)
-      #expect(bitmap.pixelsWide >= 740 && bitmap.pixelsHigh >= 660)
+      #expect(
+        bitmap.pixelsWide >= Int(root.bounds.width) && bitmap.pixelsHigh >= Int(root.bounds.height))
       if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
         let url = URL(fileURLWithPath: path, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -1570,6 +1630,124 @@ import Testing
         .write(
           to: folder.appendingPathComponent("switch-active-\(theme.rawValue).txt"),
           atomically: true, encoding: .utf8)
+    }
+  }
+}
+
+/// The editor is scrolled inside our fixture so pictures and the compact bottom row share a frame.
+@Test @MainActor func systemMenuBarPictureEditorGallery() throws {
+  guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] else {
+    return
+  }
+  let folder = URL(fileURLWithPath: path, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  for theme in [AppTheme.light, .dark] {
+    for policy in ["glass", "legacy", "solid", "contrast"] {
+      for module in [Module.cpu, .memory, .battery, .clock, .sensors] {
+        for combined in module == .cpu ? [false, true] : [false] {
+          var settings = Settings()
+          settings.theme = theme
+          settings.separateItems = !combined
+          let variant = combined ? "-one-compact" : ""
+          let detail = DetailController(snapshot: Snapshot(), history: [])
+          detail.glassEnvironment = {
+            .init(
+              supportsGlass: policy != "legacy", reduceTransparency: policy == "solid",
+              increaseContrast: policy == "contrast")
+          }
+          detail.isPopoverPresentation = false
+          detail.view.frame = .init(origin: .zero, size: MainWindow.minimumSize)
+          let editor = PreferencesController(
+            settings: settings, interfaces: [], snapshot: Snapshot(), history: [],
+            initialPage: .menuBar)
+          defer {
+            editor.disposeEmbedded()
+            editor.close()
+          }
+          editor.selectStyleModule(module)
+          detail.showSettingsView(try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
+          detail.view.appearance = theme.nativeAppearance
+          detail.view.layoutSubtreeIfNeeded()
+          if module != .cpu { systemRevealStyleEditor(editor, in: detail.view) }
+          detail.view.layoutSubtreeIfNeeded()
+          let preview = try #require(
+            systemDescendants(detail.view).compactMap { $0 as? MenuBarPreviewView }.first)
+          #expect(preview.renderers.count == (combined ? 1 : settings.readouts.count))
+          let picker = try #require(
+            systemDescendants(detail.view).compactMap { $0 as? MenuBarStylePicker }.first {
+              $0.module == module
+            })
+          for tile in picker.tiles { tile.increaseContrast = { policy == "contrast" } }
+          let options = try #require(picker.superview?.superview)
+          let document = try #require(options.enclosingScrollView?.documentView)
+          let bottomChrome =
+            document.bounds.height - picker.convert(picker.bounds, to: document).maxY
+          #expect(bottomChrome <= PreferencesController.menuBarCPUBottomChromeBudget + 0.5)
+          if module == .cpu {
+            #expect(options.bounds.height <= PreferencesController.menuBarCPUOptionsHeightBudget)
+          }
+          let metrics =
+            "\(module.title) \(policy) \(theme.rawValue): pane=\(picker.bounds.width)pt, options=\(options.bounds.height)pt, grid=\(picker.bounds.height)pt, tiles-to-document-end=\(bottomChrome)pt\n"
+          let file = folder.appendingPathComponent(
+            "menu-bar-layout-\(module.rawValue)\(variant)-\(policy)-\(theme.rawValue).txt")
+          try metrics.write(to: file, atomically: true, encoding: .utf8)
+          #expect(picker.visibleRect.height >= picker.bounds.height - 1)
+          let header = try #require((picker.superview as? NSStackView)?.arrangedSubviews.first)
+          #expect(header.visibleRect.height >= header.bounds.height - 1)
+          if module == .battery {
+            let tools = try #require(
+              systemDescendants(detail.view).first {
+                $0.identifier?.rawValue == "menu-bar-battery-tools"
+              })
+            #expect(tools.visibleRect.height >= tools.bounds.height - 1)
+            #expect(tools.bounds.height <= PreferencesController.menuBarToolsHeightBudget)
+          }
+          try systemGalleryImage(
+            detail.view,
+            to: folder.appendingPathComponent(
+              "settings-menu-bar-\(module.rawValue)\(variant)-\(policy)-\(theme.rawValue).png"))
+        }
+      }
+    }
+  }
+}
+
+@MainActor private func systemRevealStyleEditor(_ editor: PreferencesController, in root: NSView) {
+  root.layoutSubtreeIfNeeded()
+  if let picker = systemDescendants(root).compactMap({ $0 as? MenuBarStylePicker }).first(where: {
+    $0.module == editor.selectedStyleModule
+  }), let section = picker.superview {
+    section.scrollToVisible(section.bounds)
+  }
+}
+
+/// Renderer-only layout comparison: never creates or interacts with native status items.
+@Test @MainActor func menuBarCompactLayoutGallery() throws {
+  guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] else {
+    return
+  }
+  let folder = URL(fileURLWithPath: path, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  for theme in [AppTheme.light, .dark] {
+    for separate in [true, false] {
+      var settings = Settings()
+      settings.separateItems = separate
+      let strip = SystemWallpaperStrip(frame: .init(x: 0, y: 0, width: 420, height: 52))
+      strip.appearance = theme.nativeAppearance
+      let preview = MenuBarPreviewView(frame: .init(x: 16, y: 8, width: 388, height: 36))
+      let groups = StatusItemController.groups(for: settings).map { modules in
+        modules.map {
+          MenuBarStyleExample.readout(
+            module: $0, style: settings.style(for: $0), settings: settings)
+        }
+      }
+      preview.update(groups: groups, paused: false, height: 24)
+      strip.addSubview(preview)
+      try systemGalleryImage(
+        strip,
+        to: folder.appendingPathComponent(
+          "menu-bar-readouts-\(separate ? "separate" : "one")-compact-\(theme.rawValue).png"
+        ))
     }
   }
 }

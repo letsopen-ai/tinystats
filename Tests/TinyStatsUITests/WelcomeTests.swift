@@ -147,18 +147,15 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     prefs.selectMenuBarTab()
     let root = try #require(prefs.window?.contentView)
     let controls = welcomeViews(root)
-    let buttons = controls.compactMap { $0 as? SystemSettingSwitch }
-    let cpu = try #require(buttons.first { $0.title == "CPU" })
-    #expect(cpu.state == .on)
-    #expect(buttons.first { $0.title == "Weather" }?.state == .on)
-    #expect(buttons.first { $0.title == "Memory" }?.state == .off)
+    let tray = try #require(controls.compactMap { $0 as? MenuBarCustomization }.first)
+    #expect(tray.order == changed.readouts)
     let style = try #require(
-      controls.compactMap { $0 as? NSPopUpButton }.first {
+      controls.compactMap { $0 as? MenuBarStylePicker }.first {
         $0.accessibilityLabel() == "CPU menu bar style"
       })
     #expect(style.titleOfSelectedItem == MenuBarStyle.ring.title)
     // A later Settings edit must keep the tour's readouts/styles and other saved choices.
-    try welcomeActivate(cpu)
+    try welcomeActivate(style)
     let saved = try #require(emitted)
     #expect(saved.readouts == changed.readouts && saved.style(for: .cpu) == .ring)
     #expect(!saved.persistHistory && saved.fahrenheit && !saved.weather.enabled)
@@ -261,24 +258,20 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     ])
   let presets = try #require(welcomeViews(root).compactMap { $0 as? NSSegmentedControl }.first)
   #expect(
-    (0..<presets.segmentCount).compactMap { presets.label(forSegment: $0) } == [
-      "Simple text", "Compact bars",
+    (0..<presets.segmentCount).compactMap {
+      presets.image(forSegment: $0)?.accessibilityDescription
+    } == [
+      "Separate", "One",
     ])
   let preview = try #require(welcomeViews(root).compactMap { $0 as? MenuBarPreviewView }.first)
   for segment in [0, 1] {
     presets.selectedSegment = segment
     try welcomeActivate(presets)
-    #expect(settings.separateItems)
-    for module in settings.readouts {
-      let gauges: Set<Module> = [.cpu, .memory, .battery, .gpu]
-      let expected: MenuBarStyle = segment == 1 && gauges.contains(module) ? .horizontal : .text
-      #expect(settings.style(for: module) == expected)
-      #expect(settings.appearance(for: module).size == (segment == 0 ? .standard : .compact))
-    }
+    #expect(settings.separateItems == (segment == 0))
     #expect(settings.style(for: .disks) == .ring)
     #expect(settings.appearance(for: .disks).size == .large)
-    #expect(preview.renderers.count == 1)
-    let readings = try #require(preview.renderers.first).readouts
+    #expect(preview.renderers.count == (segment == 0 ? settings.readouts.count : 1))
+    let readings = preview.renderers.flatMap(\.readouts)
     #expect(readings.compactMap(\.module) == settings.readouts)
     #expect(readings.first { $0.module == .cpu }?.value == "—")
     #expect(readings.first { $0.module == .cpu }?.progress == nil)
@@ -288,7 +281,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   // Returning from Settings refreshes the fixture and preset selection without emitting edits.
   settings.styles[Module.cpu.rawValue] = .ring
   controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
-  #expect(presets.selectedSegment == -1)
+  #expect(presets.selectedSegment == 1)
   #expect(preview.renderers.first?.readouts.first { $0.module == .cpu }?.style == .ring)
 }
 
@@ -375,14 +368,16 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   weather.state = .on
   try welcomeActivate(weather)
   let cpuStyle = try #require(
-    welcomeViews(root).compactMap { $0 as? NSPopUpButton }.first {
+    welcomeViews(root).compactMap { $0 as? MenuBarStylePicker }.first {
       $0.accessibilityLabel() == "CPU menu bar style"
     })
   cpuStyle.selectItem(withTitle: MenuBarStyle.ring.title)
   try welcomeActivate(cpuStyle)
   let preview = try #require(welcomeViews(root).compactMap { $0 as? MenuBarPreviewView }.first)
   #expect(
-    preview.renderers.first?.readouts.compactMap(\.module) == [.cpu, .memory, .network, .weather])
+    preview.renderers.flatMap(\.readouts).compactMap(\.module) == [
+      .cpu, .memory, .network, .weather,
+    ])
   #expect(preview.renderers.first?.readouts.first { $0.module == .cpu }?.style == .ring)
   let saved = Settings.load(from: store)
   #expect(saved.readouts == [.cpu, .memory, .network, .weather])
@@ -525,4 +520,29 @@ private func welcomeStore() throws -> (String, UserDefaults) {
       controller.close()
     }
   }
+}
+
+@Test @MainActor func welcomeStyleWidthsSurviveSwitchingAndHiddenLayoutResetsForLaterSteps() throws
+{
+  let controller = WelcomeController(settings: { Settings() }, initialStep: 1)
+  defer { controller.close() }
+  let root = try #require(controller.window?.contentView)
+  let selector = try #require(
+    welcomeViews(root).compactMap { $0 as? NSPopUpButton }.first {
+      $0.accessibilityLabel() == "Welcome readout to customize"
+    })
+  for module in [Module.memory, .battery, .cpu, .memory] {
+    selector.selectItem(withTitle: module.title)
+    try welcomeActivate(selector)
+    root.layoutSubtreeIfNeeded()
+    let picker = try #require(
+      welcomeViews(root).compactMap { $0 as? MenuBarStylePicker }.first {
+        $0.module == module
+      })
+    #expect(!picker.isHiddenOrHasHiddenAncestor)
+    #expect(abs(picker.bounds.width - (picker.superview?.bounds.width ?? 0)) < 1)
+  }
+  controller.nextStep()
+  let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
+  #expect(!body.detachesHiddenViews)
 }

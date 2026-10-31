@@ -360,19 +360,22 @@ enum SystemStyle {
   private var hoverTracking: NSTrackingArea?
   private var hovering = false
   private var iconName: String?
+  private(set) var usesBrandIcon = false
   var accentModule: Module = .overview { didSet { updateTint() } }
   var showsAccent = false { didSet { updateTint() } }
   func refreshTint() { updateTint() }
   private func updateTint() {
     contentTintColor =
-      usesIconPresentation
-      ? (showsAccent
-        ? SystemStyle.moduleAccent(accentModule)
-        : hovering
+      usesBrandIcon
+      ? nil
+      : usesIconPresentation
+        ? (showsAccent
           ? SystemStyle.moduleAccent(accentModule)
-          : glassEnvironment().treatment == .glass
-            ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor)
-      : .labelColor
+          : hovering
+            ? SystemStyle.moduleAccent(accentModule)
+            : glassEnvironment().treatment == .glass
+              ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor)
+        : .labelColor
   }
   var glassEnvironment: () -> GlassSurface.Environment = { .current }
   var usesIconPresentation = false {
@@ -390,8 +393,23 @@ enum SystemStyle {
     // AppKit can restore image-leading placement when a button's title changes.
     defer { imagePosition = .imageOnly }
     guard iconName != name || image == nil else { return }
+    usesBrandIcon = false
     iconName = name
     image = Self.symbolImage(name, fallback: fallback)
+  }
+  func setBrandIcon() {
+    defer { imagePosition = .imageOnly }
+    guard !usesBrandIcon || image == nil else { return }
+    usesBrandIcon = true
+    iconName = nil
+    if let icon = NSApp.applicationIconImage.copy() as? NSImage {
+      icon.size = .init(width: 16, height: 16)
+      icon.isTemplate = false
+      image = icon
+    }
+    imageScaling = .scaleNone
+    imagePosition = .imageOnly
+    updateTint()
   }
   static func symbolImage(_ name: String, fallback: String) -> NSImage? {
     (NSImage(systemSymbolName: name, accessibilityDescription: nil)
@@ -447,7 +465,51 @@ enum SystemStyle {
           yRadius: SystemStyle.Radius.control
         ).fill()
       }
-      cell?.drawInterior(withFrame: bounds, in: self)
+      if usesBrandIcon, let image {
+        // Crop to the mark's content plus a small paper inset: the old full-paper crop
+        // left only 7.5pt of letter ink beside 12.5–14pt symbol ink at 2x. A 15pt tile
+        // with this tighter crop gives the mark comparable optical weight. Snap only
+        // the origin to device pixels: retain 15pt at 1x/2x and the existing 2x result.
+        // The 28pt target and hover/focus geometry stay intact.
+        // NSButton is flipped: explicitly preserve the source image’s upright orientation.
+        var tile = NSRect(x: bounds.midX - 7.5, y: bounds.midY - 7.5, width: 15, height: 15)
+        if let context = NSGraphicsContext.current?.cgContext {
+          var pixels = context.convertToDeviceSpace(tile)
+          pixels.origin.x = pixels.origin.x.rounded()
+          pixels.origin.y = pixels.origin.y.rounded()
+          tile = context.convertToUserSpace(pixels)
+        }
+        let dark = SystemStyle.isDark(effectiveAppearance)
+        let paper = NSBezierPath(roundedRect: tile, xRadius: 3, yRadius: 3)
+        NSGraphicsContext.saveGraphicsState()
+        paper.addClip()
+        if dark {
+          NSColor.black.setFill()
+          paper.fill()
+        }
+        // A standalone 32px icon uses the dedicated pixel-snapped master: its foot
+        // and dot end at 25/32, below the large master's baseline. Retain paper around
+        // that geometry when AppKit supplies only the small representation.
+        let smallMaster = image.representations.map(\.pixelsWide).max() == 32
+        let crop =
+          smallMaster
+          ? NSRect(x: 0.15, y: 0.15, width: 0.70, height: 0.70)
+          : NSRect(x: 0.22, y: 0.26, width: 0.56, height: 0.56)
+        image.draw(
+          in: tile,
+          from: .init(
+            x: image.size.width * crop.minX, y: image.size.height * crop.minY,
+            width: image.size.width * crop.width, height: image.size.height * crop.height),
+          operation: .sourceOver, fraction: dark ? 0.9 : 1, respectFlipped: true, hints: nil)
+        NSGraphicsContext.restoreGraphicsState()
+        NSColor.separatorColor.setStroke()
+        let edge = NSBezierPath(
+          roundedRect: tile.insetBy(dx: 0.25, dy: 0.25), xRadius: 2.75, yRadius: 2.75)
+        edge.lineWidth = 0.5
+        edge.stroke()
+      } else {
+        cell?.drawInterior(withFrame: bounds, in: self)
+      }
       return
     }
     guard !isBordered else {
