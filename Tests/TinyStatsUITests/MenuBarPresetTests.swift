@@ -183,12 +183,15 @@ import Testing
   }
   preview.update(groups: readouts.map { [$0] }, paused: false, height: 24)
   let separateWidth = preview.preferredWidth
+  #expect(preview.renderers.first?.frame.minX == 1.5)
   for index in 1..<preview.renderers.count {
-    #expect(preview.renderers[index].frame.minX - preview.renderers[index - 1].frame.maxX == 9)
+    // Each outline adds 1.5pt at both sides, outside the untouched compact renderer.
+    #expect(preview.renderers[index].frame.minX - preview.renderers[index - 1].frame.maxX == 12)
   }
-  #expect(separateWidth == preview.renderers.reduce(0) { $0 + $1.preferredWidth } + 18)
+  #expect(separateWidth == preview.renderers.reduce(0) { $0 + $1.preferredWidth } + 27)
   preview.update(groups: [readouts], paused: false, height: 24)
   #expect(preview.renderers.count == 1)
+  #expect(preview.preferredWidth - preview.renderers[0].frame.maxX == 1.5)
   #expect(separateWidth > preview.preferredWidth)
 }
 
