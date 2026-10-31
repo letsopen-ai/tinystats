@@ -166,7 +166,8 @@ import Testing
     ("main-window", .overview, false, false, 0),
     ("main-sensors", .sensors, false, false, 0),
     ("main-sensors-readings", .sensors, false, false, 0),
-    ("settings-menu-bar", .overview, false, true, 0),
+    ("settings-menu-bar-cpu", .cpu, false, true, 0),
+    ("settings-menu-bar-memory", .memory, false, true, 0),
   ]
   let cases =
     surfaces
@@ -216,9 +217,12 @@ import Testing
             settings: controller.settings, interfaces: [],
             snapshot: snapshot, history: [], initialPage: .menuBar)
           preferences = editor
+          editor.selectStyleModule(module)
           controller.showSettingsView(
             try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
         }
+        controller.view.layoutSubtreeIfNeeded()
+        preferences?.revealStyleEditor()
         controller.view.layoutSubtreeIfNeeded()
         // Exercise the existing insertion marker above real compositor glass, using
         // only a private synthetic drag payload in our own fixture window.
@@ -780,6 +784,8 @@ import Testing
     controller.onChange = { _ in changes += 1 }
     let root = try #require(controller.window?.contentView)
     // Request a key fixture window; the test runner may still receive inactive native ink.
+    // AppKit can constrain windows to the current test display's available screen height.
+    #expect(root.bounds.width == 740 && root.bounds.height == 660)
     controller.window?.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
     for page in [PreferencesController.Page.general, .menuBar] {
@@ -863,7 +869,8 @@ import Testing
       }
       let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
       root.cacheDisplay(in: root.bounds, to: bitmap)
-      #expect(bitmap.pixelsWide >= 740 && bitmap.pixelsHigh >= 660)
+      #expect(
+        bitmap.pixelsWide >= Int(root.bounds.width) && bitmap.pixelsHigh >= Int(root.bounds.height))
       if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
         let url = URL(fileURLWithPath: path, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -1570,6 +1577,59 @@ import Testing
         .write(
           to: folder.appendingPathComponent("switch-active-\(theme.rawValue).txt"),
           atomically: true, encoding: .utf8)
+    }
+  }
+}
+
+/// The editor is scrolled inside our fixture so pictures and the compact bottom row share a frame.
+@Test @MainActor func systemMenuBarPictureEditorGallery() throws {
+  guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] else {
+    return
+  }
+  let folder = URL(fileURLWithPath: path, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  for theme in [AppTheme.light, .dark] {
+    for policy in ["glass", "legacy", "solid", "contrast"] {
+      for module in [Module.cpu, .memory] {
+        var settings = Settings()
+        settings.theme = theme
+        let detail = DetailController(snapshot: Snapshot(), history: [])
+        detail.glassEnvironment = {
+          .init(
+            supportsGlass: policy != "legacy", reduceTransparency: policy == "solid",
+            increaseContrast: policy == "contrast")
+        }
+        detail.isPopoverPresentation = false
+        detail.view.frame = .init(origin: .zero, size: MainWindow.minimumSize)
+        let editor = PreferencesController(
+          settings: settings, interfaces: [], snapshot: Snapshot(), history: [],
+          initialPage: .menuBar)
+        defer {
+          editor.disposeEmbedded()
+          editor.close()
+        }
+        editor.selectStyleModule(module)
+        detail.showSettingsView(try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
+        detail.view.appearance = theme.nativeAppearance
+        detail.view.layoutSubtreeIfNeeded()
+        editor.revealStyleEditor()
+        detail.view.layoutSubtreeIfNeeded()
+        let picker = try #require(
+          systemDescendants(detail.view).compactMap { $0 as? MenuBarStylePicker }.first {
+            $0.module == module
+          })
+        let tools = try #require(
+          systemDescendants(detail.view).first {
+            $0.identifier?.rawValue == "menu-bar-format-tools"
+          })
+        #expect(picker.visibleRect.height >= picker.bounds.height - 1)
+        #expect(tools.visibleRect.height >= tools.bounds.height - 1)
+        #expect(tools.bounds.height <= PreferencesController.menuBarToolsHeightBudget)
+        try systemGalleryImage(
+          detail.view,
+          to: folder.appendingPathComponent(
+            "settings-menu-bar-\(module.rawValue)-\(policy)-\(theme.rawValue).png"))
+      }
     }
   }
 }

@@ -34,7 +34,7 @@ import Testing
   let gpuSwitch = try #require(
     views.compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "GPU" })
   let gpuStyle = try #require(
-    views.compactMap { $0 as? NSPopUpButton }.first {
+    views.compactMap { $0 as? MenuBarStylePicker }.first {
       $0.accessibilityLabel() == "GPU menu bar style"
     })
   #expect(gpuSwitch.state == .on && gpuStyle.isEnabled)
@@ -460,7 +460,7 @@ import Testing
   let toggle = try #require(
     views.compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "CPU" })
   let style = try #require(
-    views.compactMap { $0 as? NSPopUpButton }.first {
+    views.compactMap { $0 as? MenuBarStylePicker }.first {
       $0.accessibilityLabel() == "CPU menu bar style"
     })
   let font = try #require(

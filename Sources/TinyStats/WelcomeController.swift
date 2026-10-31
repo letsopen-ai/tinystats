@@ -72,7 +72,9 @@ enum WelcomePresentation {
   private let skip = NSButton(title: "Skip", target: nil, action: nil)
   private let message = NSTextField(wrappingLabelWithString: "")
   private var readouts: [Module: NSButton] = [:]
-  private var styles: [Module: NSPopUpButton] = [:]
+  private var styles: [Module: MenuBarStylePicker] = [:]
+  private var styleModule: Module = .cpu
+  private let styleModuleSelector = NSPopUpButton()
   private var history: NSButton?
   private var login: NSButton?
   private var historyBusy = false
@@ -237,33 +239,45 @@ enum WelcomePresentation {
     case 1:
       heading.stringValue = "Make the menu bar yours"
       text(
-        "Choose readouts and styles. Click a readout for its page; ⌘-drag items in the menu bar to reorder. Keep at least one enabled."
+        "Choose readouts and picture styles. Keep at least one enabled; ⌘-drag menu bar items to reorder."
       )
       body.spacing = 6
       presetSelector.target = self
       presetSelector.action = #selector(presetChanged)
       presetSelector.setAccessibilityLabel("Menu bar starter preset")
       body.addArrangedSubview(presetSelector)
+      var checks: [NSView] = []
       for module in Self.starterModules {
         let check = NSButton(
           checkboxWithTitle: module.title, target: self, action: #selector(menuChanged))
         check.state = settings.readouts.contains(module) ? .on : .off
         check.setAccessibilityLabel("Show \(module.title) in menu bar")
         check.widthAnchor.constraint(equalToConstant: 150).isActive = true
-        let popup = NSPopUpButton()
-        popup.addItems(
-          withTitles: MenuBarStyle.available(for: module, sensorKey: settings.sensorKey).map(
-            \.title))
-        popup.selectItem(withTitle: settings.style(for: module).title)
-        popup.target = self
-        popup.action = #selector(menuChanged)
-        popup.setAccessibilityLabel("\(module.title) menu bar style")
-        popup.widthAnchor.constraint(equalToConstant: 270).isActive = true
-        let row = NSStackView(views: [check, popup])
-        row.spacing = 16
-        body.addArrangedSubview(row)
         readouts[module] = check
-        styles[module] = popup
+        checks.append(check)
+      }
+      for start in stride(from: 0, to: checks.count, by: 4) {
+        body.addArrangedSubview(
+          SystemSettingsForm.controls(Array(checks[start..<min(start + 4, checks.count)])))
+      }
+      styleModuleSelector.removeAllItems()
+      styleModuleSelector.addItems(withTitles: Self.starterModules.map(\.title))
+      styleModuleSelector.selectItem(withTitle: styleModule.title)
+      styleModuleSelector.setAccessibilityLabel("Welcome readout to customize")
+      styleModuleSelector.target = self
+      styleModuleSelector.action = #selector(styleModuleChanged)
+      body.addArrangedSubview(
+        SystemSettingsForm.controls([SystemSettingsForm.text("Display style"), styleModuleSelector])
+      )
+      body.detachesHiddenViews = true
+      for module in Self.starterModules {
+        let picker = MenuBarStylePicker(module: module, settings: settings)
+        picker.target = self
+        picker.action = #selector(menuChanged)
+        picker.isHidden = module != styleModule
+        body.addArrangedSubview(picker)
+        picker.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
+        styles[module] = picker
       }
       text("Combined preview · Placeholder readings; scroll horizontally", secondary: true)
       let preview = MenuBarPreviewView(frame: .zero)
@@ -280,7 +294,7 @@ enum WelcomePresentation {
       previewScroll = scroll
       updatePreview(settings)
       text(
-        "Showing Weather here does not enable forecasts. For all readouts, styles and fonts, go to Settings → Menu Bar → Customize readouts & styles…",
+        "Weather requires separate opt-in. All readouts and fonts: Settings → Menu Bar.",
         secondary: true)
     case 2:
       heading.stringValue = "A home for every reading"
@@ -389,12 +403,7 @@ enum WelcomePresentation {
     for (module, check) in readouts {
       check.state = settings.readouts.contains(module) ? .on : .off
     }
-    for (module, popup) in styles {
-      popup.removeAllItems()
-      popup.addItems(
-        withTitles: MenuBarStyle.available(for: module, sensorKey: settings.sensorKey).map(\.title))
-      popup.selectItem(withTitle: settings.style(for: module).title)
-    }
+    for popup in styles.values { popup.update(settings: settings) }
     updatePreview(settings)
     login?.state = LoginItemPreference.enabled ? .on : .off
     window?.appearance = settings.theme.nativeAppearance
@@ -406,6 +415,13 @@ enum WelcomePresentation {
   private func refreshHistoryControl() {
     history?.state = currentSettings().persistHistory ? .on : .off
     history?.isEnabled = !historyBusy
+  }
+  @objc private func styleModuleChanged() {
+    guard Self.starterModules.indices.contains(styleModuleSelector.indexOfSelectedItem) else {
+      return
+    }
+    styleModule = Self.starterModules[styleModuleSelector.indexOfSelectedItem]
+    for (module, picker) in styles { picker.isHidden = module != styleModule }
   }
   @objc private func menuChanged() {
     var settings = currentSettings()
@@ -452,6 +468,7 @@ enum WelcomePresentation {
   }
 
   private func updatePreview(_ settings: Settings) {
+    for picker in styles.values { picker.update(settings: settings) }
     guard let preview, let scroll = previewScroll else { return }
     presetSelector.selectedSegment =
       WelcomePreset.allCases.firstIndex { $0.matches(settings) } ?? -1

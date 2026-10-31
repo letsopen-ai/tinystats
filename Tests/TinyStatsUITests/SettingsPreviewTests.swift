@@ -118,7 +118,8 @@ func generalAdvancedOptionsStartCollapsedAndOnlyRouteExplicitClicks(theme: AppTh
   selector.selectedSegment = 1
   try activate(selector)
   #expect(tabs.selectedTabViewItem?.identifier as? String == "menubar")
-  let style = try popup(root, "CPU menu bar style")
+  let style = try #require(
+    descendants(root).compactMap { $0 as? MenuBarStylePicker }.first { $0.module == .cpu })
   style.selectItem(withTitle: MenuBarStyle.historyValue.title)
   try activate(style)
   let size = try popup(root, "CPU menu bar font size")
@@ -256,7 +257,7 @@ func generalAdvancedOptionsStartCollapsedAndOnlyRouteExplicitClicks(theme: AppTh
   #expect(ownedTabs.tabViewItem(at: 1).view?.subviews.isEmpty == true)
   #expect(!descendants(root).contains { $0 is MenuBarPreviewView })
   #expect(
-    !descendants(root).compactMap { $0 as? NSPopUpButton }.contains {
+    !descendants(root).compactMap { $0 as? MenuBarStylePicker }.contains {
       $0.accessibilityLabel() == "CPU menu bar style"
     })
   var saved: Settings?
@@ -311,7 +312,8 @@ func generalAdvancedOptionsStartCollapsedAndOnlyRouteExplicitClicks(theme: AppTh
     })
   var saved: Settings?
   controller.onChange = { saved = $0 }
-  let style = try popup(root, "CPU menu bar style")
+  let style = try #require(
+    descendants(root).compactMap { $0 as? MenuBarStylePicker }.first { $0.module == .cpu })
   style.selectItem(withTitle: MenuBarStyle.historyValue.title)
   try activate(style)
   #expect(saved?.interval == 10 && saved?.fahrenheit == true && saved?.networkInterface == "en9")
@@ -353,7 +355,7 @@ func revisitingSettingsTabsPreservesDraftsAndRefreshesTheHiddenPreviewOnlyOnRetu
   #expect(clocks.stringValue == "UTC, Europe/Paris" && saves == 0)
   let menuPage = try #require(tabs.tabViewItem(at: 1).view)
   #expect(
-    descendants(menuPage).compactMap { $0 as? NSPopUpButton }.filter {
+    descendants(menuPage).compactMap { $0 as? MenuBarStylePicker }.filter {
       $0.accessibilityLabel() == "CPU menu bar style"
     }.count == 1)
   controller.tabView(tabs, willSelect: nil)

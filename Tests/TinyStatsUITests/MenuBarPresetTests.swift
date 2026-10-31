@@ -53,7 +53,7 @@ import Testing
     let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
     let preview = try #require(
       presetDescendants(root).compactMap { $0 as? MenuBarPreviewView }.first)
-    let cpuStyle: NSPopUpButton = try presetControl(root, "CPU menu bar style")
+    let cpuStyle: MenuBarStylePicker = try presetControl(root, "CPU menu bar style")
     #expect(presets.selectedSegment == -1 && !cpuStyle.isHiddenOrHasHiddenAncestor)
     #expect(
       (0..<presets.segmentCount).map { presets.label(forSegment: $0) } == [
@@ -77,7 +77,7 @@ import Testing
       for (module, style) in zip(expected.readouts, styles) {
         expected.styles[module.rawValue] = style
         expected.appearances[module.rawValue] = .init(size: size, color: .purple)
-        let popup: NSPopUpButton = try presetControl(root, "\(module.title) menu bar style")
+        let popup: MenuBarStylePicker = try presetControl(root, "\(module.title) menu bar style")
         let font: NSPopUpButton = try presetControl(root, "\(module.title) menu bar font size")
         #expect(popup.titleOfSelectedItem == style.title && font.titleOfSelectedItem == size.title)
         #expect(font.isEnabled == style.usesFont)
@@ -112,7 +112,7 @@ import Testing
   let root = try #require(controller.window?.contentView)
   let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
   let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
-  let cpu: NSPopUpButton = try presetControl(root, "CPU menu bar style")
+  let cpu: MenuBarStylePicker = try presetControl(root, "CPU menu bar style")
   let toggles = presetDescendants(root).compactMap { $0 as? SystemSettingSwitch }
   #expect(toggles.filter { $0.state == .on }.map(\.title) == ["CPU", "Memory", "Network"])
   #expect(!cpu.isHiddenOrHasHiddenAncestor && presets.selectedSegment == 2)
@@ -141,7 +141,7 @@ import Testing
   disclosure.performClick(nil)
   presets.selectedSegment = 0
   try presetActivate(presets)
-  let style: NSPopUpButton = try presetControl(root, "CPU menu bar style")
+  let style: MenuBarStylePicker = try presetControl(root, "CPU menu bar style")
   style.selectItem(withTitle: MenuBarStyle.icon.title)
   try presetActivate(style)
   #expect(presets.selectedSegment == -1)

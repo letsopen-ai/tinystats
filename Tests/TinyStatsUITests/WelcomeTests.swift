@@ -153,7 +153,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     #expect(buttons.first { $0.title == "Weather" }?.state == .on)
     #expect(buttons.first { $0.title == "Memory" }?.state == .off)
     let style = try #require(
-      controls.compactMap { $0 as? NSPopUpButton }.first {
+      controls.compactMap { $0 as? MenuBarStylePicker }.first {
         $0.accessibilityLabel() == "CPU menu bar style"
       })
     #expect(style.titleOfSelectedItem == MenuBarStyle.ring.title)
@@ -375,7 +375,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   weather.state = .on
   try welcomeActivate(weather)
   let cpuStyle = try #require(
-    welcomeViews(root).compactMap { $0 as? NSPopUpButton }.first {
+    welcomeViews(root).compactMap { $0 as? MenuBarStylePicker }.first {
       $0.accessibilityLabel() == "CPU menu bar style"
     })
   cpuStyle.selectItem(withTitle: MenuBarStyle.ring.title)
