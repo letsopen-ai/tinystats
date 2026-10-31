@@ -29,9 +29,56 @@ enum SystemStyle {
   static let secondaryAccent = NSColor(name: nil) { appearance in
     resolvedPalette(in: appearance).secondary
   }
-  /// Keep the auto-derived hue, but cap light glass trace brightness for coloured backdrops.
+  /// The sole exception to semantic/system colours: owner-requested module identity graphics.
+  /// Opaque sRGB pairs resolve per drawing appearance; text and state colours stay semantic.
+  struct ModulePalette {
+    let light: UInt32, dark: UInt32, lightSecondary: UInt32, darkSecondary: UInt32
+    let primary: NSColor, secondary: NSColor
+    init(
+      _ name: String, _ light: UInt32, _ dark: UInt32, _ lightSecondary: UInt32,
+      _ darkSecondary: UInt32
+    ) {
+      self.light = light
+      self.dark = dark
+      self.lightSecondary = lightSecondary
+      self.darkSecondary = darkSecondary
+      primary = NSColor(name: NSColor.Name("TinyStats.\(name).primary")) { appearance in
+        SystemStyle.sRGB(isDark(appearance) ? dark : light)
+      }
+      secondary = NSColor(name: NSColor.Name("TinyStats.\(name).secondary")) { appearance in
+        SystemStyle.sRGB(isDark(appearance) ? darkSecondary : lightSecondary)
+      }
+    }
+  }
+  static let modulePalettes: [Module: ModulePalette] = [
+    .cpu: .init("CPU", 0xC92363, 0xFF81AD, 0x0072A6, 0x9BEAF5),
+    .memory: .init("Memory", 0x7538E8, 0xB99AFF, 0xB45309, 0xFFE49A),
+    .network: .init("Network", 0x008478, 0x45DFDA, 0x6E46D6, 0x9B8BE0),
+    .disks: .init("Disk", 0xA16207, 0xFFD45A, 0x3F51D6, 0x92A5FF),
+    .sensors: .init("Sensors", 0xB84408, 0xFFAF6A, 0x3F51D6, 0x9B8BE0),
+    .battery: .init("Power", 0x4D7C0F, 0xB2E84A, 0x3F51D6, 0x9B8BE0),
+    .gpu: .init("GPU", 0x245CDA, 0x82B2FF, 0xB45309, 0xFFE49A),
+    .clock: .init("Time", 0xA33ABC, 0xEA99F5, 0xBC5B0C, 0xFFE69F),
+    .weather: .init("Weather", 0x006DA6, 0x6BD2FF, 0x7044F6, 0x9B8BE0),
+  ]
+  static func moduleAccent(_ module: Module) -> NSColor {
+    modulePalettes[module]?.primary ?? .labelColor
+  }
+  static func moduleSecondary(_ module: Module) -> NSColor {
+    modulePalettes[module]?.secondary ?? neutralSeries
+  }
+  private static func sRGB(_ hex: UInt32) -> NSColor {
+    NSColor(
+      srgbRed: Double((hex >> 16) & 255) / 255,
+      green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255, alpha: 1)
+  }
+  /// Measured module colours keep their vivid ink; unmeasured system/custom colours retain
+  /// the conservative light-glass brightness cap.
   static func chartTraceColor(_ color: NSColor, role: ChartSeriesRole, glass: Bool) -> NSColor {
     guard glass, role == .secondary else { return color }
+    if modulePalettes.values.contains(where: { $0.primary == color || $0.secondary == color }) {
+      return color
+    }
     return NSColor(name: nil) { appearance in
       guard !isDark(appearance) else { return color }
       var resolved: NSColor = color
@@ -104,8 +151,8 @@ enum SystemStyle {
   }
   static func core(_ kind: CPUCoreKind) -> NSColor {
     switch kind {
-    case .efficiency: secondaryAccent
-    case .performance: accent
+    case .efficiency: moduleSecondary(.cpu)
+    case .performance: moduleAccent(.cpu)
     case .unknown: .secondaryLabelColor
     }
   }
@@ -313,15 +360,16 @@ enum SystemStyle {
   private var hoverTracking: NSTrackingArea?
   private var hovering = false
   private var iconName: String?
+  var accentModule: Module = .overview { didSet { updateTint() } }
   var showsAccent = false { didSet { updateTint() } }
   func refreshTint() { updateTint() }
   private func updateTint() {
     contentTintColor =
       usesIconPresentation
       ? (showsAccent
-        ? .controlAccentColor
+        ? SystemStyle.moduleAccent(accentModule)
         : hovering
-          ? .labelColor
+          ? SystemStyle.moduleAccent(accentModule)
           : glassEnvironment().treatment == .glass
             ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor)
       : .labelColor

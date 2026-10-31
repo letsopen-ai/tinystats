@@ -26,6 +26,7 @@ extension SummaryDashboardView {
     var second: String? = nil
     var fraction: Double? = nil
     var color: NSColor = SystemStyle.accent
+    var lightGlassFillAlpha: CGFloat = 0.13
     var role: ChartSeriesRole = .primary
     var secondFraction: Double? = nil
     var secondColor: NSColor = SystemStyle.secondaryAccent
@@ -269,7 +270,11 @@ extension SummaryDashboardView {
       let iconInset: CGFloat = row.displayName == nil ? 0 : 24
       let textY = paired ? y : y + (height - 16) / 2
       if !paired, let fraction = row.fraction, fraction.isFinite, fraction >= 0 {
-        row.color.withAlphaComponent(0.13).setFill()
+        let fillAlpha: CGFloat =
+          usesPopoverLayout
+            && glassEnvironment().treatment == .glass && !SystemStyle.isDark(effectiveAppearance)
+          ? row.lightGlassFillAlpha : 0.13
+        row.color.withAlphaComponent(fillAlpha).setFill()
         NSBezierPath(
           roundedRect: NSRect(
             x: area.minX + iconInset, y: y + max(0, (height - 22) / 2),
@@ -462,8 +467,8 @@ extension SummaryDashboardView {
   func drawMemory(_ memory: MemoryReading, in area: NSRect) {
     let c = memory.composition
     let segments: [(String, UInt64, NSColor)] = [
-      ("App · estimate", c.app, SystemStyle.accent),
-      ("Wired", c.wired, SystemStyle.secondaryAccent),
+      ("App · estimate", c.app, SystemStyle.moduleAccent(.memory)),
+      ("Wired", c.wired, SystemStyle.moduleSecondary(.memory)),
       ("Compressed", c.compressed, SystemStyle.neutralSeries),
       ("Available · incl. cache", c.available, SystemStyle.availableSeries),
     ]
@@ -503,7 +508,7 @@ extension SummaryDashboardView {
     }
     let diameter: CGFloat = 140
     let rect = NSRect(x: area.minX + 12, y: area.minY + 8, width: diameter, height: diameter)
-    ring(0, rect: rect, color: SystemStyle.accent, lineWidth: 11)
+    ring(0, rect: rect, color: SystemStyle.moduleAccent(.memory), lineWidth: 11)
     var start: CGFloat = -90
     if memory.total > 0 {
       for (_, bytes, color) in segments {

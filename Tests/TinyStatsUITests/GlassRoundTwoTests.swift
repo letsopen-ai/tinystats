@@ -165,14 +165,15 @@ extension NSColor {
   }
 }
 
-@Test @MainActor func modernSidebarSelectionUsesReadableNativeAccentFillInBothAppearances() throws {
+@Test @MainActor func modernSidebarSelectionUsesNeutralFillAndModuleGlyphsInBothAppearances() throws
+{
   let navigation = DetailNavigationCoordinator(environment: {
     .init(supportsGlass: true, reduceTransparency: false, increaseContrast: false)
   })
-  navigation.updateSelection(.overview)
+  navigation.updateSelection(.cpu)
   let button = try #require(
     navigation.sidebar.subviews.compactMap { $0 as? NavigationButton }
-      .first { $0.title == "Overview" })
+      .first { $0.module == .cpu })
   for name in [NSAppearance.Name.aqua, .darkAqua] {
     button.appearance = NSAppearance(named: name)
     let bitmap = try roundTwoBitmap(button)
@@ -180,20 +181,26 @@ extension NSColor {
     let fill = try #require(
       bitmap.colorAt(x: Int(108 * scale), y: Int(15 * scale))?.usingColorSpace(.sRGB))
     let expected = try roundTwoColor(
-      .selectedContentBackgroundColor, in: button.effectiveAppearance)
-    #expect(fill.alphaComponent == 1)
+      .labelColor, in: button.effectiveAppearance)
+    #expect(abs(fill.alphaComponent - 0.10) < 0.01)
     for component in [0, 1, 2] {
       #expect(abs(fill.component(component) - expected.component(component)) < 0.02)
     }
-    // The selected title/icon uses the native contrasting ink, not accent over accent.
-    let ink = try roundTwoColor(.alternateSelectedControlTextColor, in: button.effectiveAppearance)
+    // Selection is neutral so the fixed module identity glyph remains readable.
+    #expect(button.module == .cpu)
+    let ink = try roundTwoColor(SystemStyle.moduleAccent(.cpu), in: button.effectiveAppearance)
+    let background = try roundTwoColor(.windowBackgroundColor, in: button.effectiveAppearance)
+    let composite = NSColor(
+      srgbRed: fill.redComponent * 0.1 + background.redComponent * 0.9,
+      green: fill.greenComponent * 0.1 + background.greenComponent * 0.9,
+      blue: fill.blueComponent * 0.1 + background.blueComponent * 0.9, alpha: 1)
     func luminance(_ color: NSColor) -> Double {
       let channels = (0..<3).map { Double(color.component($0)) }.map {
         $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4)
       }
       return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
     }
-    let values = [luminance(fill), luminance(ink)]
+    let values = [luminance(composite), luminance(ink)]
     #expect((values.max()! + 0.05) / (values.min()! + 0.05) >= 3)
   }
 }

@@ -211,7 +211,9 @@ enum SensorBrowserPresentation {
       value: chosen?.formatted(fahrenheit: settings.fahrenheit) ?? "Sensor unavailable",
       subtitle: subtitle, rows: rows,
       series: [
-        .init(name: name, color: SystemStyle.accent, values: values, displayName: chartName)
+        .init(
+          name: name, color: SystemStyle.moduleAccent(.sensors), values: values,
+          displayName: chartName)
       ],
       unit: kind == .temperature && settings.fahrenheit ? "°F" : kind?.unit ?? "",
       available: chosen != nil)

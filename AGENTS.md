@@ -4,6 +4,7 @@ These guidelines apply to everyone changing TinyStats, whether you work by hand 
 
 - Work on feature branches and open pull requests targeting `main`. Do not commit directly to `main`; never force-push `main` or shared branches.
 - Track release readiness in [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) and open work in [docs/ROADMAP.md](docs/ROADMAP.md). Repository settings are maintainer-managed.
+- Module identity graphics may use the named, appearance-aware sRGB constants centralized in `SystemStyle.modulePalettes` (the dopamine accents experiment); this is the sole exception to semantic/system colours. Keep text neutral, states semantic, and glass/solid accessibility treatments intact. See [Design](docs/DESIGN.md#dopamine-accents-experiment).
 - Swift 6, macOS 14+, AppKit. No third-party runtime dependencies without a measured reason.
 - Keep system collection on the serial worker queue. Keep UI work on the main actor.
 - One shared, coalesced timer. No subprocess polling, per-view timers, unbounded queues/history, or unsolicited network requests. Scheduled internet requests require user authorization and disclosed destinations; diagnostics/tests never enable them implicitly. Weather is off by default for new installs; enabling it is an explicit opt-in. Current-location coordinates wait for TinyStats’ own OS location authorization. Preserve existing explicit Weather choices.

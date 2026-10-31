@@ -2,7 +2,8 @@ import AppKit
 import TinyStatsCore
 
 /// Resolve in the native status item's appearance, independently of the window theme.
-/// No wallpaper sampling or layout-dependent colour work.
+/// Status-item graphics stay monochrome for arbitrary wallpaper. Module colour is confined
+/// to Settings drag chips, whose semantic backing has known contrast.
 @MainActor struct MenuBarPalette {
   let text: NSColor
   let textShadow: NSShadow?
@@ -13,12 +14,10 @@ import TinyStatsCore
   static func resolve(_ appearance: NSAppearance) -> Self {
     let dark = SystemStyle.isDark(appearance)
     let text: NSColor = dark ? .white : NSColor(calibratedWhite: 0.1, alpha: 1)
-    let pair = SystemStyle.resolvedPalette(in: appearance)
     return Self(
       text: text, textShadow: dark ? darkTextShadow : nil,
       gaugeOutline: text.withAlphaComponent(0.65),
-      accent: SystemStyle.menuBarAccent(pair.primary, dark: dark),
-      secondary: pair.secondary)
+      accent: text, secondary: text)
   }
   private static let darkTextShadow: NSShadow = {
     let shadow = NSShadow()
@@ -32,7 +31,7 @@ import TinyStatsCore
 
   func core(_ kind: CPUCoreKind) -> NSColor {
     switch kind {
-    case .efficiency: secondary
+    case .efficiency: text.withAlphaComponent(0.5)
     case .performance: accent
     case .unknown: text.withAlphaComponent(0.65)
     }

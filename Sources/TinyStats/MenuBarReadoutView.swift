@@ -18,6 +18,19 @@ struct MenuBarReadout {
   var isNetwork = false
   var module: Module? = nil
 
+  func coreKind(at index: Int) -> CPUCoreKind {
+    guard coreKinds.count == cores.count, coreKinds.indices.contains(index) else { return .unknown }
+    return coreKinds[index]
+  }
+  /// An extra gap separates verified core-kind runs without relying on hue.
+  func coreGap(before index: Int) -> CGFloat {
+    index > 0 && coreKind(at: index) != coreKind(at: index - 1) ? 2 : 0
+  }
+  var coreBarsWidth: CGFloat {
+    let count = min(32, cores.count)
+    return max(18, CGFloat(count) * 3 + (0..<count).reduce(0) { $0 + coreGap(before: $1) })
+  }
+
   @MainActor static func make(
     module: Module, snapshot s: Snapshot, settings: Settings, history: [HistoryPoint],
     clockDate: Date? = nil
@@ -253,7 +266,7 @@ struct MenuBarReadout {
     case .labeledBar: return 28
     case .horizontal: return max(30, ceil(size(item.label, font: Self.small).width))
     case .pie, .ring: return 19
-    case .cores: return max(18, CGFloat(min(32, item.cores.count)) * 3)
+    case .cores: return item.coreBarsWidth
     case .battery: return item.charging ? 39 : 27
     }
   }
@@ -417,13 +430,12 @@ struct MenuBarReadout {
           text(palette: palette, "—", in: rect, font: Self.small, centered: true)
         }
       case .cores:
+        var coreX = x
         for (index, value) in item.cores.prefix(32).enumerated() {
-          let coreTint: NSColor = {
-            guard item.coreKinds.count == item.cores.count
-            else { return palette.core(.unknown) }
-            return palette.core(item.coreKinds[index])
-          }()
-          let bar = NSRect(x: x + CGFloat(index) * 3, y: rect.minY, width: 2, height: rect.height)
+          coreX += item.coreGap(before: index)
+          let coreTint = palette.core(item.coreKind(at: index))
+          let bar = NSRect(x: coreX, y: rect.minY, width: 2, height: rect.height)
+          coreX += 3
           coreTint.withAlphaComponent(0.2).setFill()
           bar.fill()
           if let value, value.isFinite {
