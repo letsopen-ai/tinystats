@@ -41,6 +41,61 @@ import Testing
   view.subviews.flatMap { [$0] + brandDescendants($0) }
 }
 
+/// Compare asymmetric chip symbols with AppKit's upright native image view.
+@Test @MainActor func menuBarChipSymbolsMatchNativeUprightOrientation() throws {
+  _ = NSApplication.shared
+  for theme in [AppTheme.light, .dark] {
+    for name in ["thermometer.medium", "bolt.fill", "clock"] {
+      let chip = MenuBarChip(module: .sensors)
+      chip.frame = .init(x: 0, y: 0, width: 90, height: 28)
+      chip.appearance = theme.nativeAppearance
+      #expect(chip.isFlipped)
+      chip.image = try #require(NSImage(systemSymbolName: name, accessibilityDescription: nil))
+        .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+      let native = NSImageView(frame: .init(x: 0, y: 0, width: 13, height: 13))
+      native.appearance = theme.nativeAppearance
+      native.image = chip.image
+      native.imageScaling = .scaleAxesIndependently
+      native.contentTintColor = SystemStyle.moduleAccent(.sensors)
+      let actual = try brandBitmap(
+        chip, rect: .init(x: 10, y: chip.bounds.midY - 6.5, width: 13, height: 13))
+      let reference = try brandBitmap(native)
+      func centroid(_ bitmap: NSBitmapImageRep) throws -> Double {
+        var weight = 0.0
+        var moment = 0.0
+        for y in 0..<bitmap.pixelsHigh {
+          for x in 0..<bitmap.pixelsWide {
+            let color = try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+            // Neutral button backing contributes no chroma; alpha excludes transparent pixels.
+            let chroma =
+              Double(max(0, color.redComponent - color.blueComponent))
+              * Double(color.alphaComponent)
+            weight += chroma
+            moment += chroma * (Double(y) + 0.5) / Double(bitmap.pixelsHigh)
+          }
+        }
+        #expect(weight > 0.5)
+        return moment / max(weight, 0.001)
+      }
+      let uprightY = try centroid(reference)
+      let actualY = try centroid(actual)
+      #expect(abs(uprightY - 0.5) > 0.005, "The reference must distinguish vertical orientation")
+      print("CHIP \(name) \(theme.rawValue): actual=\(actualY), native upright=\(uprightY)")
+      #expect(abs(actualY - uprightY) < 0.04)
+      #expect(abs(actualY - uprightY) < abs(actualY - (1 - uprightY)))
+      if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
+        let folder = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for (label, bitmap) in [("actual", actual), ("native-upright", reference)] {
+          try #require(bitmap.representation(using: .png, properties: [:])).write(
+            to: folder.appendingPathComponent(
+              "chip-\(name)-\(label)-\(theme.rawValue).png"))
+        }
+      }
+    }
+  }
+}
+
 @Test @MainActor func brandViewsMatchUprightSourceOrientation() throws {
   _ = NSApplication.shared
   let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -150,7 +205,13 @@ import Testing
           })
         let section = try #require(
           views.first { $0.identifier?.rawValue == "menu-bar-layout-section" })
+        let title = try #require(control.accessibilityTitleUIElement() as? NSTextField)
+        #expect(title.stringValue == "Layout")
+        let peer = try #require(
+          views.compactMap { $0 as? NSTextField }.first { $0.stringValue == "In menu bar" })
+        #expect(title.font == peer.font && title.textColor == peer.textColor)
         let preview = try #require(views.compactMap { $0 as? MenuBarPreviewView }.first)
+        #expect(preview.renderers.allSatisfy { !$0.isFlipped })
         let form = try #require(section.enclosingScrollView)
         let document = try #require(form.documentView)
         #expect(section.frame.height <= PreferencesController.menuBarLayoutSectionHeightBudget)

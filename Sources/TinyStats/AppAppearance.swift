@@ -69,6 +69,8 @@ extension AppTheme {
   private(set) var renderers: [MenuBarReadoutView] = []
   private(set) var preferredWidth: CGFloat = 0
   static let nativeItemGap: CGFloat = 9
+  /// Keep preview ink clear of its outline without changing production readout geometry.
+  private static let outlineInset: CGFloat = 1.5
   func update(
     groups: [[MenuBarReadout]], paused: Bool, height: CGFloat
   ) {
@@ -84,12 +86,13 @@ extension AppTheme {
     for (index, pair) in zip(renderers, groups).enumerated() {
       let (renderer, readings) = pair
       if index > 0 { x += Self.nativeItemGap }
+      x += Self.outlineInset
       renderer.readouts = readings
       renderer.paused = paused
       renderer.frame = .init(
         x: x, y: max(0, (36 - height) / 2), width: renderer.preferredWidth, height: height)
       renderer.needsDisplay = true
-      x += renderer.preferredWidth
+      x += renderer.preferredWidth + Self.outlineInset
     }
     preferredWidth = x
     needsDisplay = true
@@ -98,7 +101,8 @@ extension AppTheme {
     NSColor.labelColor.withAlphaComponent(0.06).setStroke()
     for renderer in renderers {
       let outline = NSBezierPath(
-        roundedRect: renderer.frame.insetBy(dx: 0.5, dy: 0.5), xRadius: 4, yRadius: 4)
+        roundedRect: renderer.frame.insetBy(dx: 0.5 - Self.outlineInset, dy: 0.5),
+        xRadius: 4, yRadius: 4)
       outline.lineWidth = 1
       outline.stroke()
     }

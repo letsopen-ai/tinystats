@@ -505,7 +505,9 @@ import TinyStatsCore
     let symbol = NSRect(x: cellFrame.minX + 10, y: cellFrame.midY - 6.5, width: 13, height: 13)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current?.cgContext.beginTransparencyLayer(auxiliaryInfo: nil)
-    image?.draw(in: symbol, from: .zero, operation: .sourceOver, fraction: 1)
+    image?.draw(
+      in: symbol, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
+    )
     // Settings chips have a known semantic backing; real status items stay monochrome.
     let module = (button as? MenuBarChip)?.module ?? .overview
     SystemStyle.moduleAccent(module).setFill()

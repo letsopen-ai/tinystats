@@ -865,6 +865,7 @@ import Testing
             .init(x: chip.frame.maxX + 2, y: 26), to: nil)
           #expect(customization.strip.draggingEntered(drag) == .move)
           #expect(customization.strip.insertion == 1)
+          try captureState("drag")
           customization.strip.draggingExited(drag)
           var allEnabled = settings
           allEnabled.readouts = Module.allCases.filter { $0 != .overview }
@@ -883,6 +884,7 @@ import Testing
           drag.draggingLocation = customization.strip.convert(
             .init(x: secondRow.frame.minX, y: secondRow.frame.midY), to: nil)
           #expect(customization.strip.draggingEntered(drag) == .move)
+          try captureState("wrapped-drag")
           customization.strip.draggingExited(drag)
           controller.updateMenuBarSettings(settings)
         }

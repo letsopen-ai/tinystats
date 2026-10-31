@@ -186,8 +186,9 @@ func generalAdvancedOptionsStartCollapsedAndOnlyRouteExplicitClicks(theme: AppTh
   #expect(preview.renderers[0].readouts.first?.label == "NET")
   #expect(
     preview.renderers.allSatisfy { $0.paused && $0.readouts.count == 1 && $0.bounds.height == 24 })
-  #expect(preview.preferredWidth == preview.renderers.reduce(0) { $0 + $1.preferredWidth } + 9)
-  #expect(preview.renderers[1].frame.minX == preview.renderers[0].frame.maxX + 9)
+  // 9pt between outlines, plus 1.5pt on each side of the two compact renderers.
+  #expect(preview.preferredWidth == preview.renderers.reduce(0) { $0 + $1.preferredWidth } + 15)
+  #expect(preview.renderers[1].frame.minX == preview.renderers[0].frame.maxX + 12)
   controller.updateMenuBarContext(appearance: nil, order: [.cpu, .cpu], height: 24, paused: false)
   #expect(preview.renderers[0].readouts.first?.label == "CPU")
   #expect(preview.renderers.allSatisfy { !$0.paused })

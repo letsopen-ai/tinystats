@@ -385,7 +385,9 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       width.isActive = true
     }
     let layoutTitle = NSTextField(labelWithString: "Layout")
-    layoutTitle.font = .systemFont(ofSize: 13)
+    layoutTitle.font = .systemFont(ofSize: 13, weight: .medium)
+    layoutTitle.textColor = .secondaryLabelColor
+    layoutSelector.setAccessibilityTitleUIElement(layoutTitle)
     let layoutHelp = form.text("Separate items or one shared item.")
     let layoutChoice = NSStackView(views: [
       form.controls([layoutTitle, layoutSelector]), layoutHelp,
