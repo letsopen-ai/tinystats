@@ -7,30 +7,6 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     case general, menuBar
     var identifier: String { self == .general ? "general" : "menubar" }
   }
-  private enum MenuBarPreset: String, CaseIterable {
-    case simpleText = "Simple text"
-    case compactBars = "Compact bars"
-    case separate = "Separate"
-
-    var size: MenuBarSize { self == .compactBars ? .compact : .standard }
-    func style(for module: Module, sensorKey: String) -> MenuBarStyle {
-      switch self {
-      case .simpleText: return .text
-      case .separate: return .stacked
-      case .compactBars:
-        let available = MenuBarStyle.available(for: module, sensorKey: sensorKey)
-        // Rates, non-temperature sensors, Time and Weather have no percentage gauge.
-        return [.horizontal, .bar, .labeledBar].first { available.contains($0) } ?? .text
-      }
-    }
-    func matches(_ settings: Settings) -> Bool {
-      settings.separateItems
-        && settings.readouts.allSatisfy {
-          settings.style(for: $0) == style(for: $0, sensorKey: settings.sensorKey)
-            && settings.appearance(for: $0).size == size
-        }
-    }
-  }
   var onHistoryPersistence: ((Bool) -> Void)?
   var onHistory: (() -> Void)?
   private var historyStorageBusy = false
@@ -79,7 +55,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       updated.validate()
       self.settings = updated
       self.individualOrder = self.settings.readouts
-      self.updatePresetSelection()
+      self.updateLayoutSelection()
       self.customization.update(order: self.settings.readouts, animated: true)
       self.updatePreview()
       self.onChange?(self.settings)
@@ -94,7 +70,6 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   }
   private lazy var preview = MenuBarPreviewView(frame: .zero)
   private lazy var appearance = NSPopUpButton()
-  private let presetStatus = SystemSettingsForm.text("")
   private let tabs = NSTabView()
   private let tabSelector = NSSegmentedControl(
     labels: ["General", "Menu Bar"], trackingMode: .selectOne, target: nil, action: nil)
@@ -118,18 +93,18 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   static let menuBarHeaderHeightBudget: CGFloat = 74
   static let menuBarCPUBottomChromeBudget: CGFloat = 20
   static let menuBarCPUOptionsHeightBudget: CGFloat = 230
-  private lazy var presetSelector: SystemPresetChoices = {
-    let examples = MenuBarPreset.allCases.map { preset in
-      var example = settings
-      for module in [Module.cpu, .memory] {
-        example.styles[module.rawValue] = preset.style(for: module, sensorKey: settings.sensorKey)
-        example.appearances[module.rawValue] = .init(size: preset.size, color: .automatic)
-      }
-      return example
-    }
-    return SystemPresetChoices(
-      titles: MenuBarPreset.allCases.map(\.rawValue), settings: examples, snapshot: latest)
-  }()
+  static let menuBarLayoutRowHeightBudget: CGFloat = 36
+  private let layoutSelector = NSSegmentedControl(
+    images: ["rectangle.split.3x1", "rectangle"].map {
+      NSImage(systemSymbolName: $0, accessibilityDescription: nil) ?? NSImage()
+    }, trackingMode: .selectOne, target: nil, action: nil)
+  private let spacingSelector = NSSegmentedControl(
+    images: [
+      "arrow.right.and.line.vertical.and.arrow.left", "arrow.left.and.right",
+      "arrow.left.and.line.vertical.and.arrow.right",
+    ].map {
+      NSImage(systemSymbolName: $0, accessibilityDescription: nil) ?? NSImage()
+    }, trackingMode: .selectOne, target: nil, action: nil)
   private let styleOptions = NSStackView()
   private lazy var styleDisclosure = NSButton(
     title: "Customize styles…", target: self, action: #selector(toggleStyleOptions))
@@ -144,7 +119,6 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     self.latest = snapshot
     self.history = history
     self.settings = settings
-    self.settings.separateItems = true
     selectedStyleModule = settings.readouts.first ?? .cpu
     let window = NSWindow(
       contentRect: .init(x: 0, y: 0, width: 740, height: 660), styleMask: [.titled, .closable],
@@ -321,10 +295,25 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
 
   private func buildMenuBarPage() {
     let form = SystemSettingsForm.self
-    presetSelector.target = self
-    presetSelector.action = #selector(presetChanged)
-    presetSelector.toolTip =
-      "Apply styles to enabled readouts. Separate stacks label + value within each separate menu bar item."
+    layoutSelector.target = self
+    layoutSelector.action = #selector(layoutChanged)
+    layoutSelector.setAccessibilityLabel("Menu bar layout")
+    for (index, title) in ["Separate", "One"].enumerated() {
+      layoutSelector.setToolTip(title, forSegment: index)
+    }
+    spacingSelector.target = self
+    spacingSelector.action = #selector(spacingChanged)
+    spacingSelector.setAccessibilityLabel("Menu bar spacing")
+    for (index, spacing) in MenuBarSpacing.allCases.enumerated() {
+      spacingSelector.setToolTip(spacing.title, forSegment: index)
+    }
+    for control in [layoutSelector, spacingSelector] {
+      control.controlSize = .small
+      control.segmentStyle = .rounded
+      for index in 0..<control.segmentCount { control.setWidth(34, forSegment: index) }
+      control.heightAnchor.constraint(lessThanOrEqualToConstant: Self.menuBarToolsHeightBudget)
+        .isActive = true
+    }
     previewScroll.hasHorizontalScroller = true
     previewScroll.hasVerticalScroller = false
     previewScroll.scrollerStyle = .overlay
@@ -418,11 +407,16 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     _ = SystemSettingsForm(
       in: menuBarPage,
       views: [
-        form.group([form.row("", wallpaper, height: 78), form.row("", presetSelector, height: 86)]),
-        presetStatus, customization, styleDisclosure, styleOptions,
+        form.group([
+          form.row("", wallpaper, height: 78),
+          form.row("Layout", layoutSelector, width: 80, height: Self.menuBarLayoutRowHeightBudget),
+          form.row(
+            "Spacing", spacingSelector, width: 114, height: Self.menuBarLayoutRowHeightBudget),
+        ]),
+        customization, styleDisclosure, styleOptions,
       ])
     selectStyleModule(selectedStyleModule)
-    updatePresetSelection()
+    updateLayoutSelection()
   }
 
   func selectStyleModule(_ module: Module) {
@@ -452,37 +446,26 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     styleDisclosure.setAccessibilityExpanded(!styleOptions.isHidden)
   }
 
-  @objc private func presetChanged() {
-    guard MenuBarPreset.allCases.indices.contains(presetSelector.selectedSegment) else { return }
-    let preset = MenuBarPreset.allCases[presetSelector.selectedSegment]
-    settings.separateItems = true
-    for module in settings.readouts {
-      settings.styles[module.rawValue] = preset.style(for: module, sensorKey: settings.sensorKey)
-      var look = settings.appearance(for: module)
-      look.size = preset.size
-      settings.appearances[module.rawValue] = look
-    }
-    for (module, popup) in styleMenus {
-      popup.selectItem(withTitle: settings.style(for: module).title)
-    }
-    for (module, popup) in sizeMenus {
-      popup.selectItem(withTitle: settings.appearance(for: module).size.title)
-    }
-    settings.validate()
-    applyAppearance()
-    updatePresetSelection()
+  @objc private func layoutChanged() {
+    guard (0...1).contains(layoutSelector.selectedSegment) else { return }
+    settings.separateItems = layoutSelector.selectedSegment == 0
+    individualOrder = settings.readouts
+    updateLayoutSelection()
     updatePreview()
-    if builtPages.contains(.general) { message.stringValue = "" }
     onChange?(settings)
   }
 
-  private func updatePresetSelection() {
-    presetSelector.selectedSegment =
-      MenuBarPreset.allCases.firstIndex { $0.matches(settings) } ?? -1
-    presetStatus.stringValue =
-      presetSelector.selectedSegment < 0
-      ? "No preset selected: your readouts use individual styles"
-      : presetSelector.label(forSegment: presetSelector.selectedSegment) + " preset"
+  @objc private func spacingChanged() {
+    guard MenuBarSpacing.allCases.indices.contains(spacingSelector.selectedSegment) else { return }
+    settings.menuBarSpacing = MenuBarSpacing.allCases[spacingSelector.selectedSegment]
+    updatePreview()
+    onChange?(settings)
+  }
+
+  private func updateLayoutSelection() {
+    layoutSelector.selectedSegment = settings.separateItems ? 0 : 1
+    spacingSelector.selectedSegment =
+      MenuBarSpacing.allCases.firstIndex(of: settings.menuBarSpacing) ?? 1
   }
 
   func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
@@ -539,6 +522,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   }
   @objc private func showHistoryStorage() { onHistory?() }
   func updateMenuBarSettings(_ value: Settings) {
+    settings.separateItems = value.separateItems
+    settings.menuBarSpacing = value.menuBarSpacing
     settings.readouts = value.readouts
     individualOrder = value.readouts
     settings.styles = value.styles
@@ -550,7 +535,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       popup.selectItem(withTitle: settings.appearance(for: module).size.title)
     }
     applyAppearance()
-    updatePresetSelection()
+    updateLayoutSelection()
     updatePreview()
   }
   func updateWeatherSettings(_ value: WeatherSettings) { settings.weather = value }
@@ -682,7 +667,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     }
     preview.update(
       groups: settings.separateItems ? groups : [groups.flatMap { $0 }],
-      paused: previewPaused, height: menuBarHeight)
+      paused: previewPaused, height: menuBarHeight, spacing: settings.menuBarSpacing)
     preview.frame.size = .init(
       width: max(654, preview.preferredWidth), height: max(36, menuBarHeight))
     preview.needsDisplay = true
@@ -731,7 +716,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     settings.styles[Module.sensors.rawValue] = effective
     styleMenus[.sensors]?.update(settings: settings)
     settings.validate()
-    updatePresetSelection()
+    updateLayoutSelection()
     updatePreview()
     onChange?(settings)
   }
@@ -759,7 +744,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     }
     settings.validate()
     applyAppearance()
-    updatePresetSelection()
+    updateLayoutSelection()
     updatePreview()
     if builtPages.contains(.general) { message.stringValue = "" }
     onChange?(settings)

@@ -96,6 +96,7 @@ import TinyStatsCore
   private(set) var styles: [MenuBarStyle] = []
   private var heightConstraint: NSLayoutConstraint!
   private struct PreviewKey: Equatable {
+    let spacing: MenuBarSpacing
     let appearance: MenuBarAppearance
     let fahrenheit: Bool
     let sensorKey: String
@@ -148,7 +149,8 @@ import TinyStatsCore
       }
     }
     let key = PreviewKey(
-      appearance: settings.appearance(for: module), fahrenheit: settings.fahrenheit,
+      spacing: settings.menuBarSpacing, appearance: settings.appearance(for: module),
+      fahrenheit: settings.fahrenheit,
       sensorKey: settings.sensorKey,
       battery: module == .battery ? settings.batteryMenu : nil,
       clock: module == .clock ? settings.clockMenu : nil)
@@ -156,7 +158,8 @@ import TinyStatsCore
       for tile in tiles {
         tile.update(
           MenuBarStyleExample.readout(
-            module: module, style: tile.style, settings: settings, batteryState: batteryState))
+            module: module, style: tile.style, settings: settings, batteryState: batteryState),
+          spacing: settings.menuBarSpacing)
       }
       previewKey = key
       needsLayout = true
@@ -257,7 +260,8 @@ import TinyStatsCore
     NotificationCenter.default.removeObserver(self)
     NSWorkspace.shared.notificationCenter.removeObserver(self)
   }
-  func update(_ readout: MenuBarReadout) {
+  func update(_ readout: MenuBarReadout, spacing: MenuBarSpacing = .standard) {
+    renderer.spacing = spacing
     renderer.readouts = [readout]
     renderer.frame = .init(x: 0, y: 0, width: renderer.preferredWidth, height: 24)
     invalidatePreview()

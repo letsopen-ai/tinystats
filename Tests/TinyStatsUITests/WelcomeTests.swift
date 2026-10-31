@@ -259,23 +259,17 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   let presets = try #require(welcomeViews(root).compactMap { $0 as? NSSegmentedControl }.first)
   #expect(
     (0..<presets.segmentCount).compactMap { presets.label(forSegment: $0) } == [
-      "Simple text", "Compact bars",
+      "Separate", "One",
     ])
   let preview = try #require(welcomeViews(root).compactMap { $0 as? MenuBarPreviewView }.first)
   for segment in [0, 1] {
     presets.selectedSegment = segment
     try welcomeActivate(presets)
-    #expect(settings.separateItems)
-    for module in settings.readouts {
-      let gauges: Set<Module> = [.cpu, .memory, .battery, .gpu]
-      let expected: MenuBarStyle = segment == 1 && gauges.contains(module) ? .horizontal : .text
-      #expect(settings.style(for: module) == expected)
-      #expect(settings.appearance(for: module).size == (segment == 0 ? .standard : .compact))
-    }
+    #expect(settings.separateItems == (segment == 0))
     #expect(settings.style(for: .disks) == .ring)
     #expect(settings.appearance(for: .disks).size == .large)
-    #expect(preview.renderers.count == 1)
-    let readings = try #require(preview.renderers.first).readouts
+    #expect(preview.renderers.count == (segment == 0 ? settings.readouts.count : 1))
+    let readings = preview.renderers.flatMap(\.readouts)
     #expect(readings.compactMap(\.module) == settings.readouts)
     #expect(readings.first { $0.module == .cpu }?.value == "—")
     #expect(readings.first { $0.module == .cpu }?.progress == nil)
@@ -285,7 +279,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   // Returning from Settings refreshes the fixture and preset selection without emitting edits.
   settings.styles[Module.cpu.rawValue] = .ring
   controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
-  #expect(presets.selectedSegment == -1)
+  #expect(presets.selectedSegment == 1)
   #expect(preview.renderers.first?.readouts.first { $0.module == .cpu }?.style == .ring)
 }
 
@@ -379,7 +373,9 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   try welcomeActivate(cpuStyle)
   let preview = try #require(welcomeViews(root).compactMap { $0 as? MenuBarPreviewView }.first)
   #expect(
-    preview.renderers.first?.readouts.compactMap(\.module) == [.cpu, .memory, .network, .weather])
+    preview.renderers.flatMap(\.readouts).compactMap(\.module) == [
+      .cpu, .memory, .network, .weather,
+    ])
   #expect(preview.renderers.first?.readouts.first { $0.module == .cpu }?.style == .ring)
   let saved = Settings.load(from: store)
   #expect(saved.readouts == [.cpu, .memory, .network, .weather])

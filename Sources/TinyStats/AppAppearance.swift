@@ -23,7 +23,9 @@ extension AppTheme {
 @MainActor final class MenuBarPreviewView: NSView {
   private(set) var renderers: [MenuBarReadoutView] = []
   private(set) var preferredWidth: CGFloat = 0
-  func update(groups: [[MenuBarReadout]], paused: Bool, height: CGFloat) {
+  func update(
+    groups: [[MenuBarReadout]], paused: Bool, height: CGFloat, spacing: MenuBarSpacing = .standard
+  ) {
     if renderers.count != groups.count {
       for renderer in renderers { renderer.removeFromSuperview() }
       renderers = groups.map { _ in
@@ -34,6 +36,7 @@ extension AppTheme {
     }
     var x: CGFloat = 0
     for (renderer, readings) in zip(renderers, groups) {
+      renderer.spacing = spacing
       renderer.readouts = readings
       renderer.paused = paused
       renderer.frame = .init(
