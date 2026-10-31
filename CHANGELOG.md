@@ -4,6 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Brighten the dopamine module accents to vivid candy colours in both appearances, retaining neutral text, monochrome menu-bar readouts and existing contrast guards.
+
 - Add appearance-aware module identity palettes to existing glyphs, charts and meters. Use a neutral 10% label-colour sidebar selection and module-coloured footer icon hover and paused Play. Keep status-item text and graphics monochrome, including CPU efficiency/performance core bars: efficiency uses 50% opacity and core-kind boundaries gain a 2pt gap. Native controls retain the system accent; text and semantic states retain their existing colours.
 
 - Make macOS 26+ glass more transparent: dropdown wash 60% light / 70% dark, sidebar 55% / 65%, and native grouped chips at 0% extra wash (previously inherited the sidebar wash). Compose inset cards with 2.5% light label-colour / 24% dark window-background tints to preserve backdrop hue without seams; strengthen glass-only secondary ink. Preserve legacy and accessibility fallback fills and native control accents; retain measured module palette ink while darkening unmeasured system/custom light-glass secondary traces and matching legend marks/meters for contrast, and recompute the scroll fade when accessibility treatment changes.
