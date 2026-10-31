@@ -162,7 +162,7 @@ import Testing
   }
 }
 
-@Test @MainActor func moduleToolsAppearOnlyAfterTheirOwnTilesAndCPUEndsAtTheGrid() throws {
+@Test @MainActor func moduleToolsStayInTheirOwnHeadersAndEditorsEndAtTheGrid() throws {
   let controller = PreferencesController(
     settings: Settings(), interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
   defer { controller.close() }
@@ -180,25 +180,27 @@ import Testing
       $0.identifier?.rawValue.hasPrefix("menu-bar-") == true
         && $0.identifier?.rawValue.hasSuffix("-tools") == true && !$0.isHiddenOrHasHiddenAncestor
     }
+    #expect(editor.arrangedSubviews.last === picker)
+    let header = try #require(editor.arrangedSubviews.first as? MenuBarStyleHeader)
+    #expect(header.bounds.height <= PreferencesController.menuBarHeaderHeightBudget)
+    let document = try #require(options.enclosingScrollView?.documentView)
+    let bottom = picker.convert(picker.bounds, to: document).maxY
+    #expect(
+      document.bounds.height - bottom <= PreferencesController.menuBarCPUBottomChromeBudget + 0.5)
     if module == .cpu || module == .memory {
-      #expect(tools.isEmpty && editor.arrangedSubviews.last === picker)
-      let document = try #require(options.enclosingScrollView?.documentView)
-      let bottom = picker.convert(picker.bounds, to: document).maxY
-      #expect(
-        document.bounds.height - bottom <= PreferencesController.menuBarCPUBottomChromeBudget + 0.5)
+      #expect(tools.isEmpty)
       #expect(options.bounds.height <= PreferencesController.menuBarCPUOptionsHeightBudget)
     } else {
       #expect(tools.count == 1)
       let tool = try #require(tools.first)
-      #expect(editor.arrangedSubviews.last === tool)
+      #expect(tool.superview === header)
+      #expect(header.bounds.contains(tool.frame))
       #expect(tool.bounds.height <= PreferencesController.menuBarToolsHeightBudget)
-      if module == .sensors {
-        let label = try #require(
-          styleViews(tool).compactMap { $0 as? NSTextField }.first {
-            $0.stringValue == "Menu bar sensor"
-          })
-        #expect(label.bounds.width >= label.intrinsicContentSize.width - 1)
-      }
+      #expect(
+        tool.accessibilityLabel()
+          == (module == .sensors
+            ? "Menu bar sensor"
+            : module == .battery ? "Battery menu bar formats" : "Clock menu bar formats"))
     }
   }
 }
@@ -221,6 +223,11 @@ import Testing
     chip.performClick(nil)
     #expect(controller.selectedStyleModule == module && chip.isAccessibilitySelected())
     #expect(tray.chips.values.filter { $0.isAccessibilitySelected() }.count == 1)
+    #expect((chip.accessibilityValue() as? String)?.contains("Editing styles") == true)
+    #expect(
+      tray.chips.values.filter {
+        ($0.accessibilityValue() as? String)?.contains("Editing styles") == true
+      }.count == 1)
     #expect(window.makeFirstResponder(chip))
     #expect(controller.selectedStyleModule == module)
     #expect(chip.accessibilityPerformPress())
@@ -239,7 +246,7 @@ import Testing
   let tile = try #require(picker.tiles.first)
   let image = try #require(tile.previewImage())
   let bitmap = try #require(image.representations.first as? NSBitmapImageRep)
-  #expect(bitmap.pixelsHigh == 48)
+  #expect(bitmap.pixelsHigh == Int(24 * (tile.window?.backingScaleFactor ?? 2)))
   tile.viewDidChangeBackingProperties()
   #expect(tile.cachedPreview == nil)
   picker.toolTip = "Per-state styles"
@@ -301,13 +308,94 @@ import Testing
   #expect(tile.cachedPreview == nil)
 }
 
-@Test @MainActor func pictureGridBalancesEqualColumnsWithoutOrphanRows() {
+@Test @MainActor func pictureGridUsesPaneWidthOnlyAndAllowsAShortLastRow() {
   for width: CGFloat in [328, 426, 640, 788] {
-    let picker = MenuBarStylePicker(module: .cpu, settings: Settings())
-    picker.frame.size = .init(width: width, height: 200)
-    picker.layoutSubtreeIfNeeded()
-    let rows = Dictionary(grouping: picker.tiles, by: { $0.frame.minY })
-    #expect(rows.values.allSatisfy { $0.count >= 2 })
-    #expect(Set(picker.tiles.map { $0.frame.width }).count == 1)
+    let reference = MenuBarStylePicker(module: .cpu, settings: Settings())
+    reference.frame.size = .init(width: width, height: 200)
+    reference.layoutSubtreeIfNeeded()
+    for module in Module.allCases where module != .overview {
+      let picker = MenuBarStylePicker(module: module, settings: Settings())
+      picker.frame.size = .init(width: width, height: 200)
+      picker.layoutSubtreeIfNeeded()
+      // A different module may end earlier, but every shared tile position stays put.
+      #expect(
+        picker.tiles.map(\.frame) == Array(reference.tiles.prefix(picker.tiles.count).map(\.frame)))
+      #expect(Set(picker.tiles.map { $0.frame.width }).count == 1)
+      #expect(picker.tiles.allSatisfy { $0.frame.minX >= 0 && $0.frame.maxX <= width })
+    }
+  }
+}
+
+@Test @MainActor func rebuildingSensorTilesKeepsThePickerTooltip() {
+  var settings = Settings()
+  let picker = MenuBarStylePicker(module: .sensors, settings: settings)
+  picker.toolTip = "Example explanation"
+  settings.sensorKey = "F0Ac"
+  picker.update(settings: settings)
+  #expect(picker.tiles.count == 7)
+  #expect(picker.tiles.allSatisfy { $0.toolTip == "\($0.style.title). Example explanation" })
+}
+
+@Test @MainActor func collapsedStylesReopenOnlyForCompletedClicksAndVoiceOverPresses() throws {
+  let controller = PreferencesController(
+    settings: Settings(), interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
+  defer { controller.close() }
+  let window = try #require(controller.window)
+  let root = try #require(window.contentView)
+  root.layoutSubtreeIfNeeded()
+  let views = styleViews(root)
+  let tray = try #require(views.compactMap { $0 as? MenuBarCustomization }.first)
+  let disclosure = try #require(
+    views.compactMap { $0 as? NSButton }.first {
+      $0.accessibilityLabel() == "Customize menu bar styles"
+    })
+  let chip = try #require(tray.chips[.memory])
+  let options = try #require(
+    views.compactMap { $0 as? MenuBarStylePicker }.first?.superview?.superview)
+  disclosure.performClick(nil)
+  #expect(options.isHidden && disclosure.title == "Customize styles…")
+  var selections = 0
+  let onSelection = tray.onSelection
+  tray.onSelection = { module in
+    selections += 1
+    onSelection?(module)
+  }
+  #expect(window.makeFirstResponder(chip))
+  #expect(controller.selectedStyleModule == .memory && options.isHidden)
+  #expect(window.makeFirstResponder(nil))
+  func mouse(_ type: NSEvent.EventType) throws -> NSEvent {
+    try #require(
+      NSEvent.mouseEvent(
+        with: type, location: chip.convert(.init(x: 10, y: 10), to: nil), modifierFlags: [],
+        timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+        clickCount: 1, pressure: 1))
+  }
+  selections = 0
+  chip.mouseDown(with: try mouse(.leftMouseDown))
+  #expect(selections == 1 && options.isHidden)
+  chip.mouseUp(with: try mouse(.leftMouseUp))
+  #expect(!options.isHidden && disclosure.title == "Hide styles")
+  disclosure.performClick(nil)
+  // A cancelled/finished drag clears the click origin and must not activate the editor.
+  chip.mouseUp(with: try mouse(.leftMouseUp))
+  #expect(options.isHidden)
+  #expect(chip.accessibilityPerformPress())
+  #expect(!options.isHidden)
+}
+
+@Test @MainActor func moduleHeaderMovesToolsToABorderlessRowWhenTheyDoNotFit() throws {
+  let identity = NSTextField(labelWithString: "Sensors")
+  let size = NSPopUpButton()
+  size.addItem(withTitle: "Standard")
+  let tool = NSButton(title: "A deliberately long module formats action…", target: nil, action: nil)
+  let header = MenuBarStyleHeader(identity: identity, size: size, tool: tool)
+  for width: CGFloat in [328, 640, 328] {
+    header.frame.size = .init(width: width, height: 74)
+    header.needsLayout = true
+    header.layoutSubtreeIfNeeded()
+    #expect(header.bounds.contains(tool.frame))
+    #expect(tool.frame.minY == (width == 328 ? 46 : (38 - tool.frame.height) / 2))
+    let height = try #require(header.constraints.first { $0.firstAttribute == .height })
+    #expect(height.constant == (width == 328 ? 74 : 38))
   }
 }

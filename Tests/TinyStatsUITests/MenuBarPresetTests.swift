@@ -50,7 +50,7 @@ import Testing
     defer { controller.close() }
     let root = try #require(controller.window?.contentView)
     let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
-    let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
+    let disclosure: NSButton = try presetControl(root, "Customize menu bar styles")
     let preview = try #require(
       presetDescendants(root).compactMap { $0 as? MenuBarPreviewView }.first)
     let cpuStyle: MenuBarStylePicker = try presetControl(
@@ -112,7 +112,7 @@ import Testing
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
   let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
-  let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
+  let disclosure: NSButton = try presetControl(root, "Customize menu bar styles")
   let cpu: MenuBarStylePicker = try presetControl(root, "CPU menu bar style")
   let tray = try #require(presetDescendants(root).compactMap { $0 as? MenuBarCustomization }.first)
   #expect(tray.order == [.cpu, .memory, .network])
@@ -138,7 +138,7 @@ import Testing
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
   let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
-  let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
+  let disclosure: NSButton = try presetControl(root, "Customize menu bar styles")
   disclosure.performClick(nil)
   presets.selectedSegment = 0
   try presetActivate(presets)
@@ -192,7 +192,7 @@ import Testing
     settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
-  let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
+  let disclosure: NSButton = try presetControl(root, "Customize menu bar styles")
   disclosure.performClick(nil)
   for label in ["Battery menu bar formats", "Clock menu bar formats"] {
     let button: NSButton = try presetControl(root, label)
