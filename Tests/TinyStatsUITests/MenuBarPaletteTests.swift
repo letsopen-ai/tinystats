@@ -35,7 +35,7 @@ import Testing
     for module in Module.allCases { #expect(palette.graphic(module) == expectedText) }
     #expect(palette.graphic(nil) == expectedText)
     #expect(palette.core(.performance) == expectedText)
-    #expect(palette.core(.efficiency) == expectedText)
+    #expect(palette.core(.efficiency) == expectedText.withAlphaComponent(0.5))
     #expect(palette.secondary == expectedText)
     #expect(palette.core(.unknown) == expectedText.withAlphaComponent(0.65))
     let background = try luminance(dark ? .black : .white)

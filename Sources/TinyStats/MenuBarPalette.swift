@@ -31,7 +31,7 @@ import TinyStatsCore
 
   func core(_ kind: CPUCoreKind) -> NSColor {
     switch kind {
-    case .efficiency: secondary
+    case .efficiency: text.withAlphaComponent(0.5)
     case .performance: accent
     case .unknown: text.withAlphaComponent(0.65)
     }
