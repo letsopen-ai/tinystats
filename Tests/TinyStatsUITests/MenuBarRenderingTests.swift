@@ -219,15 +219,15 @@ import Testing
       coreKinds: Array(repeating: .efficiency, count: 4)
         + Array(repeating: .performance, count: 4))
     view.readouts = [reading]
-    #expect(view.preferredWidth == 28)  // 24pt bars + 2pt group gap + 2pt side padding.
+    #expect(view.preferredWidth == 26)  // 24pt bars + 2pt group gap; compact has no side padding.
     view.frame = .init(x: 0, y: 0, width: view.preferredWidth, height: 24)
     let image = try bitmap(view)
     func pixel(_ x: CGFloat) throws -> NSColor {
       try #require(image.colorAt(x: Int(x * 2), y: image.pixelsHigh / 2)?.usingColorSpace(.sRGB))
     }
     // Equal loads retain a visible intensity cue even without a group boundary.
-    let efficiency = try pixel(2)
-    let performance = try pixel(16)
+    let efficiency = try pixel(1)
+    let performance = try pixel(15)
     #expect(efficiency.alphaComponent > 0.45 && efficiency.alphaComponent < 0.7)
     #expect(performance.alphaComponent > 0.95)
     for color in [efficiency, performance] {
@@ -235,29 +235,29 @@ import Testing
       #expect(channels.max()! - channels.min()! < 0.02)
     }
     // Ordinary gaps are 1pt; the E/P boundary is 3pt (2pt extra).
-    #expect(try pixel(3).alphaComponent == 0)
-    for x: CGFloat in [12, 13, 14] { #expect(try pixel(x).alphaComponent == 0) }
-    #expect(try pixel(15).alphaComponent > 0.95)
+    #expect(try pixel(2).alphaComponent == 0)
+    for x: CGFloat in [11, 12, 13] { #expect(try pixel(x).alphaComponent == 0) }
+    #expect(try pixel(14).alphaComponent > 0.95)
 
     reading.coreKinds = Array(repeating: .performance, count: 8)
     view.readouts = [reading]
-    #expect(view.preferredWidth == 26)
-    #expect(try bitmap(view).colorAt(x: 4, y: 24)?.alphaComponent == 1)
+    #expect(view.preferredWidth == 24)
+    #expect(try bitmap(view).colorAt(x: 2, y: 24)?.alphaComponent == 1)
     reading.coreKinds = Array(repeating: .efficiency, count: 8)
     view.readouts = [reading]
-    #expect(try bitmap(view).colorAt(x: 4, y: 24)?.alphaComponent ?? 1 < 0.7)
+    #expect(try bitmap(view).colorAt(x: 2, y: 24)?.alphaComponent ?? 1 < 0.7)
 
     // Ignore mismatched topology; never invent E/P grouping from a partial list.
     reading.coreKinds = [.efficiency]
     view.readouts = [reading]
-    #expect(view.preferredWidth == 26)
+    #expect(view.preferredWidth == 24)
     reading.cores = Array(repeating: 100, count: 33)
     reading.coreKinds = Array(repeating: .efficiency, count: 32) + [.performance]
     view.readouts = [reading]
-    #expect(view.preferredWidth == 98)  // The 33rd core cannot add a hidden group gap.
+    #expect(view.preferredWidth == 96)  // The 33rd core cannot add a hidden group gap.
     reading.coreKinds[31] = .performance
     view.readouts = [reading]
-    #expect(view.preferredWidth == 100)
+    #expect(view.preferredWidth == 98)
   }
 }
 
@@ -330,7 +330,7 @@ import Testing
   var cpu = fixture(.labeledBar)
   cpu.module = .cpu
   view.readouts = [cpu]
-  #expect(view.preferredWidth == 30)
+  #expect(view.preferredWidth == 28)
   let single = view.preferredWidth
   view.readouts = [cpu, cpu, cpu]
   #expect(view.preferredWidth == 3 * single + 2)

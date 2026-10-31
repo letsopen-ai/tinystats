@@ -336,7 +336,7 @@ final class ClockMenuController: NSWindowController, NSWindowDelegate, NSTextFie
     preview.appearance = barAppearance
     scroll.appearance = barAppearance
     preview.update(
-      groups: [readouts], paused: paused, height: barHeight, spacing: settings.menuBarSpacing)
+      groups: [readouts], paused: paused, height: barHeight)
     preview.frame.size = .init(width: max(670, preview.preferredWidth), height: max(36, barHeight))
     preview.needsDisplay = true
     message.stringValue =

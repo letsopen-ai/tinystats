@@ -462,7 +462,7 @@ enum WelcomePresentation {
     let height = NSStatusBar.system.thickness
     preview.update(
       groups: settings.separateItems ? groups : [groups.flatMap { $0 }], paused: false,
-      height: height, spacing: settings.menuBarSpacing)
+      height: height)
     preview.frame.size = .init(width: max(660, preview.preferredWidth), height: max(36, height))
     scroll.needsDisplay = true
   }

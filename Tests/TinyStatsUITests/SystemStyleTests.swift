@@ -232,7 +232,9 @@ import Testing
         for tile in systemDescendants(controller.view).compactMap({ $0 as? MenuBarStyleTile }) {
           tile.increaseContrast = { fallback == 2 }
         }
-        if let preferences { systemRevealStyleEditor(preferences, in: controller.view) }
+        if let preferences, module != .cpu {
+          systemRevealStyleEditor(preferences, in: controller.view)
+        }
         controller.view.layoutSubtreeIfNeeded()
         window.makeKey()
         window.displayIfNeeded()
@@ -611,7 +613,8 @@ import Testing
       if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
         let url = URL(fileURLWithPath: path, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        try png.write(to: url.appendingPathComponent("footer-\(state)-\(name.rawValue).png"))
+        try png.write(
+          to: url.appendingPathComponent("footer-\(state)-\(name == .aqua ? "light" : "dark").png"))
       }
       return png
     }
@@ -862,7 +865,6 @@ import Testing
             .init(x: chip.frame.maxX + 2, y: 26), to: nil)
           #expect(customization.strip.draggingEntered(drag) == .move)
           #expect(customization.strip.insertion == 1)
-          try captureState("drag")
           customization.strip.draggingExited(drag)
           var allEnabled = settings
           allEnabled.readouts = Module.allCases.filter { $0 != .overview }
@@ -881,7 +883,6 @@ import Testing
           drag.draggingLocation = customization.strip.convert(
             .init(x: secondRow.frame.minX, y: secondRow.frame.midY), to: nil)
           #expect(customization.strip.draggingEntered(drag) == .move)
-          try captureState("wrapped-drag")
           customization.strip.draggingExited(drag)
           controller.updateMenuBarSettings(settings)
         }
@@ -1614,8 +1615,7 @@ import Testing
           var settings = Settings()
           settings.theme = theme
           settings.separateItems = !combined
-          settings.menuBarSpacing = combined ? .relaxed : .standard
-          let variant = combined ? "-one-relaxed" : ""
+          let variant = combined ? "-one-compact" : ""
           let detail = DetailController(snapshot: Snapshot(), history: [])
           detail.glassEnvironment = {
             .init(
@@ -1635,7 +1635,7 @@ import Testing
           detail.showSettingsView(try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
           detail.view.appearance = theme.nativeAppearance
           detail.view.layoutSubtreeIfNeeded()
-          systemRevealStyleEditor(editor, in: detail.view)
+          if module != .cpu { systemRevealStyleEditor(editor, in: detail.view) }
           detail.view.layoutSubtreeIfNeeded()
           let preview = try #require(
             systemDescendants(detail.view).compactMap { $0 as? MenuBarPreviewView }.first)
@@ -1689,7 +1689,7 @@ import Testing
 }
 
 /// Renderer-only layout comparison: never creates or interacts with native status items.
-@Test @MainActor func menuBarRoundBLayoutSpacingGallery() throws {
+@Test @MainActor func menuBarCompactLayoutGallery() throws {
   guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] else {
     return
   }
@@ -1697,27 +1697,24 @@ import Testing
   try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
   for theme in [AppTheme.light, .dark] {
     for separate in [true, false] {
-      for spacing in [MenuBarSpacing.tight, .relaxed] {
-        var settings = Settings()
-        settings.separateItems = separate
-        settings.menuBarSpacing = spacing
-        let strip = SystemWallpaperStrip(frame: .init(x: 0, y: 0, width: 420, height: 52))
-        strip.appearance = theme.nativeAppearance
-        let preview = MenuBarPreviewView(frame: .init(x: 16, y: 8, width: 388, height: 36))
-        let groups = StatusItemController.groups(for: settings).map { modules in
-          modules.map {
-            MenuBarStyleExample.readout(
-              module: $0, style: settings.style(for: $0), settings: settings)
-          }
+      var settings = Settings()
+      settings.separateItems = separate
+      let strip = SystemWallpaperStrip(frame: .init(x: 0, y: 0, width: 420, height: 52))
+      strip.appearance = theme.nativeAppearance
+      let preview = MenuBarPreviewView(frame: .init(x: 16, y: 8, width: 388, height: 36))
+      let groups = StatusItemController.groups(for: settings).map { modules in
+        modules.map {
+          MenuBarStyleExample.readout(
+            module: $0, style: settings.style(for: $0), settings: settings)
         }
-        preview.update(groups: groups, paused: false, height: 24, spacing: spacing)
-        strip.addSubview(preview)
-        try systemGalleryImage(
-          strip,
-          to: folder.appendingPathComponent(
-            "menu-bar-readouts-\(separate ? "separate" : "one")-\(spacing.rawValue)-\(theme.rawValue).png"
-          ))
       }
+      preview.update(groups: groups, paused: false, height: 24)
+      strip.addSubview(preview)
+      try systemGalleryImage(
+        strip,
+        to: folder.appendingPathComponent(
+          "menu-bar-readouts-\(separate ? "separate" : "one")-compact-\(theme.rawValue).png"
+        ))
     }
   }
 }

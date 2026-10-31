@@ -4,6 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Fix the upside-down dropdown logo; verify footer, Overview and Welcome orientation against the source artwork. Put the Menu Bar preview beside Layout in one compact row, remove the Spacing setting and always use 0pt side padding / 1pt gaps. Ignore obsolete saved spacing values and omit the key on save. Preview version 0.36.2 (65).
+
 - Add Separate / One menu bar layout and saved spacing without changing module styles; place the TinyStats logo first in dropdown footers. Preview version 0.36.1 (64).
 
 - Replace module display-style text menus with accessible production-renderer picture tiles, including Battery power states and the welcome tour. Preview examples follow appearance and font settings; compact the bottom Battery/Clock actions into one row. Bump the preview to 0.36.0 (63).

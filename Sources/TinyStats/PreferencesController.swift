@@ -93,18 +93,9 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   static let menuBarHeaderHeightBudget: CGFloat = 74
   static let menuBarCPUBottomChromeBudget: CGFloat = 20
   static let menuBarCPUOptionsHeightBudget: CGFloat = 230
-  static let menuBarLayoutRowHeightBudget: CGFloat = 36
+  /// Includes the preview, title, help and segmented control in one row.
+  static let menuBarLayoutSectionHeightBudget: CGFloat = 74
   private let layoutSelector = MenuBarLayoutIcons.control()
-  private let spacingSelector = NSSegmentedControl(
-    images: [
-      "arrow.right.and.line.vertical.and.arrow.left", "arrow.left.and.right",
-      "arrow.left.and.line.vertical.and.arrow.right",
-    ].enumerated().map { index, symbol in
-      let title = MenuBarSpacing.allCases[index].title
-      let image = NSImage(systemSymbolName: symbol, accessibilityDescription: title) ?? NSImage()
-      image.accessibilityDescription = title
-      return image
-    }, trackingMode: .selectOne, target: nil, action: nil)
   private let styleOptions = NSStackView()
   private lazy var styleDisclosure = NSButton(
     title: "Customize styles…", target: self, action: #selector(toggleStyleOptions))
@@ -301,19 +292,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     for (index, title) in ["Separate", "One"].enumerated() {
       layoutSelector.setToolTip(title, forSegment: index)
     }
-    spacingSelector.target = self
-    spacingSelector.action = #selector(spacingChanged)
-    spacingSelector.setAccessibilityLabel("Menu bar spacing")
-    for (index, spacing) in MenuBarSpacing.allCases.enumerated() {
-      spacingSelector.setToolTip(spacing.title, forSegment: index)
-    }
-    for control in [layoutSelector, spacingSelector] {
-      control.controlSize = .small
-      control.segmentStyle = .rounded
-      for index in 0..<control.segmentCount { control.setWidth(34, forSegment: index) }
-      control.heightAnchor.constraint(lessThanOrEqualToConstant: Self.menuBarToolsHeightBudget)
-        .isActive = true
-    }
+    layoutSelector.heightAnchor.constraint(lessThanOrEqualToConstant: Self.menuBarToolsHeightBudget)
+      .isActive = true
     previewScroll.hasHorizontalScroller = true
     previewScroll.hasVerticalScroller = false
     previewScroll.scrollerStyle = .overlay
@@ -323,7 +303,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     previewScroll.documentView = preview
     previewScroll.setAccessibilityLabel("Live menu bar preview")
     let wallpaper = SystemWallpaperStrip()
-    wallpaper.heightAnchor.constraint(equalToConstant: 62).isActive = true
+    wallpaper.heightAnchor.constraint(equalToConstant: 50).isActive = true
     previewScroll.translatesAutoresizingMaskIntoConstraints = false
     wallpaper.addSubview(previewScroll)
     NSLayoutConstraint.activate([
@@ -404,17 +384,26 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       width.identifier = "style-editor-width"
       width.isActive = true
     }
+    let layoutTitle = NSTextField(labelWithString: "Layout")
+    layoutTitle.font = .systemFont(ofSize: 13)
+    let layoutHelp = form.text("Separate items or one shared item.")
+    let layoutChoice = NSStackView(views: [
+      form.controls([layoutTitle, layoutSelector]), layoutHelp,
+    ])
+    layoutChoice.orientation = .vertical
+    layoutChoice.alignment = .leading
+    layoutChoice.spacing = 2
+    layoutChoice.widthAnchor.constraint(equalToConstant: 190).isActive = true
+    layoutHelp.widthAnchor.constraint(equalTo: layoutChoice.widthAnchor).isActive = true
+    let layoutRow = form.controls([wallpaper, layoutChoice])
+    wallpaper.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
+    let layoutSection = form.group([
+      form.row("", layoutRow, height: Self.menuBarLayoutSectionHeightBudget)
+    ])
+    layoutSection.identifier = NSUserInterfaceItemIdentifier("menu-bar-layout-section")
     _ = SystemSettingsForm(
       in: menuBarPage,
-      views: [
-        form.group([
-          form.row("", wallpaper, height: 78),
-          form.row("Layout", layoutSelector, width: 80, height: Self.menuBarLayoutRowHeightBudget),
-          form.row(
-            "Spacing", spacingSelector, width: 114, height: Self.menuBarLayoutRowHeightBudget),
-        ]),
-        customization, styleDisclosure, styleOptions,
-      ])
+      views: [layoutSection, customization, styleDisclosure, styleOptions])
     selectStyleModule(selectedStyleModule)
     updateLayoutSelection()
   }
@@ -455,17 +444,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     onChange?(settings)
   }
 
-  @objc private func spacingChanged() {
-    guard MenuBarSpacing.allCases.indices.contains(spacingSelector.selectedSegment) else { return }
-    settings.menuBarSpacing = MenuBarSpacing.allCases[spacingSelector.selectedSegment]
-    updatePreview()
-    onChange?(settings)
-  }
-
   private func updateLayoutSelection() {
     layoutSelector.selectedSegment = settings.separateItems ? 0 : 1
-    spacingSelector.selectedSegment =
-      MenuBarSpacing.allCases.firstIndex(of: settings.menuBarSpacing) ?? 1
   }
 
   func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
@@ -523,7 +503,6 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   @objc private func showHistoryStorage() { onHistory?() }
   func updateMenuBarSettings(_ value: Settings) {
     settings.separateItems = value.separateItems
-    settings.menuBarSpacing = value.menuBarSpacing
     settings.readouts = value.readouts
     individualOrder = value.readouts
     settings.styles = value.styles
@@ -667,7 +646,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     }
     preview.update(
       groups: settings.separateItems ? groups : [groups.flatMap { $0 }],
-      paused: previewPaused, height: menuBarHeight, spacing: settings.menuBarSpacing)
+      paused: previewPaused, height: menuBarHeight)
     preview.frame.size = .init(
       width: max(654, preview.preferredWidth), height: max(36, menuBarHeight))
     preview.needsDisplay = true

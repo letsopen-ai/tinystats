@@ -70,7 +70,7 @@ extension AppTheme {
   private(set) var preferredWidth: CGFloat = 0
   static let nativeItemGap: CGFloat = 9
   func update(
-    groups: [[MenuBarReadout]], paused: Bool, height: CGFloat, spacing: MenuBarSpacing = .standard
+    groups: [[MenuBarReadout]], paused: Bool, height: CGFloat
   ) {
     if renderers.count != groups.count {
       for renderer in renderers { renderer.removeFromSuperview() }
@@ -84,7 +84,6 @@ extension AppTheme {
     for (index, pair) in zip(renderers, groups).enumerated() {
       let (renderer, readings) = pair
       if index > 0 { x += Self.nativeItemGap }
-      renderer.spacing = spacing
       renderer.readouts = readings
       renderer.paused = paused
       renderer.frame = .init(

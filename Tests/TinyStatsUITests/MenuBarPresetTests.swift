@@ -64,47 +64,48 @@ import Testing
       == 1)
 }
 
-@Test @MainActor func menuBarSpacingControlChangesGeometryInBothLayoutsAndStylePictures() throws {
+@Test @MainActor func oldSpacingValuesUseCompactGeometryWithoutSpacingControls() throws {
   _ = NSApplication.shared
-  for separate in [true, false] {
-    var settings = Settings()
-    settings.separateItems = separate
-    let controller = PreferencesController(
-      settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
-    defer { controller.close() }
-    let root = try #require(controller.window?.contentView)
-    root.layoutSubtreeIfNeeded()
-    let spacing = try layoutControl(root, "Menu bar spacing")
-    #expect(
-      spacing.selectedSegment == 1
-        && spacing.frame.height <= PreferencesController.menuBarToolsHeightBudget)
-    let row = try #require(spacing.superview as? SystemFormRow)
-    #expect(row.frame.height <= PreferencesController.menuBarLayoutRowHeightBudget)
-    let preview = try #require(layoutViews(root).compactMap { $0 as? MenuBarPreviewView }.first)
-    let picker = try #require(
-      layoutViews(root).compactMap { $0 as? MenuBarStylePicker }.first { $0.module == .cpu })
-    var changed: Settings?
-    controller.onChange = { changed = $0 }
-    var widths: [CGFloat] = []
-    var tileWidths: [CGFloat] = []
-    for index in 0..<3 {
-      spacing.selectedSegment = index
-      try layoutActivate(spacing)
-      #expect(changed?.menuBarSpacing == MenuBarSpacing.allCases[index])
-      #expect(changed?.separateItems == separate && changed?.styles == settings.styles)
-      #expect(preview.renderers.allSatisfy { $0.spacing == MenuBarSpacing.allCases[index] })
-      widths.append(preview.preferredWidth)
-      tileWidths.append(try #require(picker.tiles.first).previewWidth)
-      let decoded = try JSONDecoder().decode(
-        Settings.self, from: JSONEncoder().encode(try #require(changed)))
-      #expect(decoded == changed)
+  for value in ["tight", "standard", "relaxed", "future"] {
+    for separate in [true, false] {
+      let settings = try JSONDecoder().decode(
+        Settings.self,
+        from: Data("{\"separateItems\":\(separate),\"menuBarSpacing\":\"\(value)\"}".utf8))
+      let controller = PreferencesController(
+        settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar
+      )
+      defer { controller.close() }
+      let root = try #require(controller.window?.contentView)
+      root.layoutSubtreeIfNeeded()
+      let preview = try #require(layoutViews(root).compactMap { $0 as? MenuBarPreviewView }.first)
+      #expect(preview.renderers.count == (separate ? 3 : 1))
+      #expect(preview.renderers.allSatisfy { $0.sidePadding == 0 && $0.itemSpacing == 1 })
+      for step in 0..<6 {
+        let welcome = WelcomeController(settings: { settings }, initialStep: step)
+        defer { welcome.close() }
+        let welcomeRoot = try #require(welcome.window?.contentView)
+        #expect(
+          !layoutViews(welcomeRoot).contains {
+            ($0.accessibilityLabel() ?? "").localizedCaseInsensitiveContains("spacing")
+              || ($0 as? NSTextField)?.stringValue == "Spacing"
+          })
+        for preview in layoutViews(welcomeRoot).compactMap({ $0 as? MenuBarPreviewView }) {
+          #expect(preview.renderers.allSatisfy { $0.sidePadding == 0 && $0.itemSpacing == 1 })
+        }
+      }
+      #expect(
+        !layoutViews(root).contains {
+          ($0.accessibilityLabel() ?? "").localizedCaseInsensitiveContains("spacing")
+            || ($0 as? NSTextField)?.stringValue == "Spacing"
+        })
+      let picker = try #require(
+        layoutViews(root).compactMap { $0 as? MenuBarStylePicker }.first { $0.module == .cpu })
+      let expected = MenuBarReadoutView()
+      expected.readouts = [
+        MenuBarStyleExample.readout(module: .cpu, style: picker.tiles[0].style, settings: settings)
+      ]
+      #expect(picker.tiles[0].previewWidth == expected.preferredWidth)
     }
-    #expect(widths[0] < widths[1] && widths[1] < widths[2])
-    #expect(tileWidths[0] < tileWidths[1] && tileWidths[1] < tileWidths[2])
-    #expect(widths[2] - widths[0] == 18)
-    #expect(preview.renderers[0].preferredWidth > 0)
-    controller.updateMenuBarSettings(settings)
-    #expect(spacing.selectedSegment == 1)
   }
 }
 
@@ -144,13 +145,12 @@ import Testing
 
 @Test @MainActor func combinedReadoutRoutesSegmentsWithoutRealStatusItems() {
   let renderer = MenuBarReadoutView()
-  renderer.spacing = .relaxed
   renderer.readouts = [Module.cpu, .memory].map {
     MenuBarStyleExample.readout(module: $0, style: .stacked, settings: Settings())
   }
   #expect(renderer.module(at: 0) == .cpu)
   #expect(renderer.module(at: renderer.preferredWidth - 1) == .memory)
-  #expect(renderer.itemSpacing == 7 && renderer.sidePadding == 3)
+  #expect(renderer.itemSpacing == 1 && renderer.sidePadding == 0)
 }
 
 @Test @MainActor func menuBarIconSegmentsExposeEveryChoiceName() throws {
@@ -160,8 +160,7 @@ import Testing
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
   for (label, titles) in [
-    ("Menu bar layout", ["Separate", "One"]),
-    ("Menu bar spacing", ["Tight", "Standard", "Relaxed"]),
+    ("Menu bar layout", ["Separate", "One"])
   ] {
     let control = try layoutControl(root, label)
     #expect(
@@ -182,17 +181,15 @@ import Testing
   let readouts = [Module.cpu, .memory, .network].map {
     MenuBarStyleExample.readout(module: $0, style: .stacked, settings: Settings())
   }
-  for spacing in MenuBarSpacing.allCases {
-    preview.update(groups: readouts.map { [$0] }, paused: false, height: 24, spacing: spacing)
-    let separateWidth = preview.preferredWidth
-    for index in 1..<preview.renderers.count {
-      #expect(preview.renderers[index].frame.minX - preview.renderers[index - 1].frame.maxX == 9)
-    }
-    #expect(separateWidth == preview.renderers.reduce(0) { $0 + $1.preferredWidth } + 18)
-    preview.update(groups: [readouts], paused: false, height: 24, spacing: spacing)
-    #expect(preview.renderers.count == 1)
-    #expect(separateWidth > preview.preferredWidth)
+  preview.update(groups: readouts.map { [$0] }, paused: false, height: 24)
+  let separateWidth = preview.preferredWidth
+  for index in 1..<preview.renderers.count {
+    #expect(preview.renderers[index].frame.minX - preview.renderers[index - 1].frame.maxX == 9)
   }
+  #expect(separateWidth == preview.renderers.reduce(0) { $0 + $1.preferredWidth } + 18)
+  preview.update(groups: [readouts], paused: false, height: 24)
+  #expect(preview.renderers.count == 1)
+  #expect(separateWidth > preview.preferredWidth)
 }
 
 @Test @MainActor func separateLayoutRestoresSavedNativeSlotsWithoutRealStatusItems() throws {

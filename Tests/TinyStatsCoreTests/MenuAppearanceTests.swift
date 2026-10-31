@@ -71,18 +71,19 @@ import Testing
   #expect(legacy.readouts == [.cpu, .memory, .network])
 }
 
-@Test func menuBarSpacingAndLayoutDecodeDefaultsAndRejectUnknownValues() throws {
-  for json in [
-    #"{}"#, #"{"separateItems":"false","menuBarSpacing":false}"#, #"{"menuBarSpacing":"future"}"#,
-  ] {
-    let settings = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
-    #expect(settings.separateItems && settings.menuBarSpacing == .standard)
+@Test func obsoleteMenuBarSpacingIsIgnoredAndOmittedOnSave() throws {
+  for value in ["\"tight\"", "\"standard\"", "\"relaxed\"", "\"future\"", "false", "null", "{}"] {
+    let settings = try JSONDecoder().decode(
+      Settings.self,
+      from: Data(
+        "{\"separateItems\":false,\"menuBarSpacing\":\(value),\"styles\":{\"cpu\":\"ring\"}}".utf8))
+    #expect(!settings.separateItems && settings.style(for: .cpu) == .ring)
+    let encoded = try JSONEncoder().encode(settings)
+    let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    #expect(object["menuBarSpacing"] == nil)
+    #expect(try JSONDecoder().decode(Settings.self, from: encoded) == settings)
   }
-  for spacing in MenuBarSpacing.allCases {
-    var settings = Settings()
-    settings.separateItems = false
-    settings.menuBarSpacing = spacing
-    #expect(
-      try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings)) == settings)
+  for json in [#"{}"#, #"{"separateItems":"false","menuBarSpacing":false}"#] {
+    #expect(try JSONDecoder().decode(Settings.self, from: Data(json.utf8)).separateItems)
   }
 }
