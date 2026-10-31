@@ -168,6 +168,7 @@ import Testing
     ("main-sensors-readings", .sensors, false, false, 0),
     ("settings-menu-bar-cpu", .cpu, false, true, 0),
     ("settings-menu-bar-memory", .memory, false, true, 0),
+    ("settings-menu-bar-power", .battery, false, true, 0),
   ]
   let cases =
     surfaces
@@ -222,7 +223,10 @@ import Testing
             try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
         }
         controller.view.layoutSubtreeIfNeeded()
-        preferences?.revealStyleEditor()
+        for tile in systemDescendants(controller.view).compactMap({ $0 as? MenuBarStyleTile }) {
+          tile.increaseContrast = { fallback == 2 }
+        }
+        if let preferences { systemRevealStyleEditor(preferences, in: controller.view) }
         controller.view.layoutSubtreeIfNeeded()
         // Exercise the existing insertion marker above real compositor glass, using
         // only a private synthetic drag payload in our own fixture window.
@@ -793,7 +797,7 @@ import Testing
       root.layoutSubtreeIfNeeded()
       let views = systemDescendants(root)
       #expect(views.contains { $0 is SystemFormSection })
-      #expect(views.contains { $0 is NSSwitch })
+      #expect(views.contains { page == .general ? $0 is NSSwitch : $0 is MenuBarChip })
       if page == .menuBar {
         let customization = try #require(views.compactMap { $0 as? MenuBarCustomization }.first)
         #expect(customization.strip.chips.map(\.module) == settings.readouts)
@@ -1590,7 +1594,7 @@ import Testing
   try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
   for theme in [AppTheme.light, .dark] {
     for policy in ["glass", "legacy", "solid", "contrast"] {
-      for module in [Module.cpu, .memory] {
+      for module in [Module.cpu, .memory, .battery, .clock, .sensors] {
         var settings = Settings()
         settings.theme = theme
         let detail = DetailController(snapshot: Snapshot(), history: [])
@@ -1612,24 +1616,51 @@ import Testing
         detail.showSettingsView(try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
         detail.view.appearance = theme.nativeAppearance
         detail.view.layoutSubtreeIfNeeded()
-        editor.revealStyleEditor()
+        systemRevealStyleEditor(editor, in: detail.view)
         detail.view.layoutSubtreeIfNeeded()
         let picker = try #require(
           systemDescendants(detail.view).compactMap { $0 as? MenuBarStylePicker }.first {
             $0.module == module
           })
-        let tools = try #require(
-          systemDescendants(detail.view).first {
-            $0.identifier?.rawValue == "menu-bar-format-tools"
-          })
+        for tile in picker.tiles { tile.increaseContrast = { policy == "contrast" } }
+        if module == .cpu {
+          let options = try #require(picker.superview?.superview)
+          let document = try #require(options.enclosingScrollView?.documentView)
+          let bottomChrome =
+            document.bounds.height - picker.convert(picker.bounds, to: document).maxY
+          #expect(bottomChrome <= PreferencesController.menuBarCPUBottomChromeBudget + 0.5)
+          #expect(options.bounds.height <= PreferencesController.menuBarCPUOptionsHeightBudget)
+          let metrics =
+            "CPU \(policy) \(theme.rawValue): pane=\(picker.bounds.width)pt, options=\(options.bounds.height)pt, tiles-to-document-end=\(bottomChrome)pt\n"
+          let file = folder.appendingPathComponent(
+            "menu-bar-layout-\(policy)-\(theme.rawValue).txt")
+          try metrics.write(to: file, atomically: true, encoding: .utf8)
+        }
         #expect(picker.visibleRect.height >= picker.bounds.height - 1)
-        #expect(tools.visibleRect.height >= tools.bounds.height - 1)
-        #expect(tools.bounds.height <= PreferencesController.menuBarToolsHeightBudget)
+        let header = try #require((picker.superview as? NSStackView)?.arrangedSubviews.first)
+        #expect(header.visibleRect.height >= header.bounds.height - 1)
+        if module == .battery {
+          let tools = try #require(
+            systemDescendants(detail.view).first {
+              $0.identifier?.rawValue == "menu-bar-battery-tools"
+            })
+          #expect(tools.visibleRect.height >= tools.bounds.height - 1)
+          #expect(tools.bounds.height <= PreferencesController.menuBarToolsHeightBudget)
+        }
         try systemGalleryImage(
           detail.view,
           to: folder.appendingPathComponent(
             "settings-menu-bar-\(module.rawValue)-\(policy)-\(theme.rawValue).png"))
       }
     }
+  }
+}
+
+@MainActor private func systemRevealStyleEditor(_ editor: PreferencesController, in root: NSView) {
+  root.layoutSubtreeIfNeeded()
+  if let picker = systemDescendants(root).compactMap({ $0 as? MenuBarStylePicker }).first(where: {
+    $0.module == editor.selectedStyleModule
+  }), let section = picker.superview {
+    section.scrollToVisible(section.bounds)
   }
 }

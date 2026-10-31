@@ -63,12 +63,9 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private lazy var login = SystemSettingSwitch(title: "Launch at login", target: nil, action: nil)
   private lazy var clocks = NSTextField(string: "")
   private lazy var message = NSTextField(wrappingLabelWithString: "")
-  private static let menuHelperText =
-    "Each readout opens its own page. Drag chips to customize, or use their context menus and keyboard actions. Chips wrap to keep every item visible."
-  private lazy var menuMessage = NSTextField(wrappingLabelWithString: Self.menuHelperText)
-  private var readouts: [Module: SystemSettingSwitch] = [:]
   private lazy var customization: MenuBarCustomization = {
     let view = MenuBarCustomization(frame: .zero)
+    view.onSelection = { [weak self] module in self?.selectStyleModule(module) }
     view.onAction = { [weak self] module, action in
       guard let self else { return false }
       // The displayed native order is the starting point, including pre-existing ⌘-drag positions.
@@ -78,13 +75,9 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       updated.validate()
       self.settings = updated
       self.individualOrder = self.settings.readouts
-      for (module, toggle) in self.readouts {
-        toggle.state = self.settings.readouts.contains(module) ? .on : .off
-      }
       self.updatePresetSelection()
       self.customization.update(order: self.settings.readouts, animated: true)
       self.updatePreview()
-      self.menuMessage.stringValue = Self.menuHelperText
       self.onChange?(self.settings)
       return true
     }
@@ -115,10 +108,11 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private var sizeMenus: [Module: NSPopUpButton] = [:]
   private lazy var previewScroll = NSScrollView()
   private var styleMenus: [Module: MenuBarStylePicker] = [:]
-  private let moduleSelector = NSPopUpButton()
   private var moduleEditors: [Module: NSView] = [:]
   private(set) var selectedStyleModule: Module = .cpu
   static let menuBarToolsHeightBudget: CGFloat = 36
+  static let menuBarCPUBottomChromeBudget: CGFloat = 20
+  static let menuBarCPUOptionsHeightBudget: CGFloat = 230
   private lazy var presetSelector: SystemPresetChoices = {
     let examples = MenuBarPreset.allCases.map { preset in
       var example = settings
@@ -146,6 +140,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     self.history = history
     self.settings = settings
     self.settings.separateItems = true
+    selectedStyleModule = settings.readouts.first ?? .cpu
     let window = NSWindow(
       contentRect: .init(x: 0, y: 0, width: 740, height: 660), styleMask: [.titled, .closable],
       backing: .buffered, defer: false)
@@ -353,16 +348,10 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     styleOptions.orientation = .vertical
     styleOptions.alignment = .leading
     styleOptions.spacing = 10
-    moduleSelector.addItems(withTitles: Module.allCases.filter { $0 != .overview }.map(\.title))
-    moduleSelector.setAccessibilityLabel("Readout to customize")
-    moduleSelector.target = self
-    moduleSelector.action = #selector(styleModuleChanged)
-    styleOptions.addArrangedSubview(form.group([form.row("Readout", moduleSelector, width: 200)]))
+    sensor.target = self
+    sensor.action = #selector(sensorChanged)
+    sensor.setAccessibilityLabel("Menu bar sensor")
     for module in Module.allCases where module != .overview {
-      let toggle = SystemSettingSwitch(
-        title: module.title, target: self, action: #selector(changed))
-      toggle.state = settings.readouts.contains(module) ? .on : .off
-      readouts[module] = toggle
       let popup = MenuBarStylePicker(module: module, settings: settings)
       popup.target = self
       popup.action = #selector(changed)
@@ -383,10 +372,30 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       let name = NSTextField(labelWithString: module.title)
       name.font = .systemFont(ofSize: 13)
       let identity = form.controls([icon, name])
-      let controls = form.controls([identity, size, toggle], widths: [200, 96, 38])
-      let editor = NSStackView(views: [
-        form.group([form.row("", controls, height: 38)]), popup,
-      ])
+      identity.setContentCompressionResistancePriority(.required, for: .horizontal)
+      let controls = form.controls([identity, size], widths: [200, 96])
+      var contents: [NSView] = [form.group([form.row("", controls, height: 38)]), popup]
+      if module == .sensors {
+        // The label stays legible in narrow panes; the popup takes the remaining width.
+        let label = NSTextField(labelWithString: "Menu bar sensor")
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        sensor.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let row = form.controls([label, sensor])
+        let tools = form.group([form.row("", row, height: Self.menuBarToolsHeightBudget)])
+        tools.identifier = NSUserInterfaceItemIdentifier("menu-bar-sensor-tools")
+        contents.append(tools)
+      } else if module == .battery || module == .clock {
+        let button = NSButton(
+          title: module == .battery ? "Battery formats…" : "Clock formats…",
+          target: self,
+          action: module == .battery ? #selector(showBatteryFormats) : #selector(showClockFormats))
+        button.setAccessibilityLabel(
+          module == .battery ? "Battery menu bar formats" : "Clock menu bar formats")
+        let tools = form.group([form.row("", button, height: Self.menuBarToolsHeightBudget)])
+        tools.identifier = NSUserInterfaceItemIdentifier("menu-bar-\(module.rawValue)-tools")
+        contents.append(tools)
+      }
+      let editor = NSStackView(views: contents)
       editor.orientation = .vertical
       editor.alignment = .leading
       editor.spacing = 8
@@ -399,52 +408,40 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       styleOptions.addArrangedSubview(editor)
     }
     styleOptions.detachesHiddenViews = true
-    sensor.target = self
-    sensor.action = #selector(sensorChanged)
-    sensor.setAccessibilityLabel("Menu bar sensor")
-    styleOptions.addArrangedSubview(form.group([form.row("Menu bar sensor", sensor, width: 390)]))
-    let battery = NSButton(
-      title: "Battery formats…", target: self, action: #selector(showBatteryFormats))
-    battery.setAccessibilityLabel("Battery menu bar formats")
-    let clock = NSButton(title: "Clock formats…", target: self, action: #selector(showClockFormats))
-    clock.setAccessibilityLabel("Clock menu bar formats")
-    let formatTools = form.group([
-      form.row("Formats", form.controls([battery, clock]), height: Self.menuBarToolsHeightBudget)
-    ])
-    formatTools.identifier = NSUserInterfaceItemIdentifier("menu-bar-format-tools")
-    styleOptions.addArrangedSubview(formatTools)
     for child in styleOptions.arrangedSubviews {
       child.translatesAutoresizingMaskIntoConstraints = false
-      child.widthAnchor.constraint(equalTo: styleOptions.widthAnchor).isActive = true
+      let width = child.widthAnchor.constraint(equalTo: styleOptions.widthAnchor)
+      width.identifier = "style-editor-width"
+      width.isActive = true
     }
-    menuMessage.font = .systemFont(ofSize: 11)
-    menuMessage.textColor = .secondaryLabelColor
     _ = SystemSettingsForm(
       in: menuBarPage,
       views: [
         form.group([form.row("", wallpaper, height: 78), form.row("", presetSelector, height: 86)]),
-        presetStatus, customization, styleDisclosure, styleOptions, menuMessage,
+        presetStatus, customization, styleDisclosure, styleOptions,
       ])
+    selectStyleModule(selectedStyleModule)
     updatePresetSelection()
   }
 
   func selectStyleModule(_ module: Module) {
     guard module != .overview else { return }
     selectedStyleModule = module
-    moduleSelector.selectItem(withTitle: module.title)
+    if styleOptions.isHidden { toggleStyleOptions() }
+    customization.select(module)
     for (candidate, editor) in moduleEditors { editor.isHidden = candidate != module }
+    // NSStackView may discard cross-view constraints when detaching a hidden editor.
+    if let editor = moduleEditors[module] {
+      if !styleOptions.constraints.contains(where: {
+        $0.identifier == "style-editor-width" && $0.firstItem as? NSView === editor
+      }) {
+        let width = editor.widthAnchor.constraint(equalTo: styleOptions.widthAnchor)
+        width.identifier = "style-editor-width"
+        width.isActive = true
+      }
+    }
     styleOptions.needsLayout = true
   }
-  func revealStyleEditor() {
-    menuBarPage.layoutSubtreeIfNeeded()
-    styleOptions.scrollToVisible(styleOptions.bounds)
-  }
-  @objc private func styleModuleChanged() {
-    let modules = Module.allCases.filter { $0 != .overview }
-    guard modules.indices.contains(moduleSelector.indexOfSelectedItem) else { return }
-    selectStyleModule(modules[moduleSelector.indexOfSelectedItem])
-  }
-
   @objc private func toggleStyleOptions() {
     styleOptions.isHidden.toggle()
     styleDisclosure.title =
@@ -465,9 +462,6 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       look.size = preset.size
       settings.appearances[module.rawValue] = look
     }
-    for (module, check) in readouts {
-      check.state = settings.readouts.contains(module) ? .on : .off
-    }
     for (module, popup) in styleMenus {
       popup.selectItem(withTitle: settings.style(for: module).title)
     }
@@ -479,7 +473,6 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     updatePresetSelection()
     updatePreview()
     if builtPages.contains(.general) { message.stringValue = "" }
-    menuMessage.stringValue = Self.menuHelperText
     onChange?(settings)
   }
 
@@ -550,9 +543,6 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     individualOrder = value.readouts
     settings.styles = value.styles
     settings.appearances = value.appearances
-    for (module, check) in readouts {
-      check.state = settings.readouts.contains(module) ? .on : .off
-    }
     for (module, popup) in styleMenus {
       popup.selectItem(withTitle: settings.style(for: module).title)
     }
@@ -703,13 +693,10 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
           for: latest.batteries.first, defaultStyle: settings.style(for: module)
         ).style
         : settings.style(for: module)
-      popup.isEnabled = style.usesFont && settings.readouts.contains(module)
-    }
-    for (module, popup) in styleMenus {
-      popup.isEnabled = settings.readouts.contains(module)
+      popup.isEnabled = style.usesFont
     }
     styleMenus[.battery]?.isEnabled =
-      settings.readouts.contains(.battery) && !settings.batteryMenu.customizeStates
+      !settings.batteryMenu.customizeStates
     styleMenus[.battery]?.toolTip =
       settings.batteryMenu.customizeStates
       ? "Per-state styles are configured in Battery formats (…)" : nil
@@ -749,25 +736,9 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   }
   @objc private func changed() {
     if builtPages.contains(.menuBar) {
-      let chosen = Module.allCases.filter { readouts[$0]?.state == .on }
-      guard !chosen.isEmpty else {
-        for module in settings.readouts { readouts[module]?.state = .on }
-        let error = "Keep at least one readout enabled so TinyStats remains accessible."
-        if builtPages.contains(.general) { message.stringValue = error }
-        menuMessage.stringValue = error
-        return
-      }
-      // Preserve existing order; append newly enabled readouts in module order.
-      let previousOrder = displayedOrder
-      settings.readouts =
-        previousOrder.filter { chosen.contains($0) }
-        + chosen.filter { !previousOrder.contains($0) }
-      individualOrder = settings.readouts
-      settings.separateItems = true
       for (module, popup) in styleMenus {
         settings.styles[module.rawValue] =
-          MenuBarStyle.available(for: module, sensorKey: settings.sensorKey)[
-            max(0, popup.indexOfSelectedItem)]
+          popup.selectedStyle ?? settings.style(for: module)
       }
       for module in Module.allCases where module != .overview {
         if let size = sizeMenus[module] {
@@ -790,9 +761,6 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     updatePresetSelection()
     updatePreview()
     if builtPages.contains(.general) { message.stringValue = "" }
-    if builtPages.contains(.menuBar) {
-      menuMessage.stringValue = Self.menuHelperText
-    }
     onChange?(settings)
   }
   @objc private func showBatteryFormats() {

@@ -147,18 +147,15 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     prefs.selectMenuBarTab()
     let root = try #require(prefs.window?.contentView)
     let controls = welcomeViews(root)
-    let buttons = controls.compactMap { $0 as? SystemSettingSwitch }
-    let cpu = try #require(buttons.first { $0.title == "CPU" })
-    #expect(cpu.state == .on)
-    #expect(buttons.first { $0.title == "Weather" }?.state == .on)
-    #expect(buttons.first { $0.title == "Memory" }?.state == .off)
+    let tray = try #require(controls.compactMap { $0 as? MenuBarCustomization }.first)
+    #expect(tray.order == changed.readouts)
     let style = try #require(
       controls.compactMap { $0 as? MenuBarStylePicker }.first {
         $0.accessibilityLabel() == "CPU menu bar style"
       })
     #expect(style.titleOfSelectedItem == MenuBarStyle.ring.title)
     // A later Settings edit must keep the tour's readouts/styles and other saved choices.
-    try welcomeActivate(cpu)
+    try welcomeActivate(style)
     let saved = try #require(emitted)
     #expect(saved.readouts == changed.readouts && saved.style(for: .cpu) == .ring)
     #expect(!saved.persistHistory && saved.fahrenheit && !saved.weather.enabled)
@@ -525,4 +522,29 @@ private func welcomeStore() throws -> (String, UserDefaults) {
       controller.close()
     }
   }
+}
+
+@Test @MainActor func welcomeStyleWidthsSurviveSwitchingAndHiddenLayoutResetsForLaterSteps() throws
+{
+  let controller = WelcomeController(settings: { Settings() }, initialStep: 1)
+  defer { controller.close() }
+  let root = try #require(controller.window?.contentView)
+  let selector = try #require(
+    welcomeViews(root).compactMap { $0 as? NSPopUpButton }.first {
+      $0.accessibilityLabel() == "Welcome readout to customize"
+    })
+  for module in [Module.memory, .battery, .cpu, .memory] {
+    selector.selectItem(withTitle: module.title)
+    try welcomeActivate(selector)
+    root.layoutSubtreeIfNeeded()
+    let picker = try #require(
+      welcomeViews(root).compactMap { $0 as? MenuBarStylePicker }.first {
+        $0.module == module
+      })
+    #expect(!picker.isHiddenOrHasHiddenAncestor)
+    #expect(abs(picker.bounds.width - (picker.superview?.bounds.width ?? 0)) < 1)
+  }
+  controller.nextStep()
+  let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
+  #expect(!body.detachesHiddenViews)
 }

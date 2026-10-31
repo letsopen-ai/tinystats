@@ -10,6 +10,20 @@ import TinyStatsCore
   let palette = MenuBarDropArea(inMenuBar: false)
   private(set) var chips: [Module: MenuBarChip] = [:]
   private(set) var order: [Module] = []
+  var onSelection: ((Module) -> Void)?
+  private(set) var selectedModule: Module?
+  func select(_ module: Module) {
+    guard selectedModule != module else { return }
+    selectedModule = module
+    for chip in chips.values {
+      chip.setAccessibilitySelected(chip.module == module)
+      chip.needsDisplay = true
+    }
+  }
+  func selectEditor(_ module: Module) {
+    select(module)
+    onSelection?(module)
+  }
   var onAction: ((Module, MenuBarLayoutAction) -> Bool)?
   private let stripLabel = SystemSettingsForm.text("In menu bar", heading: true)
   private let paletteLabel = SystemSettingsForm.text("Available", heading: true)
@@ -327,7 +341,7 @@ import TinyStatsCore
     setAccessibilityLabel("\(module.title) menu bar item")
     setAccessibilityRole(.group)
     toolTip =
-      "Drag to customize; Return/Space to add or remove; ⌥←/→ to move; right-click for more."
+      "Click or focus to edit styles; drag to customize; Return/Space to add or remove; ⌥←/→ to move; right-click for more."
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   var availableActions: [(String, MenuBarLayoutAction, Bool)] {
@@ -374,9 +388,11 @@ import TinyStatsCore
     owner?.perform(action, for: module)
   }
   override func accessibilityPerformPress() -> Bool {
-    // Exploring a chip must not change the enabled set. Named custom actions mutate it.
-    false
+    // Selecting an editor never changes tray membership.
+    owner?.selectEditor(module)
+    return owner != nil
   }
+  override func performClick(_ sender: Any?) { owner?.selectEditor(module) }
   override func keyDown(with event: NSEvent) {
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     if [123, 124].contains(event.keyCode), !modifiers.intersection([.option, .command]).isEmpty {
@@ -414,14 +430,22 @@ import TinyStatsCore
           ? NSColor.white.withAlphaComponent(0.10) : NSColor.controlBackgroundColor).setFill()
       path.fill()
     }
-    NSColor.separatorColor.setStroke()
-    path.lineWidth = 0.5
+    let selected = owner?.selectedModule == module
+    if selected {
+      SystemStyle.accent.withAlphaComponent(0.12).setFill()
+      path.fill()
+    }
+    (selected ? SystemStyle.accent : NSColor.separatorColor).setStroke()
+    path.lineWidth = selected ? 2 : 0.5
     path.stroke()
     super.draw(dirtyRect)
   }
   override func becomeFirstResponder() -> Bool {
     let accepted = super.becomeFirstResponder()
-    if accepted { scrollToVisible(bounds) }
+    if accepted {
+      owner?.selectEditor(module)
+      scrollToVisible(bounds)
+    }
     return accepted
   }
   override func drawFocusRingMask() {
@@ -430,6 +454,7 @@ import TinyStatsCore
   override var focusRingMaskBounds: NSRect { bounds }
   override func mouseDown(with event: NSEvent) {
     window?.makeFirstResponder(self)
+    owner?.selectEditor(module)
     dragOrigin = convert(event.locationInWindow, from: nil)
   }
   override func mouseUp(with event: NSEvent) { dragOrigin = nil }
