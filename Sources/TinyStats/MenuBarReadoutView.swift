@@ -170,9 +170,9 @@ struct MenuBarReadout {
 @MainActor final class MenuBarReadoutView: SystemStyledView {
   var readouts: [MenuBarReadout] = []
   var paused = false
-  var spacing: MenuBarSpacing = .standard
-  var sidePadding: CGFloat { CGFloat(spacing.sidePadding) }
-  var itemSpacing: CGFloat { CGFloat(spacing.itemSpacing) }
+  // Shared compact geometry for native items, previews and segment hit testing.
+  let sidePadding: CGFloat = 0
+  let itemSpacing: CGFloat = 1
   private static let verticalLabelFont = NSFont.systemFont(ofSize: 8, weight: .semibold)
   private static let fonts = Dictionary(
     uniqueKeysWithValues: MenuBarSize.allCases.map {

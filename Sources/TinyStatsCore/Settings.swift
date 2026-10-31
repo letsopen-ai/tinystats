@@ -58,26 +58,6 @@ public enum MenuBarSize: String, Codable, CaseIterable, Sendable {
   }
 }
 
-/// Bounded menu-bar geometry; standard retains the original 1pt inset / 3pt gap.
-public enum MenuBarSpacing: String, Codable, CaseIterable, Sendable {
-  case tight, standard, relaxed
-  public var title: String { rawValue.capitalized }
-  public var sidePadding: Double {
-    switch self {
-    case .tight: 0
-    case .standard: 1
-    case .relaxed: 3
-    }
-  }
-  public var itemSpacing: Double {
-    switch self {
-    case .tight: 1
-    case .standard: 3
-    case .relaxed: 7
-    }
-  }
-}
-
 /// Semantic system colors adapt to the current appearance. Rendering follows the system accent; legacy color choices remain decodable.
 public enum MenuBarColor: String, Codable, CaseIterable, Sendable {
   case automatic, blue, green, orange, pink, purple, red
@@ -103,7 +83,6 @@ public struct Settings: Codable, Equatable, Sendable {
   public var theme: AppTheme = .system
   public var interval: Double = 2
   public var separateItems = true
-  public var menuBarSpacing: MenuBarSpacing = .standard
   public var readouts: [Module] = [.cpu, .memory, .network]
   public var networkInterface = "auto"
   /// Shared CPU/Memory/Network choice. Keep the original encoded key to preserve saved choices.
@@ -138,7 +117,7 @@ public struct Settings: Codable, Equatable, Sendable {
   public var appearances: [String: MenuBarAppearance] = [:]
   public init() {}
   private enum CodingKeys: String, CodingKey {
-    case persistHistory, theme, interval, separateItems, menuBarSpacing, readouts, networkInterface,
+    case persistHistory, theme, interval, separateItems, readouts, networkInterface,
       networkTrafficGrouping, networkTrafficRevision, fahrenheit,
       batteryMenu,
       clockMenu,
@@ -159,8 +138,7 @@ public struct Settings: Codable, Equatable, Sendable {
     theme = (try? container.decode(AppTheme.self, forKey: .theme)) ?? .system
     interval = (try? container.decode(Double.self, forKey: .interval)) ?? fallback.interval
     separateItems = (try? container.decode(Bool.self, forKey: .separateItems)) ?? true
-    menuBarSpacing =
-      (try? container.decode(MenuBarSpacing.self, forKey: .menuBarSpacing)) ?? .standard
+    // Obsolete menuBarSpacing is intentionally an unknown key: all layouts are compact.
     // Keep every recognized choice in order, even if a future/damaged entry is present.
     // An explicitly malformed list must not enable the default set of extra readouts.
     if container.contains(.readouts) {

@@ -212,8 +212,7 @@ import TinyStatsCore
       module: .battery, snapshot: snapshot, settings: settings,
       history: isExample ? [] : history)
     preview.update(
-      groups: [[reading]], paused: isExample ? false : paused, height: barHeight,
-      spacing: settings.menuBarSpacing)
+      groups: [[reading]], paused: isExample ? false : paused, height: barHeight)
     preview.frame.size = .init(width: max(610, preview.preferredWidth), height: max(36, barHeight))
     preview.needsDisplay = true
     let state =

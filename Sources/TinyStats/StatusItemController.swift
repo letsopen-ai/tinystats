@@ -178,7 +178,6 @@ import TinyStatsCore
       let modules =
         separateItems ? [module] : (settings.readouts.isEmpty ? [.overview] : settings.readouts)
       if clockOnly && !modules.contains(.clock) { continue }
-      view.spacing = settings.menuBarSpacing
       view.readouts = modules.flatMap {
         MenuBarReadout.makeAll(
           module: $0, snapshot: snapshot, settings: settings, history: history, clockDate: clockDate
