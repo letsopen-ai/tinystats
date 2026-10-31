@@ -158,18 +158,18 @@ enum SolarEventPresentation {
     [
       .init(
         label: "Humidity", value: percent(current?.humidity), fraction: fraction(current?.humidity),
-        color: SystemStyle.accent),
+        color: SystemStyle.moduleAccent(.weather)),
       .init(
         label: "Cloud cover", value: percent(current?.cloudCover),
         fraction: fraction(current?.cloudCover), color: .systemGray),
       .init(
         label: "Wind",
         value: current?.windMetersPerSecond.map { String(format: "%.1f m/s", $0) } ?? "—",
-        fraction: nil, color: SystemStyle.secondaryAccent),
+        fraction: nil, color: SystemStyle.moduleAccent(.weather)),
       .init(
         label: "Pressure",
         value: current?.pressureHPa.map { String(format: "%.0f hPa", $0) } ?? "—", fraction: nil,
-        color: SystemStyle.accent),
+        color: SystemStyle.moduleAccent(.weather)),
     ]
   }
   private func fraction(_ value: Double?) -> Double? {
@@ -344,7 +344,7 @@ enum SolarEventPresentation {
       color: .secondaryLabelColor)
     symbol(
       current?.systemSymbol ?? "questionmark.circle", .init(x: 13, y: 34, width: 40, height: 40),
-      color: SystemStyle.secondaryAccent)
+      color: SystemStyle.moduleAccent(.weather))
     text(
       temperature(current?.celsius), .init(x: 61, y: 29, width: 150, height: 35), size: 29,
       weight: .medium)
@@ -360,7 +360,7 @@ enum SolarEventPresentation {
       text(
         metric.value, .init(x: x, y: 51, width: metricWidth - 8, height: 20),
         size: metricWidth < 90 ? 12 : 15,
-        weight: .medium, color: metric.color)
+        weight: .medium, color: .labelColor)
       if index < 2 {
         let track = NSRect(x: x, y: 83, width: metricWidth - 12, height: 5)
         capsule(track, .quaternaryLabelColor)
@@ -413,18 +413,18 @@ enum SolarEventPresentation {
           alignment: .center, wrapping: true)
         symbol(
           point.systemSymbol, .init(x: cell.midX - 7, y: cell.minY + 26, width: 14, height: 14),
-          color: SystemStyle.secondaryAccent)
+          color: SystemStyle.moduleAccent(.weather))
         let height = point.celsius.flatMap {
           $0.isFinite ? 5 + 17 * ($0 - low) / max(1, high - low) : nil
         }
         if let height {
           capsule(
             .init(x: cell.midX - 9, y: cell.minY + 65 - height, width: 7, height: height),
-            SystemStyle.secondaryAccent)
+            SystemStyle.moduleSecondary(.weather))
         }
         let rain = Precipitation(point)
         if let bar = precipitationBar(index, maximum: rainMaximum, scale: scale), bar.height > 0 {
-          capsule(bar, SystemStyle.accent)
+          capsule(bar, SystemStyle.moduleAccent(.weather))
         }
         text(
           temperature(point.celsius),
@@ -433,7 +433,7 @@ enum SolarEventPresentation {
         text(
           rain.label,
           .init(x: cell.minX, y: cell.minY + 84, width: cell.width, height: 13), size: 9,
-          color: (rain.plottedAmount ?? 0) > 0 ? SystemStyle.accent : .secondaryLabelColor,
+          color: .secondaryLabelColor,
           alignment: .center)
       }
     }
@@ -464,7 +464,7 @@ enum SolarEventPresentation {
         text(
           temperature(day.low), .init(x: row.minX + 57, y: row.minY + 2, width: 45, height: 18),
           size: 11,
-          color: SystemStyle.accent, alignment: .right)
+          color: .labelColor, alignment: .right)
         let track = NSRect(
           x: row.minX + 110, y: row.minY + 8, width: max(1, row.width - 163), height: 6)
         capsule(track, .quaternaryLabelColor)
@@ -473,12 +473,12 @@ enum SolarEventPresentation {
           let end = track.minX + track.width * (b - low) / max(1, high - low)
           capsule(
             .init(x: start, y: track.minY, width: max(3, end - start), height: 6),
-            SystemStyle.secondaryAccent)
+            SystemStyle.moduleSecondary(.weather))
         }
         text(
           temperature(day.high),
           .init(x: row.maxX - 45, y: row.minY + 2, width: 45, height: 18), size: 11,
-          color: SystemStyle.secondaryAccent, alignment: .right)
+          color: .labelColor, alignment: .right)
       }
       text(
         days.isEmpty
@@ -518,7 +518,7 @@ enum SolarEventPresentation {
       color: .secondaryLabelColor)
     symbol(
       current?.systemSymbol ?? "cloud", .init(x: width - 54, y: 38, width: 36, height: 36),
-      color: SystemStyle.accent)
+      color: SystemStyle.moduleAccent(.weather))
     text(
       temperature(current?.celsius), .init(x: 12, y: 37, width: width - 80, height: 38), size: 30,
       weight: .semibold)
@@ -552,7 +552,7 @@ enum SolarEventPresentation {
         size: 11)
       symbol(
         point.systemSymbol, .init(x: 74, y: row.minY + 6, width: 16, height: 16),
-        color: SystemStyle.accent)
+        color: SystemStyle.moduleAccent(.weather))
       text(
         temperature(point.celsius), .init(x: 100, y: row.minY + 6, width: 66, height: 18), size: 14,
         weight: .medium)
@@ -634,7 +634,7 @@ enum SolarEventPresentation {
         let x = 12 + CGFloat(index) * (rect.width - 24) / 2
         symbol(
           kind.rawValue, .init(x: x, y: rect.minY + 29, width: 16, height: 16),
-          color: SystemStyle.accent
+          color: SystemStyle.moduleAccent(.weather)
         )
         let times = day.events.filter { $0.kind == kind }.map {
           dateLabel(SolarEventPresentation.minute($0.date, in: timeZone), style: .clock)
@@ -660,7 +660,7 @@ enum SolarEventPresentation {
         .init(
           x: solarTrack.minX + solarTrack.width * left, y: solarTrack.minY,
           width: min(solarTrack.width * (1 - left), max(1, solarTrack.width * width)),
-          height: solarTrack.height), SystemStyle.accent)
+          height: solarTrack.height), SystemStyle.moduleAccent(.weather))
     }
     let now = solarNow.timeIntervalSince(day.interval.start) / day.interval.duration
     if (0..<1).contains(now) {
@@ -702,10 +702,10 @@ enum SolarEventPresentation {
     let path = NSBezierPath()
     path.move(to: center)
     path.line(to: end)
-    SystemStyle.accent.setStroke()
+    SystemStyle.moduleAccent(.weather).setStroke()
     path.lineWidth = 2
     path.stroke()
-    SystemStyle.accent.setFill()
+    SystemStyle.moduleAccent(.weather).setFill()
     NSBezierPath(ovalIn: .init(x: end.x - 2, y: end.y - 2, width: 4, height: 4)).fill()
   }
   private func panel(_ rect: NSRect) {

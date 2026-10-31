@@ -38,7 +38,8 @@ import Testing
   #expect(try tile("Memory").segments?.compactMap(\.fraction) == [0.35, 0.2, 0.1])
   #expect(
     try tile("Memory").segments?.map(\.color) == [
-      SystemStyle.accent, SystemStyle.secondaryAccent, SystemStyle.neutralSeries,
+      SystemStyle.moduleAccent(.memory), SystemStyle.moduleSecondary(.memory),
+      SystemStyle.neutralSeries,
     ])
   #expect(try tile("Memory").composition.contains("available including cache 350 B"))
   #expect(try tile("Startup").segments?.first?.fraction == 0.6)
@@ -99,7 +100,9 @@ import Testing
   #expect(plot.domain == Date(timeIntervalSince1970: 598)...Date(timeIntervalSince1970: 898))
   #expect(plot.times.count == 151 && plot.first.count == 151 && plot.second.count == 151)
   #expect(plot.first[101] == nil && plot.second[102] == 0)
-  #expect(plot.firstColor == SystemStyle.accent && plot.secondColor == SystemStyle.secondaryAccent)
+  #expect(
+    plot.firstColor == SystemStyle.moduleAccent(.network)
+      && plot.secondColor == SystemStyle.moduleSecondary(.network))
   #expect(plot.drawsTrace && !plot.mirrored)
   let segments = SummaryDashboardView.historySegments(plot)
   #expect(segments.count == 2)
