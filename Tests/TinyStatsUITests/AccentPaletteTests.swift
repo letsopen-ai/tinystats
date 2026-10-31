@@ -202,25 +202,42 @@ func modulePrimariesRetainDistinctIdentities(_ dark: Bool) {
   }
 }
 
+@Test @MainActor func lightCompanionsAvoidReviewedPrimaryCollisions() throws {
+  for (module, other) in [(Module.cpu, Module.gpu), (.gpu, .sensors)] {
+    let palette = try #require(SystemStyle.modulePalettes[module])
+    let otherPalette = try #require(SystemStyle.modulePalettes[other])
+    let companion = AccentPalette.RGB(hex: palette.lightSecondary)
+    let otherPrimary = AccentPalette.RGB(hex: otherPalette.light)
+    #expect(companion.lab.distance(to: otherPrimary.lab) >= 0.075)
+  }
+}
+
 @Test @MainActor func documentedModulePaletteStaysInSync() throws {
   let document = try String(
     contentsOf: URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
       .appendingPathComponent("docs/DESIGN.md"), encoding: .utf8)
-  let modules: [(Module, String)] = [
-    (.cpu, "CPU"), (.memory, "Memory"), (.network, "Network"), (.disks, "Disk"),
-    (.sensors, "Sensors / thermal"), (.battery, "Battery / Power"), (.gpu, "GPU"),
-    (.clock, "Time"), (.weather, "Weather"),
+  let modules: [(Module, String, String)] = [
+    (.cpu, "CPU", "#EF2F8E | #FF84CE | #0A88D1 | #85F8E9"),
+    (.memory, "Memory", "#A65CF4 | #B8A0FF | #C55F00 | #FFF29A"),
+    (.network, "Network", "#00946F | #4CF5B0 | #9B66E8 | #A891FF"),
+    (.disks, "Disk", "#B87000 | #FFE93D | #9450DF | #B0A0FF"),
+    (.sensors, "Sensors / thermal", "#DD5545 | #FFC266 | #6455F4 | #A58CFF"),
+    (.battery, "Battery / Power", "#549200 | #BDFA35 | #A960E4 | #AD99FF"),
+    (.gpu, "GPU", "#0079FF | #65CCFF | #BC5700 | #FFF29A"),
+    (.clock, "Time", "#CF40DF | #F5A1FF | #C55F00 | #FFF59A"),
+    (.weather, "Weather", "#008CBA | #50EFFF | #8340F5 | #A891FF"),
   ]
   let rows = document.split(separator: "\n").filter { line in
     modules.contains { line.hasPrefix("| \($0.1) | #") }
   }
   #expect(rows.count == modules.count)
   #expect(SystemStyle.modulePalettes.count == modules.count)
-  for (module, name) in modules {
+  for (module, name, expectedHexes) in modules {
     let palette = try #require(SystemStyle.modulePalettes[module])
     let hexes = [palette.light, palette.dark, palette.lightSecondary, palette.darkSecondary]
       .map { AccentPalette.RGB(hex: $0).hex }.joined(separator: " | ")
-    #expect(document.contains("| \(name) | \(hexes) |"))
+    #expect(hexes == expectedHexes)
+    #expect(document.contains("| \(name) | \(expectedHexes) |"))
   }
 }
