@@ -51,15 +51,15 @@ enum SystemStyle {
     }
   }
   static let modulePalettes: [Module: ModulePalette] = [
-    .cpu: .init("CPU", 0xE4147E, 0xFF84CE, 0x007DBF, 0x9FFFF4),
-    .memory: .init("Memory", 0x9F48F5, 0xD499FF, 0xC25200, 0xFFF29A),
-    .network: .init("Network", 0x008772, 0x38F5D5, 0x8855EE, 0xA891FF),
-    .disks: .init("Disk", 0xC25200, 0xFFE93D, 0xA33FFF, 0xB0A0FF),
-    .sensors: .init("Sensors", 0xCF4C24, 0xFFC266, 0x6455F4, 0xA58CFF),
-    .battery: .init("Power", 0x618200, 0xBDFA35, 0xA33FFF, 0xAD99FF),
-    .gpu: .init("GPU", 0x0063EE, 0x65CCFF, 0xC25200, 0xFFF29A),
-    .clock: .init("Time", 0xBF00FF, 0xF5A1FF, 0xC65300, 0xFFF59A),
-    .weather: .init("Weather", 0x0080AD, 0x50EFFF, 0xB41FFF, 0xA891FF),
+    .cpu: .init("CPU", 0xEF2F8E, 0xFF84CE, 0x0078EE, 0x85F8E9),
+    .memory: .init("Memory", 0xA65CF4, 0xB8A0FF, 0xC55F00, 0xFFF29A),
+    .network: .init("Network", 0x00946F, 0x4CF5B0, 0x9B66E8, 0xA891FF),
+    .disks: .init("Disk", 0xA97A00, 0xFFE93D, 0x9450DF, 0xB0A0FF),
+    .sensors: .init("Sensors", 0xDD5545, 0xFFC266, 0x6455F4, 0xA58CFF),
+    .battery: .init("Power", 0x549200, 0xBDFA35, 0xA960E4, 0xAD99FF),
+    .gpu: .init("GPU", 0x0079FF, 0x65CCFF, 0xEA4922, 0xFFF29A),
+    .clock: .init("Time", 0xCF40DF, 0xF5A1FF, 0xC55F00, 0xFFF59A),
+    .weather: .init("Weather", 0x008CBA, 0x50EFFF, 0x8340F5, 0xA891FF),
   ]
   static func moduleAccent(_ module: Module) -> NSColor {
     modulePalettes[module]?.primary ?? .labelColor
