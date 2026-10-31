@@ -153,10 +153,10 @@ func moduleIdentityPairsResolveAppearancesAndRetainContrast(_ module: Module) th
         #expect(actual.alphaComponent == 1)
       }
     }
-    // Light inks are bounded above by 3:1 contrast on #D5D5D5. Requiring ΔL 0.13
+    // Light inks retain 3:1 on white/#ECECEE and 2.6:1 on conservative #D5D5D5. ΔL 0.13
     // forced amber/indigo companions back to brown/navy. Retain a nonzero lightness
     // cue plus the unchanged full protan/deutan ΔE guard and solid/dashed markers.
-    // Dark palettes retain the original ΔL guard. See Dopamine fix round 1 notes.
+    // Dark palettes retain the original ΔL guard. See the dopamine experiment in DESIGN.md.
     #expect(abs(primary.lab.lightness - secondary.lab.lightness) >= (dark ? 0.13 : 0.025))
     appearance.performAsCurrentDrawingAppearance {
       for glass in [false, true] {
@@ -175,14 +175,34 @@ func moduleIdentityPairsResolveAppearancesAndRetainContrast(_ module: Module) th
     for color in [primary, secondary] {
       // Solid fallback/window and conservative neutral bounds; composited glass is measured
       // separately from the owned-window captures, since its colour depends on the backdrop.
-      for background: UInt32 in dark ? [0x1F1F21, 0x343436] : [0xFFFFFF, 0xECECEE, 0xD5D5D5] {
+      for background: UInt32 in dark ? [0x1F1F21, 0x343436] : [0xFFFFFF, 0xECECEE] {
         #expect(color.contrast(against: .init(hex: background)) >= 3)
+      }
+      if !dark {
+        // Owner-approved candy experiment: labels/glyphs accompany the marks, and
+        // #D5D5D5 is a conservative glass floor versus measured compositor backings.
+        #expect(color.contrast(against: .init(hex: 0xD5D5D5)) >= 2.6)
       }
     }
   }
 }
 
-@Test @MainActor func documentedModuleCandyPaletteStaysInSync() throws {
+@Test(arguments: [false, true]) @MainActor
+func modulePrimariesRetainDistinctIdentities(_ dark: Bool) {
+  let modules = Module.allCases.filter { SystemStyle.modulePalettes[$0] != nil }
+  for (index, module) in modules.enumerated() {
+    let palette = SystemStyle.modulePalettes[module]!
+    let primary = AccentPalette.RGB(hex: dark ? palette.dark : palette.light)
+    for other in modules.dropFirst(index + 1) {
+      let otherPalette = SystemStyle.modulePalettes[other]!
+      let otherPrimary = AccentPalette.RGB(hex: dark ? otherPalette.dark : otherPalette.light)
+      // Protect Disk/Sensors, Memory/Time and Network/Weather against hue collisions.
+      #expect(primary.lab.distance(to: otherPrimary.lab) >= 0.075)
+    }
+  }
+}
+
+@Test @MainActor func documentedModulePaletteStaysInSync() throws {
   let document = try String(
     contentsOf: URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -192,6 +212,11 @@ func moduleIdentityPairsResolveAppearancesAndRetainContrast(_ module: Module) th
     (.sensors, "Sensors / thermal"), (.battery, "Battery / Power"), (.gpu, "GPU"),
     (.clock, "Time"), (.weather, "Weather"),
   ]
+  let rows = document.split(separator: "\n").filter { line in
+    modules.contains { line.hasPrefix("| \($0.1) | #") }
+  }
+  #expect(rows.count == modules.count)
+  #expect(SystemStyle.modulePalettes.count == modules.count)
   for (module, name) in modules {
     let palette = try #require(SystemStyle.modulePalettes[module])
     let hexes = [palette.light, palette.dark, palette.lightSecondary, palette.darkSecondary]
