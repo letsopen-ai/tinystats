@@ -250,23 +250,23 @@ CPU/Memory grouping changes request a sample, immediately after at least one sec
 
 ## Dopamine accents experiment
 
-The owner-requested experiment applies module identity colour to existing graphics, makes status-item graphics monochrome and uses neutral sidebar selection. `SystemStyle.modulePalettes` is the sole approved exception to semantic/system-only colours: nine named, dynamic `NSColor(name:)` primary/companion pairs resolve Aqua and Dark Aqua, including their accessibility appearances. Opaque primary traces, glyphs and composition segments target ≥3:1 on the reviewed card/glass backings; translucent chart fills and tracks support the opaque marks. Light colours are deeper for contrast, dark colours brighter. No surface tint, wash, glass policy, element, preference, dependency, collection demand, timer or polling is added.
+The owner-requested experiment applies module identity colour to existing graphics, makes status-item graphics monochrome and uses neutral sidebar selection. `SystemStyle.modulePalettes` is the sole approved exception to semantic/system-only colours: nine named, dynamic `NSColor(name:)` primary/companion pairs resolve Aqua and Dark Aqua, including their accessibility appearances. Opaque primary traces, glyphs and composition segments target ≥3:1 on the reviewed card/glass backings; translucent chart fills and tracks support the opaque marks. The candy-brightening pass raises every module primary’s OKLab lightness in both appearances, with vivid bubblegum, lilac, aqua, lemon/amber, peach/coral, lime, sky blue and orchid hues. Light inks stay contrast-bounded rather than becoming washed pastels; dark inks use brighter candy colours. No surface tint, wash, glass policy, element, preference, dependency, collection demand, timer or polling is added.
 
 | Module | Light primary | Dark primary | Light companion | Dark companion |
 | --- | --- | --- | --- | --- |
-| CPU | #C92363 | #FF81AD | #0072A6 | #9BEAF5 |
-| Memory | #7538E8 | #B99AFF | #B45309 | #FFE49A |
-| Network | #008478 | #45DFDA | #6E46D6 | #9B8BE0 |
-| Disk | #A16207 | #FFD45A | #3F51D6 | #92A5FF |
-| Sensors / thermal | #B84408 | #FFAF6A | #3F51D6 | #9B8BE0 |
-| Battery / Power | #4D7C0F | #B2E84A | #3F51D6 | #9B8BE0 |
-| GPU | #245CDA | #82B2FF | #B45309 | #FFE49A |
-| Time | #A33ABC | #EA99F5 | #BC5B0C | #FFE69F |
-| Weather | #006DA6 | #6BD2FF | #7044F6 | #9B8BE0 |
+| CPU | #E4147E | #FF84CE | #007DBF | #9FFFF4 |
+| Memory | #9F48F5 | #D499FF | #C25200 | #FFF29A |
+| Network | #008772 | #38F5D5 | #8855EE | #A891FF |
+| Disk | #C25200 | #FFE93D | #A33FFF | #B0A0FF |
+| Sensors / thermal | #CF4C24 | #FFC266 | #6455F4 | #A58CFF |
+| Battery / Power | #618200 | #BDFA35 | #A33FFF | #AD99FF |
+| GPU | #0063EE | #65CCFF | #C25200 | #FFF29A |
+| Time | #BF00FF | #F5A1FF | #C65300 | #FFF59A |
+| Weather | #0080AD | #50EFFF | #B41FFF | #A891FF |
 
 Sidebar and Overview/card glyphs, primary traces/fills, meters, memory composition and footer icon hover/paused-play tints use module identity; Overview itself is neutral and its cards retain their own identities. CPU user/performance is primary and system/efficiency companion; Network download is primary/solid and upload companion/dashed; summary and recorded-history charts list Upload first and Download second, so their first/second colour and role assignment is deliberately reversed; Disk read is primary and write companion. Existing series order, solid/dashed traces, filled/hollow markers, names and accessibility survive. Pairs have ≥0.025 OKLab lightness separation in light appearance (≥0.13 in dark) and ≥0.12 distance after full protan/deutan simulation; hue alone never carries series meaning. Unknown core kinds and unavailable readings remain neutral/unavailable.
 
-The light-only lightness guard allows vivid amber/indigo within the ≥3:1 contrast bound; retaining 0.13 forced the companions back toward brown/navy. The protan/deutan distance guard and non-colour series cues are unchanged. CPU uses a bluer cyan and Weather a more chromatic violet to retain that distance. Weather keeps its original sky-blue primaries because the proposed alternative moves closer to GPU, especially in dark appearance. Measured module primary and companion colours bypass the old generic light-glass brightness cap; the cap remains for unmeasured system/custom colours. CPU single-value row fills use 18% opacity on light glass (13% elsewhere). See local notes for exact measurements.
+The light-only lightness guard allows vivid amber/indigo within the ≥3:1 contrast bound; retaining 0.13 forced the companions back toward brown/navy. The protan/deutan distance guard and non-colour series cues are unchanged. The candy pass retains these thresholds without relaxation. CPU keeps a blue-cyan companion; Weather shifts toward sky cyan with a vivid violet companion, distinct from GPU’s blue and Network’s green aqua. Warm companions use saturated amber-orange in light appearance and butter yellow in dark; cool companions stay in the indigo/lilac family rather than navy. Measured module primary and companion colours bypass the old generic light-glass brightness cap; the cap remains for unmeasured system/custom colours. CPU single-value row fills use 18% opacity on light glass (13% elsewhere). See local notes for exact measurements.
 
 Text stays semantic label/secondary label; actual thermal/pressure states retain semantic state colours. The paused footer Play keeps the requested module tint as an action affordance; its Play/Pause symbol and accessibility/help text identify the state. Sidebar selection uses a neutral 10% label fill so selected module glyphs keep their identity; labels remain neutral. Settings drag-chip and Readouts row glyphs use module colour against their semantic wells, with neutral text. Real status-item text **and graphics** stay monochrome in the status item's effective appearance for arbitrary wallpaper; efficiency cores use 50% opacity, performance cores full opacity, unknown cores 65%, and a 2pt extra gap separates core-kind runs only when the complete topology is verified; no wallpaper sampling or real menu-bar scripting is used. Native segmented controls, switches, search/selection, focus rings, calendar Today and the customization insertion marker still follow the system accent. Custom preset selection outlines and non-icon action hover fills retain the shared system-derived accent. The unused per-module companions remain defined for consistency, without inventing new series.
 

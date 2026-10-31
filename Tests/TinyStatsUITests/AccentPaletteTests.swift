@@ -181,3 +181,21 @@ func moduleIdentityPairsResolveAppearancesAndRetainContrast(_ module: Module) th
     }
   }
 }
+
+@Test @MainActor func documentedModuleCandyPaletteStaysInSync() throws {
+  let document = try String(
+    contentsOf: URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("docs/DESIGN.md"), encoding: .utf8)
+  let modules: [(Module, String)] = [
+    (.cpu, "CPU"), (.memory, "Memory"), (.network, "Network"), (.disks, "Disk"),
+    (.sensors, "Sensors / thermal"), (.battery, "Battery / Power"), (.gpu, "GPU"),
+    (.clock, "Time"), (.weather, "Weather"),
+  ]
+  for (module, name) in modules {
+    let palette = try #require(SystemStyle.modulePalettes[module])
+    let hexes = [palette.light, palette.dark, palette.lightSecondary, palette.darkSecondary]
+      .map { AccentPalette.RGB(hex: $0).hex }.joined(separator: " | ")
+    #expect(document.contains("| \(name) | \(hexes) |"))
+  }
+}
