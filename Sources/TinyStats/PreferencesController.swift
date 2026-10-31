@@ -114,7 +114,11 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private var history: [HistoryPoint] = []
   private var sizeMenus: [Module: NSPopUpButton] = [:]
   private lazy var previewScroll = NSScrollView()
-  private var styleMenus: [Module: NSPopUpButton] = [:]
+  private var styleMenus: [Module: MenuBarStylePicker] = [:]
+  private let moduleSelector = NSPopUpButton()
+  private var moduleEditors: [Module: NSView] = [:]
+  private(set) var selectedStyleModule: Module = .cpu
+  static let menuBarToolsHeightBudget: CGFloat = 36
   private lazy var presetSelector: SystemPresetChoices = {
     let examples = MenuBarPreset.allCases.map { preset in
       var example = settings
@@ -349,20 +353,19 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     styleOptions.orientation = .vertical
     styleOptions.alignment = .leading
     styleOptions.spacing = 10
-    var rows: [SystemFormRow] = []
+    moduleSelector.addItems(withTitles: Module.allCases.filter { $0 != .overview }.map(\.title))
+    moduleSelector.setAccessibilityLabel("Readout to customize")
+    moduleSelector.target = self
+    moduleSelector.action = #selector(styleModuleChanged)
+    styleOptions.addArrangedSubview(form.group([form.row("Readout", moduleSelector, width: 200)]))
     for module in Module.allCases where module != .overview {
       let toggle = SystemSettingSwitch(
         title: module.title, target: self, action: #selector(changed))
       toggle.state = settings.readouts.contains(module) ? .on : .off
       readouts[module] = toggle
-      let popup = NSPopUpButton()
-      popup.font = .systemFont(ofSize: 12)
-      popup.addItems(
-        withTitles: MenuBarStyle.available(for: module, sensorKey: settings.sensorKey).map(\.title))
-      popup.selectItem(withTitle: settings.style(for: module).title)
+      let popup = MenuBarStylePicker(module: module, settings: settings)
       popup.target = self
       popup.action = #selector(changed)
-      popup.setAccessibilityLabel("\(module.title) menu bar style")
       styleMenus[module] = popup
       let size = NSPopUpButton()
       size.font = .systemFont(ofSize: 11)
@@ -380,21 +383,22 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       let name = NSTextField(labelWithString: module.title)
       name.font = .systemFont(ofSize: 13)
       let identity = form.controls([icon, name])
-      let controls = form.controls([popup, size, toggle], widths: [200, 96, 38])
-      let row = form.controls([identity, controls])
-      identity.setContentHuggingPriority(.defaultLow, for: .horizontal)
-      rows.append(form.row("", row, height: 38))
+      let controls = form.controls([identity, size, toggle], widths: [200, 96, 38])
+      let editor = NSStackView(views: [
+        form.group([form.row("", controls, height: 38)]), popup,
+      ])
+      editor.orientation = .vertical
+      editor.alignment = .leading
+      editor.spacing = 8
+      for child in editor.arrangedSubviews {
+        child.translatesAutoresizingMaskIntoConstraints = false
+        child.widthAnchor.constraint(equalTo: editor.widthAnchor).isActive = true
+      }
+      editor.isHidden = module != selectedStyleModule
+      moduleEditors[module] = editor
+      styleOptions.addArrangedSubview(editor)
     }
-    let headings = form.controls([
-      form.text("Readouts", heading: true), form.text("Style"), form.text("Font"),
-      form.text("Show"),
-    ])
-    // Match the trailing control columns while the leading identity column absorbs resizing.
-    headings.arrangedSubviews[1].widthAnchor.constraint(equalToConstant: 200).isActive = true
-    headings.arrangedSubviews[2].widthAnchor.constraint(equalToConstant: 96).isActive = true
-    headings.arrangedSubviews[3].widthAnchor.constraint(equalToConstant: 38).isActive = true
-    styleOptions.addArrangedSubview(headings)
-    styleOptions.addArrangedSubview(form.group(rows))
+    styleOptions.detachesHiddenViews = true
     sensor.target = self
     sensor.action = #selector(sensorChanged)
     sensor.setAccessibilityLabel("Menu bar sensor")
@@ -404,10 +408,11 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     battery.setAccessibilityLabel("Battery menu bar formats")
     let clock = NSButton(title: "Clock formats…", target: self, action: #selector(showClockFormats))
     clock.setAccessibilityLabel("Clock menu bar formats")
-    styleOptions.addArrangedSubview(
-      form.group([
-        form.row("Battery", battery), form.row("Time", clock),
-      ]))
+    let formatTools = form.group([
+      form.row("Formats", form.controls([battery, clock]), height: Self.menuBarToolsHeightBudget)
+    ])
+    formatTools.identifier = NSUserInterfaceItemIdentifier("menu-bar-format-tools")
+    styleOptions.addArrangedSubview(formatTools)
     for child in styleOptions.arrangedSubviews {
       child.translatesAutoresizingMaskIntoConstraints = false
       child.widthAnchor.constraint(equalTo: styleOptions.widthAnchor).isActive = true
@@ -421,6 +426,23 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
         presetStatus, customization, styleDisclosure, styleOptions, menuMessage,
       ])
     updatePresetSelection()
+  }
+
+  func selectStyleModule(_ module: Module) {
+    guard module != .overview else { return }
+    selectedStyleModule = module
+    moduleSelector.selectItem(withTitle: module.title)
+    for (candidate, editor) in moduleEditors { editor.isHidden = candidate != module }
+    styleOptions.needsLayout = true
+  }
+  func revealStyleEditor() {
+    menuBarPage.layoutSubtreeIfNeeded()
+    styleOptions.scrollToVisible(styleOptions.bounds)
+  }
+  @objc private func styleModuleChanged() {
+    let modules = Module.allCases.filter { $0 != .overview }
+    guard modules.indices.contains(moduleSelector.indexOfSelectedItem) else { return }
+    selectStyleModule(modules[moduleSelector.indexOfSelectedItem])
   }
 
   @objc private func toggleStyleOptions() {
@@ -648,6 +670,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     updatePreview()
   }
   private func updatePreview() {
+    for picker in styleMenus.values { picker.update(settings: settings) }
     // Selected NSTabView item remains Menu Bar when the entire embedded host is hidden.
     // Clock/context updates must not rebuild an invisible preview after returning to monitoring.
     if let host = hostedRoot,
@@ -718,13 +741,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     settings.sensorKey = sensorKeys[sensor.indexOfSelectedItem]
     let effective = settings.style(for: .sensors)
     settings.styles[Module.sensors.rawValue] = effective
-    if let popup = styleMenus[.sensors] {
-      popup.removeAllItems()
-      popup.addItems(
-        withTitles: MenuBarStyle.available(for: .sensors, sensorKey: settings.sensorKey).map(
-          \.title))
-      popup.selectItem(withTitle: effective.title)
-    }
+    styleMenus[.sensors]?.update(settings: settings)
     settings.validate()
     updatePresetSelection()
     updatePreview()
