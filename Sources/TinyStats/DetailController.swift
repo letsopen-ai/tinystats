@@ -546,7 +546,6 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     controls.addSubview(locations)
     for button in [enable, allow, locations] {
       button.toolTip = button.title
-      button.setAccessibilityLabel(button.title)
     }
     let privacy = NSTextField(
       wrappingLabelWithString:
@@ -572,7 +571,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     {
       choices.append(manual)
     }
-    picker.toolTip = "Weather city\n" + weatherCitiesStatus
+    picker.toolTip =
+      "Weather city" + (weatherCitiesStatus.isEmpty ? "" : "\n" + weatherCitiesStatus)
     guard choices != weatherChoices || weatherChoiceConfiguration != settings.weather else {
       return
     }

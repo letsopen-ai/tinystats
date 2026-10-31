@@ -468,10 +468,17 @@ enum SystemStyle {
       if usesBrandIcon, let image {
         // Crop to the mark's content plus a small paper inset: the old full-paper crop
         // left only 7.5pt of letter ink beside 12.5–14pt symbol ink at 2x. A 15pt tile
-        // with this tighter crop gives the mark comparable optical weight. Half-point
-        // edges land on pixels at 2x; the 28pt target and hover/focus geometry stay intact.
+        // with this tighter crop gives the mark comparable optical weight. Snap only
+        // the origin to device pixels: retain 15pt at 1x/2x and the existing 2x result.
+        // The 28pt target and hover/focus geometry stay intact.
         // NSButton is flipped: explicitly preserve the source image’s upright orientation.
-        let tile = NSRect(x: bounds.midX - 7.5, y: bounds.midY - 7.5, width: 15, height: 15)
+        var tile = NSRect(x: bounds.midX - 7.5, y: bounds.midY - 7.5, width: 15, height: 15)
+        if let context = NSGraphicsContext.current?.cgContext {
+          var pixels = context.convertToDeviceSpace(tile)
+          pixels.origin.x = pixels.origin.x.rounded()
+          pixels.origin.y = pixels.origin.y.rounded()
+          tile = context.convertToUserSpace(pixels)
+        }
         let dark = SystemStyle.isDark(effectiveAppearance)
         let paper = NSBezierPath(roundedRect: tile, xRadius: 3, yRadius: 3)
         NSGraphicsContext.saveGraphicsState()
@@ -480,11 +487,19 @@ enum SystemStyle {
           NSColor.black.setFill()
           paper.fill()
         }
+        // A standalone 32px icon uses the dedicated pixel-snapped master: its foot
+        // and dot end at 25/32, below the large master's baseline. Retain paper around
+        // that geometry when AppKit supplies only the small representation.
+        let smallMaster = image.representations.map(\.pixelsWide).max() == 32
+        let crop =
+          smallMaster
+          ? NSRect(x: 0.15, y: 0.15, width: 0.70, height: 0.70)
+          : NSRect(x: 0.22, y: 0.26, width: 0.56, height: 0.56)
         image.draw(
           in: tile,
           from: .init(
-            x: image.size.width * 0.22, y: image.size.height * 0.26,
-            width: image.size.width * 0.56, height: image.size.height * 0.56),
+            x: image.size.width * crop.minX, y: image.size.height * crop.minY,
+            width: image.size.width * crop.width, height: image.size.height * crop.height),
           operation: .sourceOver, fraction: dark ? 0.9 : 1, respectFlipped: true, hints: nil)
         NSGraphicsContext.restoreGraphicsState()
         NSColor.separatorColor.setStroke()
