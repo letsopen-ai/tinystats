@@ -94,16 +94,16 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   static let menuBarCPUBottomChromeBudget: CGFloat = 20
   static let menuBarCPUOptionsHeightBudget: CGFloat = 230
   static let menuBarLayoutRowHeightBudget: CGFloat = 36
-  private let layoutSelector = NSSegmentedControl(
-    images: ["rectangle.split.3x1", "rectangle"].map {
-      NSImage(systemSymbolName: $0, accessibilityDescription: nil) ?? NSImage()
-    }, trackingMode: .selectOne, target: nil, action: nil)
+  private let layoutSelector = MenuBarLayoutIcons.control()
   private let spacingSelector = NSSegmentedControl(
     images: [
       "arrow.right.and.line.vertical.and.arrow.left", "arrow.left.and.right",
       "arrow.left.and.line.vertical.and.arrow.right",
-    ].map {
-      NSImage(systemSymbolName: $0, accessibilityDescription: nil) ?? NSImage()
+    ].enumerated().map { index, symbol in
+      let title = MenuBarSpacing.allCases[index].title
+      let image = NSImage(systemSymbolName: symbol, accessibilityDescription: title) ?? NSImage()
+      image.accessibilityDescription = title
+      return image
     }, trackingMode: .selectOne, target: nil, action: nil)
   private let styleOptions = NSStackView()
   private lazy var styleDisclosure = NSButton(

@@ -584,6 +584,12 @@ import Testing
   controller.view.layoutSubtreeIfNeeded()
   let button = try #require(
     controller.view.subviews.compactMap { $0 as? MenuActionRow }.first { $0.title == "History…" })
+  let brand = try #require(
+    controller.view.subviews.compactMap { $0 as? MenuActionRow }.first { $0.usesBrandIcon })
+  let brandImage = try #require(brand.image)
+  brand.setBrandIcon()
+  #expect(brand.image === brandImage)
+  #expect(brand.frame.minX < button.frame.minX)
   let event = try #require(
     NSEvent.enterExitEvent(
       with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0,
@@ -592,8 +598,15 @@ import Testing
     controller.view.appearance = NSAppearance(named: name)
     func render(_ state: String) throws -> Data {
       let rect = NSRect(x: 0, y: 0, width: 344, height: 54)
-      let bitmap = try #require(controller.view.bitmapImageRepForCachingDisplay(in: rect))
-      controller.view.cacheDisplay(in: rect, to: bitmap)
+      let bitmap = try #require(
+        NSBitmapImageRep(
+          bitmapDataPlanes: nil, pixelsWide: 688, pixelsHigh: 108,
+          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+          colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+      bitmap.size = rect.size
+      controller.view.effectiveAppearance.performAsCurrentDrawingAppearance {
+        controller.view.cacheDisplay(in: rect, to: bitmap)
+      }
       let png = try #require(bitmap.representation(using: .png, properties: [:]))
       if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
         let url = URL(fileURLWithPath: path, isDirectory: true)
@@ -610,6 +623,10 @@ import Testing
     #expect(normal != hover && hover != pressed)
     button.highlight(false)
     button.mouseExited(with: event)
+    #expect(try render("normal") == normal)
+    brand.mouseEntered(with: event)
+    #expect(try render("logo-hover") != normal)
+    brand.mouseExited(with: event)
     #expect(try render("normal") == normal)
     #expect(button.accessibilityLabel() == "History…")
     button.isEnabled = false
@@ -1593,62 +1610,70 @@ import Testing
   for theme in [AppTheme.light, .dark] {
     for policy in ["glass", "legacy", "solid", "contrast"] {
       for module in [Module.cpu, .memory, .battery, .clock, .sensors] {
-        var settings = Settings()
-        settings.theme = theme
-        let detail = DetailController(snapshot: Snapshot(), history: [])
-        detail.glassEnvironment = {
-          .init(
-            supportsGlass: policy != "legacy", reduceTransparency: policy == "solid",
-            increaseContrast: policy == "contrast")
-        }
-        detail.isPopoverPresentation = false
-        detail.view.frame = .init(origin: .zero, size: MainWindow.minimumSize)
-        let editor = PreferencesController(
-          settings: settings, interfaces: [], snapshot: Snapshot(), history: [],
-          initialPage: .menuBar)
-        defer {
-          editor.disposeEmbedded()
-          editor.close()
-        }
-        editor.selectStyleModule(module)
-        detail.showSettingsView(try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
-        detail.view.appearance = theme.nativeAppearance
-        detail.view.layoutSubtreeIfNeeded()
-        systemRevealStyleEditor(editor, in: detail.view)
-        detail.view.layoutSubtreeIfNeeded()
-        let picker = try #require(
-          systemDescendants(detail.view).compactMap { $0 as? MenuBarStylePicker }.first {
-            $0.module == module
-          })
-        for tile in picker.tiles { tile.increaseContrast = { policy == "contrast" } }
-        let options = try #require(picker.superview?.superview)
-        let document = try #require(options.enclosingScrollView?.documentView)
-        let bottomChrome =
-          document.bounds.height - picker.convert(picker.bounds, to: document).maxY
-        #expect(bottomChrome <= PreferencesController.menuBarCPUBottomChromeBudget + 0.5)
-        if module == .cpu {
-          #expect(options.bounds.height <= PreferencesController.menuBarCPUOptionsHeightBudget)
-        }
-        let metrics =
-          "\(module.title) \(policy) \(theme.rawValue): pane=\(picker.bounds.width)pt, options=\(options.bounds.height)pt, grid=\(picker.bounds.height)pt, tiles-to-document-end=\(bottomChrome)pt\n"
-        let file = folder.appendingPathComponent(
-          "menu-bar-layout-\(module.rawValue)-\(policy)-\(theme.rawValue).txt")
-        try metrics.write(to: file, atomically: true, encoding: .utf8)
-        #expect(picker.visibleRect.height >= picker.bounds.height - 1)
-        let header = try #require((picker.superview as? NSStackView)?.arrangedSubviews.first)
-        #expect(header.visibleRect.height >= header.bounds.height - 1)
-        if module == .battery {
-          let tools = try #require(
-            systemDescendants(detail.view).first {
-              $0.identifier?.rawValue == "menu-bar-battery-tools"
+        for combined in module == .cpu ? [false, true] : [false] {
+          var settings = Settings()
+          settings.theme = theme
+          settings.separateItems = !combined
+          settings.menuBarSpacing = combined ? .relaxed : .standard
+          let variant = combined ? "-one-relaxed" : ""
+          let detail = DetailController(snapshot: Snapshot(), history: [])
+          detail.glassEnvironment = {
+            .init(
+              supportsGlass: policy != "legacy", reduceTransparency: policy == "solid",
+              increaseContrast: policy == "contrast")
+          }
+          detail.isPopoverPresentation = false
+          detail.view.frame = .init(origin: .zero, size: MainWindow.minimumSize)
+          let editor = PreferencesController(
+            settings: settings, interfaces: [], snapshot: Snapshot(), history: [],
+            initialPage: .menuBar)
+          defer {
+            editor.disposeEmbedded()
+            editor.close()
+          }
+          editor.selectStyleModule(module)
+          detail.showSettingsView(try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
+          detail.view.appearance = theme.nativeAppearance
+          detail.view.layoutSubtreeIfNeeded()
+          systemRevealStyleEditor(editor, in: detail.view)
+          detail.view.layoutSubtreeIfNeeded()
+          let preview = try #require(
+            systemDescendants(detail.view).compactMap { $0 as? MenuBarPreviewView }.first)
+          #expect(preview.renderers.count == (combined ? 1 : settings.readouts.count))
+          let picker = try #require(
+            systemDescendants(detail.view).compactMap { $0 as? MenuBarStylePicker }.first {
+              $0.module == module
             })
-          #expect(tools.visibleRect.height >= tools.bounds.height - 1)
-          #expect(tools.bounds.height <= PreferencesController.menuBarToolsHeightBudget)
+          for tile in picker.tiles { tile.increaseContrast = { policy == "contrast" } }
+          let options = try #require(picker.superview?.superview)
+          let document = try #require(options.enclosingScrollView?.documentView)
+          let bottomChrome =
+            document.bounds.height - picker.convert(picker.bounds, to: document).maxY
+          #expect(bottomChrome <= PreferencesController.menuBarCPUBottomChromeBudget + 0.5)
+          if module == .cpu {
+            #expect(options.bounds.height <= PreferencesController.menuBarCPUOptionsHeightBudget)
+          }
+          let metrics =
+            "\(module.title) \(policy) \(theme.rawValue): pane=\(picker.bounds.width)pt, options=\(options.bounds.height)pt, grid=\(picker.bounds.height)pt, tiles-to-document-end=\(bottomChrome)pt\n"
+          let file = folder.appendingPathComponent(
+            "menu-bar-layout-\(module.rawValue)\(variant)-\(policy)-\(theme.rawValue).txt")
+          try metrics.write(to: file, atomically: true, encoding: .utf8)
+          #expect(picker.visibleRect.height >= picker.bounds.height - 1)
+          let header = try #require((picker.superview as? NSStackView)?.arrangedSubviews.first)
+          #expect(header.visibleRect.height >= header.bounds.height - 1)
+          if module == .battery {
+            let tools = try #require(
+              systemDescendants(detail.view).first {
+                $0.identifier?.rawValue == "menu-bar-battery-tools"
+              })
+            #expect(tools.visibleRect.height >= tools.bounds.height - 1)
+            #expect(tools.bounds.height <= PreferencesController.menuBarToolsHeightBudget)
+          }
+          try systemGalleryImage(
+            detail.view,
+            to: folder.appendingPathComponent(
+              "settings-menu-bar-\(module.rawValue)\(variant)-\(policy)-\(theme.rawValue).png"))
         }
-        try systemGalleryImage(
-          detail.view,
-          to: folder.appendingPathComponent(
-            "settings-menu-bar-\(module.rawValue)-\(policy)-\(theme.rawValue).png"))
       }
     }
   }

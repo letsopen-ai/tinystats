@@ -152,3 +152,68 @@ import Testing
   #expect(renderer.module(at: renderer.preferredWidth - 1) == .memory)
   #expect(renderer.itemSpacing == 7 && renderer.sidePadding == 3)
 }
+
+@Test @MainActor func menuBarIconSegmentsExposeEveryChoiceName() throws {
+  _ = NSApplication.shared
+  let controller = PreferencesController(
+    settings: Settings(), interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
+  defer { controller.close() }
+  let root = try #require(controller.window?.contentView)
+  for (label, titles) in [
+    ("Menu bar layout", ["Separate", "One"]),
+    ("Menu bar spacing", ["Tight", "Standard", "Relaxed"]),
+  ] {
+    let control = try layoutControl(root, label)
+    #expect(
+      (0..<control.segmentCount).map { control.image(forSegment: $0)?.accessibilityDescription }
+        == titles)
+    // AppKit exposes the radio buttons through the segmented cell's radio group.
+    func segmentNames(_ element: any NSAccessibilityProtocol) -> [String?] {
+      if element.accessibilityRole() == .radioButton { return [element.accessibilityLabel()] }
+      return (element.accessibilityChildren() ?? [])
+        .compactMap { $0 as? any NSAccessibilityProtocol }.flatMap { segmentNames($0) }
+    }
+    #expect(segmentNames(control) == titles)
+  }
+}
+
+@Test @MainActor func menuBarSeparatePreviewHasFixedNativeItemGaps() throws {
+  let preview = MenuBarPreviewView(frame: .init(x: 0, y: 0, width: 420, height: 36))
+  let readouts = [Module.cpu, .memory, .network].map {
+    MenuBarStyleExample.readout(module: $0, style: .stacked, settings: Settings())
+  }
+  for spacing in MenuBarSpacing.allCases {
+    preview.update(groups: readouts.map { [$0] }, paused: false, height: 24, spacing: spacing)
+    let separateWidth = preview.preferredWidth
+    for index in 1..<preview.renderers.count {
+      #expect(preview.renderers[index].frame.minX - preview.renderers[index - 1].frame.maxX == 9)
+    }
+    #expect(separateWidth == preview.renderers.reduce(0) { $0 + $1.preferredWidth } + 18)
+    preview.update(groups: [readouts], paused: false, height: 24, spacing: spacing)
+    #expect(preview.renderers.count == 1)
+    #expect(separateWidth > preview.preferredWidth)
+  }
+}
+
+@Test @MainActor func separateLayoutRestoresSavedNativeSlotsWithoutRealStatusItems() throws {
+  let suite = "TinyStats.LayoutSlots." + UUID().uuidString
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  func autosave(_ module: Module) -> String { "fixture.tinystats." + module.rawValue }
+  func key(_ module: Module) -> String { "NSStatusItem Preferred Position " + autosave(module) }
+  let original: [Module: Double] = [.cpu: 731.5, .memory: 472, .network: 263]
+  for (module, position) in original { defaults.set(position, forKey: key(module)) }
+  defaults.set(99, forKey: key(.overview))  // The One item has its own slot.
+  defaults.set(1000, forKey: key(.gpu))  // Disabled modules cannot donate their slots.
+  let order: [Module] = [.cpu, .memory, .network]
+  let saved = MenuBarNativeOrder.savedPositions(
+    order: order, defaults: defaults, autosaveName: autosave)
+  #expect(saved == original)
+  #expect(MenuBarNativeOrder.positions(order: order, existing: saved) == original)
+  defaults.set(true, forKey: key(.cpu))
+  defaults.set(-1, forKey: key(.memory))
+  defaults.set(Double.infinity, forKey: key(.network))
+  #expect(
+    MenuBarNativeOrder.savedPositions(order: order, defaults: defaults, autosaveName: autosave)
+      .isEmpty)
+}

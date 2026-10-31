@@ -258,7 +258,9 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     ])
   let presets = try #require(welcomeViews(root).compactMap { $0 as? NSSegmentedControl }.first)
   #expect(
-    (0..<presets.segmentCount).compactMap { presets.label(forSegment: $0) } == [
+    (0..<presets.segmentCount).compactMap {
+      presets.image(forSegment: $0)?.accessibilityDescription
+    } == [
       "Separate", "One",
     ])
   let preview = try #require(welcomeViews(root).compactMap { $0 as? MenuBarPreviewView }.first)

@@ -14,7 +14,7 @@ TinyStats is an early-stage project working toward a lean, native alternative to
 ## System redesign validation
 
 - Shared System tokens, accent menu graphics and platter dropdowns are implemented. Overview now uses the approved device/state header, value platters, segmented memory/storage and a five-minute network trace.
-- Step 3 is implemented: inset grouped forms across General/Menu Bar and all existing feature editors, native switches, picture presets and an appearance-aware preview strip. History and Welcome reuse the shared neutral tokens. Settings render fixtures cover light/dark; no fan-control pane is introduced.
+- Step 3 is implemented: inset grouped forms across General/Menu Bar and all existing feature editors, native switches, picture styles, icon-only Separate/One layout and spacing controls, and an appearance-aware preview strip. History and Welcome reuse the shared neutral tokens. Settings render fixtures cover light/dark; no fan-control pane is introduced.
 - Process grouping has light/dark dropdown/window/readings fixtures and native keyboard regressions. Real process-churn Release cost and native macOS 14/15/Intel validation remain open; [Performance](PERFORMANCE.md#process-app-grouping-cost-and-bounds) gives operation-count estimates only.
 - Before release, complete the full final-tree local gate and native light/dark, non-blue accent, resize and physical input checks; offscreen fixture renders do not replace those checks.
 

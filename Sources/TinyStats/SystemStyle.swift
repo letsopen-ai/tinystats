@@ -398,6 +398,8 @@ enum SystemStyle {
     image = Self.symbolImage(name, fallback: fallback)
   }
   func setBrandIcon() {
+    defer { imagePosition = .imageOnly }
+    guard !usesBrandIcon || image == nil else { return }
     usesBrandIcon = true
     iconName = nil
     if let icon = NSApp.applicationIconImage.copy() as? NSImage {
@@ -463,7 +465,32 @@ enum SystemStyle {
           yRadius: SystemStyle.Radius.control
         ).fill()
       }
-      cell?.drawInterior(withFrame: bounds, in: self)
+      if usesBrandIcon, let image {
+        // The small brand masters have a 1/16 transparent margin on every side. Crop that
+        // margin so the paper itself is 16pt; NSImage chooses the representation at draw scale.
+        let tile = NSRect(x: bounds.midX - 8, y: bounds.midY - 8, width: 16, height: 16)
+        let dark = SystemStyle.isDark(effectiveAppearance)
+        let paper = NSBezierPath(roundedRect: tile, xRadius: 3.6, yRadius: 3.6)
+        if dark {
+          NSColor.black.setFill()
+          paper.fill()
+        }
+        image.draw(
+          in: tile,
+          from: .init(
+            x: image.size.width / 16, y: image.size.height / 16,
+            width: image.size.width * 14 / 16, height: image.size.height * 14 / 16),
+          operation: .sourceOver, fraction: dark ? 0.9 : 1)
+        if !dark {
+          NSColor.separatorColor.setStroke()
+          let edge = NSBezierPath(
+            roundedRect: tile.insetBy(dx: 0.25, dy: 0.25), xRadius: 3.35, yRadius: 3.35)
+          edge.lineWidth = 0.5
+          edge.stroke()
+        }
+      } else {
+        cell?.drawInterior(withFrame: bounds, in: self)
+      }
       return
     }
     guard !isBordered else {
