@@ -170,8 +170,9 @@ struct MenuBarReadout {
 @MainActor final class MenuBarReadoutView: SystemStyledView {
   var readouts: [MenuBarReadout] = []
   var paused = false
-  private static let sidePadding: CGFloat = 1
-  private static let itemSpacing: CGFloat = 3
+  // Shared compact geometry for native items, previews and segment hit testing.
+  let sidePadding: CGFloat = 0
+  let itemSpacing: CGFloat = 1
   private static let verticalLabelFont = NSFont.systemFont(ofSize: 8, weight: .semibold)
   private static let fonts = Dictionary(
     uniqueKeysWithValues: MenuBarSize.allCases.map {
@@ -271,11 +272,20 @@ struct MenuBarReadout {
     }
   }
   var preferredWidth: CGFloat {
-    var total = 2 * Self.sidePadding
+    var total = 2 * sidePadding
     if paused { total += 12 }
     for readout in readouts { total += width(readout) }
-    if readouts.count > 1 { total += CGFloat(readouts.count - 1) * Self.itemSpacing }
+    if readouts.count > 1 { total += CGFloat(readouts.count - 1) * itemSpacing }
     return total
+  }
+  /// Native clicks can select a segment in One; accessibility activation uses the first module.
+  func module(at x: CGFloat) -> Module? {
+    var edge = sidePadding + (paused ? 12 : 0)
+    for readout in readouts {
+      edge += width(readout) + itemSpacing
+      if x < edge { return readout.module }
+    }
+    return readouts.last?.module
   }
   var onAppearanceChange: (() -> Void)?
 
@@ -287,7 +297,7 @@ struct MenuBarReadout {
 
   override func draw(_ dirtyRect: NSRect) {
     let palette = MenuBarPalette.resolve(effectiveAppearance)
-    var x = Self.sidePadding
+    var x = sidePadding
     if paused {
       text(
         palette: palette,
@@ -464,7 +474,7 @@ struct MenuBarReadout {
           }
         }
       }
-      x += w + Self.itemSpacing
+      x += w + itemSpacing
     }
   }
   private func stack(

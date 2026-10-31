@@ -137,8 +137,8 @@ public struct Settings: Codable, Equatable, Sendable {
       ? ((try? container.decode(Bool.self, forKey: .persistHistory)) ?? false) : true
     theme = (try? container.decode(AppTheme.self, forKey: .theme)) ?? .system
     interval = (try? container.decode(Double.self, forKey: .interval)) ?? fallback.interval
-    // Migrate legacy combined buttons: native per-readout identity gives reliable routing.
-    separateItems = true
+    separateItems = (try? container.decode(Bool.self, forKey: .separateItems)) ?? true
+    // Obsolete menuBarSpacing is intentionally an unknown key: all layouts are compact.
     // Keep every recognized choice in order, even if a future/damaged entry is present.
     // An explicitly malformed list must not enable the default set of extra readouts.
     if container.contains(.readouts) {

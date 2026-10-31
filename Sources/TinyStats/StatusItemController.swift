@@ -7,12 +7,28 @@ import TinyStatsCore
 
   private var orderObservation = MenuBarOrderObservation()
   private var rebuilding = false
+  private var separateItems = true
+
+  /// Shared layout plan, testable without creating real menu bar items.
+  static func groups(for settings: Settings) -> [[Module]] {
+    let modules = settings.readouts.isEmpty ? [.overview] : settings.readouts
+    return settings.separateItems ? modules.map { [$0] } : [modules]
+  }
 
   var firstButton: NSStatusBarButton? { items.first?.item.button }
 
   func entry(for sender: NSStatusBarButton) -> (module: Module, item: NSStatusItem)? {
     guard let entry = items.first(where: { $0.item.button === sender }) else { return nil }
-    return (entry.module, entry.item)
+    let event = NSApp.currentEvent
+    let module: Module
+    if !separateItems, let event, event.type == .leftMouseUp, event.window === sender.window {
+      module =
+        entry.readout.module(at: sender.convert(event.locationInWindow, from: nil).x)
+        ?? entry.module
+    } else {
+      module = entry.module
+    }
+    return (module, entry.item)
   }
 
   func hits(_ event: NSEvent) -> Bool {
@@ -24,6 +40,7 @@ import TinyStatsCore
 
   /// Complete, distinct native frames only; hidden/overflow/transitional readings cannot erase a layout.
   var observedOrder: [Module]? {
+    guard separateItems else { return nil }
     let entries = nativePositions
     guard entries.count == items.count, Set(entries.values).count == items.count else { return nil }
     return entries.sorted { $0.value > $1.value }.map(\.key)
@@ -64,7 +81,7 @@ import TinyStatsCore
     var positions: [Module: Double] = [:]
     // Reuse saved slots exactly. Repeatedly deriving slots from laid-out button centers would
     // accumulate AppKit's placement offsets on every reorder and drift across the menu bar.
-    for entry in items {
+    for entry in items where separateItems {
       let key = "NSStatusItem Preferred Position " + autosaveName(for: entry.module)
       if let number = UserDefaults.standard.object(forKey: key) as? NSNumber,
         CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite,
@@ -74,9 +91,15 @@ import TinyStatsCore
         positions[entry.module] = number.doubleValue
       }
     }
+    if !separateItems && settings.separateItems {
+      positions = MenuBarNativeOrder.savedPositions(
+        order: settings.readouts, defaults: .standard, autosaveName: autosaveName)
+    }
     removeAll()
+    separateItems = settings.separateItems
+    orderObservation = MenuBarOrderObservation()
     let modules = settings.readouts.isEmpty ? [.overview] : settings.readouts
-    if enforceOrder {
+    if enforceOrder && separateItems {
       orderObservation.enforce(modules)
       // AppKit has no public move API. Reuse its autosave placement convention rather than
       // private selectors, synthetic mouse events, or replacing the native status buttons.
@@ -89,9 +112,10 @@ import TinyStatsCore
     // macOS inserts newly created items to the left; saved native positions still take precedence.
     // One preview refresh per bar appearance flip; every view still redraws itself.
     var previewAppearanceObserverAttached = false
-    for module in modules.reversed() {
+    for group in Self.groups(for: settings).reversed() {
+      guard let module = group.first else { continue }
       let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-      item.autosaveName = autosaveName(for: module)
+      item.autosaveName = autosaveName(for: separateItems ? module : .overview)
       item.button?.target = target
       item.button?.action = action
       item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -151,7 +175,8 @@ import TinyStatsCore
     paused: Bool, clockOnly: Bool = false
   ) {
     for (module, item, view) in items {
-      let modules = [module]
+      let modules =
+        separateItems ? [module] : (settings.readouts.isEmpty ? [.overview] : settings.readouts)
       if clockOnly && !modules.contains(.clock) { continue }
       view.readouts = modules.flatMap {
         MenuBarReadout.makeAll(
@@ -181,6 +206,23 @@ import TinyStatsCore
 
 /// Remap only TinyStats' existing native slots. Distances grow from the right edge of the bar.
 enum MenuBarNativeOrder {
+  /// Restore module slots when leaving One without creating or inspecting native status items.
+  static func savedPositions(
+    order: [Module], defaults: UserDefaults, autosaveName: (Module) -> String
+  ) -> [Module: Double] {
+    var positions: [Module: Double] = [:]
+    for module in order {
+      let key = "NSStatusItem Preferred Position " + autosaveName(module)
+      if let number = defaults.object(forKey: key) as? NSNumber,
+        CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite,
+        number.doubleValue >= 0, number.doubleValue < 10_000
+      {
+        positions[module] = number.doubleValue
+      }
+    }
+    return positions
+  }
+
   static func positions(order: [Module], existing: [Module: Double]) -> [Module: Double] {
     // Removed modules must not donate their slots when enabling a different module.
     // All values here are AppKit autosave preferences, never measured button centers.

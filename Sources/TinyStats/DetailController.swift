@@ -404,7 +404,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let width = max(0, w - 2 * inset)
     popoverMaterial.frame = view.bounds
     navigation?.sidebar.isHidden = true
-    let actions = [historyButton, openWindowRow, readingsButton].filter {
+    let actions = [openWindowRow, historyButton, readingsButton].filter {
       !$0.isHidden
     }
     let actionSize = SystemStyle.Space.action
@@ -544,6 +544,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     locations.frame = .init(x: 365, y: 39, width: 155, height: 26)
     locations.autoresizingMask = [.minXMargin]
     controls.addSubview(locations)
+    for button in [enable, allow, locations] {
+      button.toolTip = button.title
+    }
     let privacy = NSTextField(
       wrappingLabelWithString:
         "Forecasts send rounded coordinates and your IP address to api.met.no, including with this tab closed. Location permission is requested only with Allow."
@@ -568,7 +571,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     {
       choices.append(manual)
     }
-    picker.toolTip = weatherCitiesStatus
+    picker.toolTip =
+      "Weather city" + (weatherCitiesStatus.isEmpty ? "" : "\n" + weatherCitiesStatus)
     guard choices != weatherChoices || weatherChoiceConfiguration != settings.weather else {
       return
     }
@@ -1250,7 +1254,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     updateSampleHelp()
     guard isPopoverPresentation else { return }
     historyButton.setIcon("clock.arrow.circlepath", fallback: "clock")
-    openWindowRow.setIcon("arrow.up.forward.app", fallback: "macwindow")
+    openWindowRow.setBrandIcon()
     if selected == .clock {
       readingsButton.setIcon("calendar", fallback: "clock")
     } else if showsAllReadings {

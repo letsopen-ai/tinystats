@@ -118,7 +118,8 @@ func generalAdvancedOptionsStartCollapsedAndOnlyRouteExplicitClicks(theme: AppTh
   selector.selectedSegment = 1
   try activate(selector)
   #expect(tabs.selectedTabViewItem?.identifier as? String == "menubar")
-  let style = try popup(root, "CPU menu bar style")
+  let style = try #require(
+    descendants(root).compactMap { $0 as? MenuBarStylePicker }.first { $0.module == .cpu })
   style.selectItem(withTitle: MenuBarStyle.historyValue.title)
   try activate(style)
   let size = try popup(root, "CPU menu bar font size")
@@ -185,8 +186,9 @@ func generalAdvancedOptionsStartCollapsedAndOnlyRouteExplicitClicks(theme: AppTh
   #expect(preview.renderers[0].readouts.first?.label == "NET")
   #expect(
     preview.renderers.allSatisfy { $0.paused && $0.readouts.count == 1 && $0.bounds.height == 24 })
-  #expect(preview.preferredWidth == preview.renderers.reduce(0) { $0 + $1.preferredWidth })
-  #expect(preview.renderers[1].frame.minX == preview.renderers[0].frame.maxX)
+  // 9pt between outlines, plus 1.5pt on each side of the two compact renderers.
+  #expect(preview.preferredWidth == preview.renderers.reduce(0) { $0 + $1.preferredWidth } + 15)
+  #expect(preview.renderers[1].frame.minX == preview.renderers[0].frame.maxX + 12)
   controller.updateMenuBarContext(appearance: nil, order: [.cpu, .cpu], height: 24, paused: false)
   #expect(preview.renderers[0].readouts.first?.label == "CPU")
   #expect(preview.renderers.allSatisfy { !$0.paused })
@@ -256,7 +258,7 @@ func generalAdvancedOptionsStartCollapsedAndOnlyRouteExplicitClicks(theme: AppTh
   #expect(ownedTabs.tabViewItem(at: 1).view?.subviews.isEmpty == true)
   #expect(!descendants(root).contains { $0 is MenuBarPreviewView })
   #expect(
-    !descendants(root).compactMap { $0 as? NSPopUpButton }.contains {
+    !descendants(root).compactMap { $0 as? MenuBarStylePicker }.contains {
       $0.accessibilityLabel() == "CPU menu bar style"
     })
   var saved: Settings?
@@ -311,7 +313,8 @@ func generalAdvancedOptionsStartCollapsedAndOnlyRouteExplicitClicks(theme: AppTh
     })
   var saved: Settings?
   controller.onChange = { saved = $0 }
-  let style = try popup(root, "CPU menu bar style")
+  let style = try #require(
+    descendants(root).compactMap { $0 as? MenuBarStylePicker }.first { $0.module == .cpu })
   style.selectItem(withTitle: MenuBarStyle.historyValue.title)
   try activate(style)
   #expect(saved?.interval == 10 && saved?.fahrenheit == true && saved?.networkInterface == "en9")
@@ -353,7 +356,7 @@ func revisitingSettingsTabsPreservesDraftsAndRefreshesTheHiddenPreviewOnlyOnRetu
   #expect(clocks.stringValue == "UTC, Europe/Paris" && saves == 0)
   let menuPage = try #require(tabs.tabViewItem(at: 1).view)
   #expect(
-    descendants(menuPage).compactMap { $0 as? NSPopUpButton }.filter {
+    descendants(menuPage).compactMap { $0 as? MenuBarStylePicker }.filter {
       $0.accessibilityLabel() == "CPU menu bar style"
     }.count == 1)
   controller.tabView(tabs, willSelect: nil)
