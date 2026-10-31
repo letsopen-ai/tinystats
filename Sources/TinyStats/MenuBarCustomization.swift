@@ -11,12 +11,14 @@ import TinyStatsCore
   private(set) var chips: [Module: MenuBarChip] = [:]
   private(set) var order: [Module] = []
   var onSelection: ((Module) -> Void)?
+  var onActivation: (() -> Void)?
   private(set) var selectedModule: Module?
   func select(_ module: Module) {
     guard selectedModule != module else { return }
     selectedModule = module
     for chip in chips.values {
       chip.setAccessibilitySelected(chip.module == module)
+      chip.refreshActions()
       chip.needsDisplay = true
     }
   }
@@ -356,9 +358,11 @@ import TinyStatsCore
   }
   func refreshActions() {
     let inBar = owner?.order.contains(module) == true
-    setAccessibilityValue(
+    let membership =
       inBar
-        ? "In menu bar, position \((owner?.order.firstIndex(of: module) ?? 0) + 1)" : "Available")
+      ? "In menu bar, position \((owner?.order.firstIndex(of: module) ?? 0) + 1)" : "Available"
+    setAccessibilityValue(
+      membership + (owner?.selectedModule == module ? ", Editing styles" : ""))
     setAccessibilityHelp(toolTip)
     setAccessibilityCustomActions(
       availableActions.filter(\.2).map { title, action, _ in
@@ -389,10 +393,13 @@ import TinyStatsCore
   }
   override func accessibilityPerformPress() -> Bool {
     // Selecting an editor never changes tray membership.
-    owner?.selectEditor(module)
+    performClick(nil)
     return owner != nil
   }
-  override func performClick(_ sender: Any?) { owner?.selectEditor(module) }
+  override func performClick(_ sender: Any?) {
+    owner?.selectEditor(module)
+    owner?.onActivation?()
+  }
   override func keyDown(with event: NSEvent) {
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     if [123, 124].contains(event.keyCode), !modifiers.intersection([.option, .command]).isEmpty {
@@ -453,11 +460,16 @@ import TinyStatsCore
   }
   override var focusRingMaskBounds: NSRect { bounds }
   override func mouseDown(with event: NSEvent) {
-    window?.makeFirstResponder(self)
-    owner?.selectEditor(module)
+    if window?.firstResponder === self || window?.makeFirstResponder(self) != true {
+      owner?.selectEditor(module)
+    }
     dragOrigin = convert(event.locationInWindow, from: nil)
   }
-  override func mouseUp(with event: NSEvent) { dragOrigin = nil }
+  override func mouseUp(with event: NSEvent) {
+    let clicked = dragOrigin != nil && bounds.contains(convert(event.locationInWindow, from: nil))
+    dragOrigin = nil
+    if clicked { owner?.onActivation?() }
+  }
   override func mouseDragged(with event: NSEvent) {
     guard let origin = dragOrigin else { return }
     let point = convert(event.locationInWindow, from: nil)

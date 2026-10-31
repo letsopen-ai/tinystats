@@ -1623,19 +1623,19 @@ import Testing
             $0.module == module
           })
         for tile in picker.tiles { tile.increaseContrast = { policy == "contrast" } }
+        let options = try #require(picker.superview?.superview)
+        let document = try #require(options.enclosingScrollView?.documentView)
+        let bottomChrome =
+          document.bounds.height - picker.convert(picker.bounds, to: document).maxY
+        #expect(bottomChrome <= PreferencesController.menuBarCPUBottomChromeBudget + 0.5)
         if module == .cpu {
-          let options = try #require(picker.superview?.superview)
-          let document = try #require(options.enclosingScrollView?.documentView)
-          let bottomChrome =
-            document.bounds.height - picker.convert(picker.bounds, to: document).maxY
-          #expect(bottomChrome <= PreferencesController.menuBarCPUBottomChromeBudget + 0.5)
           #expect(options.bounds.height <= PreferencesController.menuBarCPUOptionsHeightBudget)
-          let metrics =
-            "CPU \(policy) \(theme.rawValue): pane=\(picker.bounds.width)pt, options=\(options.bounds.height)pt, tiles-to-document-end=\(bottomChrome)pt\n"
-          let file = folder.appendingPathComponent(
-            "menu-bar-layout-\(policy)-\(theme.rawValue).txt")
-          try metrics.write(to: file, atomically: true, encoding: .utf8)
         }
+        let metrics =
+          "\(module.title) \(policy) \(theme.rawValue): pane=\(picker.bounds.width)pt, options=\(options.bounds.height)pt, grid=\(picker.bounds.height)pt, tiles-to-document-end=\(bottomChrome)pt\n"
+        let file = folder.appendingPathComponent(
+          "menu-bar-layout-\(module.rawValue)-\(policy)-\(theme.rawValue).txt")
+        try metrics.write(to: file, atomically: true, encoding: .utf8)
         #expect(picker.visibleRect.height >= picker.bounds.height - 1)
         let header = try #require((picker.superview as? NSStackView)?.arrangedSubviews.first)
         #expect(header.visibleRect.height >= header.bounds.height - 1)

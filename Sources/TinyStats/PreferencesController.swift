@@ -66,6 +66,10 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private lazy var customization: MenuBarCustomization = {
     let view = MenuBarCustomization(frame: .zero)
     view.onSelection = { [weak self] module in self?.selectStyleModule(module) }
+    view.onActivation = { [weak self] in
+      guard let self, self.styleOptions.isHidden else { return }
+      self.toggleStyleOptions()
+    }
     view.onAction = { [weak self] module, action in
       guard let self else { return false }
       // The displayed native order is the starting point, including pre-existing ⌘-drag positions.
@@ -110,7 +114,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private var styleMenus: [Module: MenuBarStylePicker] = [:]
   private var moduleEditors: [Module: NSView] = [:]
   private(set) var selectedStyleModule: Module = .cpu
-  static let menuBarToolsHeightBudget: CGFloat = 36
+  static let menuBarToolsHeightBudget: CGFloat = 28
+  static let menuBarHeaderHeightBudget: CGFloat = 74
   static let menuBarCPUBottomChromeBudget: CGFloat = 20
   static let menuBarCPUOptionsHeightBudget: CGFloat = 230
   private lazy var presetSelector: SystemPresetChoices = {
@@ -127,7 +132,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   }()
   private let styleOptions = NSStackView()
   private lazy var styleDisclosure = NSButton(
-    title: "Customize readouts & styles…", target: self, action: #selector(toggleStyleOptions))
+    title: "Customize styles…", target: self, action: #selector(toggleStyleOptions))
   private let onlineTimeOptions = NSStackView()
   private lazy var onlineTimeDisclosure = NSButton(
     title: "Online & Time advanced", target: self, action: #selector(toggleOnlineTimeOptions))
@@ -342,8 +347,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     styleDisclosure.alignment = .left
     styleDisclosure.imagePosition = .imageLeading
     styleDisclosure.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
-    styleDisclosure.title = "Hide readout & style options"
-    styleDisclosure.setAccessibilityLabel("Customize menu bar readouts and styles")
+    styleDisclosure.title = "Hide styles"
+    styleDisclosure.setAccessibilityLabel("Customize menu bar styles")
     styleDisclosure.setAccessibilityExpanded(true)
     styleOptions.orientation = .vertical
     styleOptions.alignment = .leading
@@ -373,28 +378,24 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       name.font = .systemFont(ofSize: 13)
       let identity = form.controls([icon, name])
       identity.setContentCompressionResistancePriority(.required, for: .horizontal)
-      let controls = form.controls([identity, size], widths: [200, 96])
-      var contents: [NSView] = [form.group([form.row("", controls, height: 38)]), popup]
+      var tool: NSView?
       if module == .sensors {
-        // The label stays legible in narrow panes; the popup takes the remaining width.
-        let label = NSTextField(labelWithString: "Menu bar sensor")
-        label.setContentCompressionResistancePriority(.required, for: .horizontal)
-        sensor.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let row = form.controls([label, sensor])
-        let tools = form.group([form.row("", row, height: Self.menuBarToolsHeightBudget)])
-        tools.identifier = NSUserInterfaceItemIdentifier("menu-bar-sensor-tools")
-        contents.append(tools)
+        sensor.font = .systemFont(ofSize: 11)
+        tool = sensor
       } else if module == .battery || module == .clock {
         let button = NSButton(
           title: module == .battery ? "Battery formats…" : "Clock formats…",
           target: self,
           action: module == .battery ? #selector(showBatteryFormats) : #selector(showClockFormats))
+        button.font = .systemFont(ofSize: 11)
+        button.bezelStyle = .rounded
         button.setAccessibilityLabel(
           module == .battery ? "Battery menu bar formats" : "Clock menu bar formats")
-        let tools = form.group([form.row("", button, height: Self.menuBarToolsHeightBudget)])
-        tools.identifier = NSUserInterfaceItemIdentifier("menu-bar-\(module.rawValue)-tools")
-        contents.append(tools)
+        tool = button
       }
+      tool?.identifier = NSUserInterfaceItemIdentifier("menu-bar-\(module.rawValue)-tools")
+      let header = MenuBarStyleHeader(identity: identity, size: size, tool: tool)
+      let contents: [NSView] = [header, popup]
       let editor = NSStackView(views: contents)
       editor.orientation = .vertical
       editor.alignment = .leading
@@ -427,7 +428,6 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   func selectStyleModule(_ module: Module) {
     guard module != .overview else { return }
     selectedStyleModule = module
-    if styleOptions.isHidden { toggleStyleOptions() }
     customization.select(module)
     for (candidate, editor) in moduleEditors { editor.isHidden = candidate != module }
     // NSStackView may discard cross-view constraints when detaching a hidden editor.
@@ -445,7 +445,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   @objc private func toggleStyleOptions() {
     styleOptions.isHidden.toggle()
     styleDisclosure.title =
-      styleOptions.isHidden ? "Customize readouts & styles…" : "Hide readout & style options"
+      styleOptions.isHidden ? "Customize styles…" : "Hide styles"
     styleDisclosure.image = NSImage(
       systemSymbolName: styleOptions.isHidden ? "chevron.right" : "chevron.down",
       accessibilityDescription: nil)
@@ -722,6 +722,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       sensor.addItem(withTitle: name)
     }
     sensor.selectItem(at: keys.firstIndex(of: settings.sensorKey) ?? 0)
+    sensor.superview?.needsLayout = true
   }
   @objc private func sensorChanged() {
     guard sensorKeys.indices.contains(sensor.indexOfSelectedItem) else { return }

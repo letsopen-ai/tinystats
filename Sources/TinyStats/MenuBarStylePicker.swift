@@ -142,6 +142,7 @@ import TinyStatsCore
         tile.target = self
         tile.action = #selector(selected(_:))
         tile.isEnabled = isEnabled
+        tile.toolTip = toolTip.map { "\(style.title). \($0)" } ?? style.title
         addSubview(tile)
         return tile
       }
@@ -186,20 +187,14 @@ import TinyStatsCore
   override func layout() {
     super.layout()
     guard bounds.width > 0, !tiles.isEmpty else { return }
-    // Equal columns, balanced across rows: never leave a lone last tile on a wide pane.
-    let capacity = min(7, max(1, Int((bounds.width + 8) / 72)))
-    let rows = Int(ceil(Double(tiles.count) / Double(capacity)))
-    let columns = Int(ceil(Double(tiles.count) / Double(rows)))
+    // Pane width alone determines columns, keeping tile widths stable between modules.
+    let columns = min(7, max(1, Int((bounds.width + 8) / 72)))
+    let rows = (tiles.count + columns - 1) / columns
     let width = max(0, (bounds.width - CGFloat(columns - 1) * 8) / CGFloat(columns))
-    var index = 0
-    for row in 0..<rows {
-      let count = tiles.count / rows + (row < tiles.count % rows ? 1 : 0)
-      for column in 0..<count {
-        tiles[index].frame = .init(
-          x: CGFloat(column) * (width + 8), y: CGFloat(row) * 48,
-          width: width, height: 40)
-        index += 1
-      }
+    for (index, tile) in tiles.enumerated() {
+      tile.frame = .init(
+        x: CGFloat(index % columns) * (width + 8), y: CGFloat(index / columns) * 48,
+        width: width, height: 40)
     }
     let height = CGFloat(rows) * 48 - 8
     if heightConstraint.constant != height { heightConstraint.constant = height }
@@ -345,5 +340,52 @@ import TinyStatsCore
         x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2,
         width: size.width, height: size.height),
       from: .zero, operation: .sourceOver, fraction: isEnabled ? 1 : 0.45)
+  }
+}
+
+/// Module tools share the header when space permits; narrow panes get one borderless row.
+@MainActor final class MenuBarStyleHeader: NSView {
+  private let identity: NSView
+  private let size: NSPopUpButton
+  let tool: NSView?
+  private let section: NSView
+  private var contentHeight: NSLayoutConstraint!
+  init(identity: NSView, size: NSPopUpButton, tool: NSView?) {
+    self.identity = identity
+    self.size = size
+    self.tool = tool
+    let controls = SystemSettingsForm.controls([identity, NSView(), size])
+    size.widthAnchor.constraint(equalToConstant: 96).isActive = true
+    section = SystemSettingsForm.group([SystemSettingsForm.row("", controls, height: 38)])
+    super.init(frame: .zero)
+    addSubview(section)
+    if let tool {
+      tool.translatesAutoresizingMaskIntoConstraints = true
+      tool.autoresizingMask = []
+      addSubview(tool)
+    }
+    // Keep the existing narrow pane minimum independent of the selected module's contents.
+    widthAnchor.constraint(greaterThanOrEqualToConstant: 328).isActive = true
+    contentHeight = heightAnchor.constraint(equalToConstant: 38)
+    contentHeight.isActive = true
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  override var isFlipped: Bool { true }
+  override func layout() {
+    super.layout()
+    guard bounds.width > 0 else { return }
+    section.frame = .init(x: 0, y: 0, width: bounds.width, height: 38)
+    section.layoutSubtreeIfNeeded()
+    guard let tool else { return }
+    let leading = identity.convert(identity.bounds, to: self).maxX + 8
+    let trailing = size.convert(size.bounds, to: self).minX - 8
+    let width = min(tool.fittingSize.width, max(0, bounds.width - 24))
+    let inline = width <= trailing - leading
+    let height = min(PreferencesController.menuBarToolsHeightBudget, tool.fittingSize.height)
+    tool.frame = .init(
+      x: inline ? trailing - width : 12, y: inline ? (38 - height) / 2 : 46,
+      width: width, height: height)
+    let total: CGFloat = inline ? 38 : PreferencesController.menuBarHeaderHeightBudget
+    if contentHeight.constant != total { contentHeight.constant = total }
   }
 }

@@ -58,7 +58,7 @@ import Testing
       == true)
   #expect(editor.order == [.memory, .network, .gpu])
   #expect(editor.lastAnnouncement == "CPU removed from menu bar.")
-  #expect(cpu.accessibilityValue() as? String == "Available")
+  #expect(cpu.accessibilityValue() as? String == "Available, Editing styles")
   // A native/menu refresh while the context menu is open must not turn Remove into Add.
   let staleRemove = menu.items[0]
   let previousWrites = changes.count
@@ -438,7 +438,7 @@ import Testing
       }
       let disclosure = try #require(
         views.compactMap { $0 as? NSButton }.first {
-          $0.accessibilityLabel() == "Customize menu bar readouts and styles"
+          $0.accessibilityLabel() == "Customize menu bar styles"
         })
       let nextFrame = editor.convert(disclosure.bounds, from: disclosure)
       #expect(nextFrame.minY >= editor.bounds.maxY + 8)
