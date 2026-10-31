@@ -4,14 +4,15 @@ import Testing
 @testable import TinyStats
 @testable import TinyStatsCore
 
-/// Rasterize the production footer controls at 2x, including AppKit's native symbol cell.
-@MainActor private func footerBitmap(_ view: NSView, rect: NSRect? = nil) throws
+/// Rasterize the production footer controls, including AppKit's native symbol cell.
+@MainActor private func footerBitmap(_ view: NSView, rect: NSRect? = nil, scale: Int = 2) throws
   -> NSBitmapImageRep
 {
   let area = rect ?? view.bounds
   let bitmap = try #require(
     NSBitmapImageRep(
-      bitmapDataPlanes: nil, pixelsWide: Int(area.width * 2), pixelsHigh: Int(area.height * 2),
+      bitmapDataPlanes: nil, pixelsWide: Int(area.width) * scale,
+      pixelsHigh: Int(area.height) * scale,
       bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
       colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
   bitmap.size = area.size
@@ -30,6 +31,7 @@ import Testing
 @MainActor private func footerInkBounds(
   _ bitmap: NSBitmapImageRep, markInside tile: NSRect? = nil
 ) throws -> NSRect {
+  let scale = CGFloat(bitmap.pixelsWide) / bitmap.size.width
   var minX = bitmap.pixelsWide
   var minY = bitmap.pixelsHigh
   var maxX = -1
@@ -37,7 +39,7 @@ import Testing
   for y in 0..<bitmap.pixelsHigh {
     for x in 0..<bitmap.pixelsWide {
       let color = try #require(bitmap.colorAt(x: x, y: y))
-      let point = NSPoint(x: Double(x) / 2, y: Double(y) / 2)
+      let point = NSPoint(x: CGFloat(x) / scale, y: CGFloat(y) / scale)
       let mark =
         color.usingColorSpace(.sRGB).map {
           max($0.redComponent, $0.greenComponent, $0.blueComponent) < 0.5
@@ -57,8 +59,8 @@ import Testing
   }
   try #require(maxX >= minX && maxY >= minY, "The actual footer must contain visible ink")
   return NSRect(
-    x: Double(minX) / 2, y: Double(minY) / 2,
-    width: Double(maxX - minX + 1) / 2, height: Double(maxY - minY + 1) / 2)
+    x: CGFloat(minX) / scale, y: CGFloat(minY) / scale,
+    width: CGFloat(maxX - minX + 1) / scale, height: CGFloat(maxY - minY + 1) / scale)
 }
 
 @Test @MainActor func footerLogoOpticallyMatchesRenderedSymbols() throws {
@@ -112,9 +114,13 @@ import Testing
     }
     let tallest = try #require(heights.max())
     measurements.append("\(theme.rawValue) logo vs tallest: \(logoHeight) / \(tallest)pt")
-    // One point accommodates optical alignment and a single 2x antialias pixel per edge.
-    #expect(abs(logoHeight - tallest) <= 1)
-    #expect(abs(markHeight - readingsHeight) <= 1, "The letter must also match the square glyph")
+    measurements.append(
+      "\(theme.rawValue) mark vs All readings: \(markHeight) / \(readingsHeight)pt")
+    // Raster extents are host/OS-specific. Leave headroom for AppKit antialias changes;
+    // the stable square glyph is the letter's reference, independent of other actions.
+    // The old 8 × 7.5pt mark still fails against the 12.5pt square by 5pt on this host.
+    #expect(abs(logoHeight - tallest) <= 1.5)
+    #expect(abs(markHeight - readingsHeight) <= 1.5, "The letter must also match the square glyph")
   }
   print(measurements.joined(separator: "\n"))
   if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
@@ -157,7 +163,9 @@ import Testing
           + (module == .overview ? [] : [readingsLabel]) + [paused ? "Resume" : "Pause"]
         #expect(actions.map { $0.accessibilityLabel() ?? "" } == expected)
         for button in footerDescendants(detail.view).compactMap({ $0 as? NSButton })
-        where !button.isHiddenOrHasHiddenAncestor {
+        where !button.isHiddenOrHasHiddenAncestor
+          && !(button.superview is MonthCalendarView && Int(button.title) != nil)
+        {
           let label = try #require(button.accessibilityLabel())
           let tip = try #require(button.toolTip, "\(module.title): \(button.title) needs a tooltip")
           #expect(!label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -170,15 +178,88 @@ import Testing
       }
     }
   }
-  // Calendar date tooltips must follow the new month, not retain recycled day names.
+  // Day cells retain full-date VoiceOver labels without hover tooltips, including
+  // after recycling the grid for another month. Navigation remains covered above.
   detail.selected = .clock
   let calendar = try #require(
     footerDescendants(detail.view).compactMap { $0 as? MonthCalendarView }.first)
-  let before = calendar.subviews.compactMap { $0 as? NSButton }.map(\.toolTip)
-  calendar.moveMonth(by: 1)
-  let after = calendar.subviews.compactMap { $0 as? NSButton }.map(\.toolTip)
-  #expect(before != after)
-  for day in calendar.subviews.compactMap({ $0 as? NSButton }) where !day.isHidden {
-    #expect(day.toolTip == day.accessibilityLabel())
+  func visibleDays() -> [NSButton] {
+    calendar.subviews.compactMap { $0 as? NSButton }.filter {
+      !$0.isHidden && Int($0.title) != nil
+    }
+  }
+  let before = visibleDays().map { $0.accessibilityLabel() }
+  for monthOffset in [0, 1] {
+    calendar.moveMonth(by: monthOffset)
+    let days = visibleDays()
+    #expect(!days.isEmpty)
+    for day in days {
+      #expect(day.toolTip == nil)
+      #expect((day.accessibilityLabel()?.count ?? 0) > day.title.count)
+    }
+  }
+  #expect(before != visibleDays().map { $0.accessibilityLabel() })
+
+  detail.selected = .weather
+  let city = try #require(
+    footerDescendants(detail.view).compactMap { $0 as? NSPopUpButton }.first {
+      $0.accessibilityLabel() == "Weather city"
+    })
+  for status in ["", "Saved Weather cities unavailable", ""] {
+    detail.weatherCitiesStatus = status
+    #expect(city.toolTip == "Weather city" + (status.isEmpty ? "" : "\n" + status))
+  }
+}
+
+@Test @MainActor func footerLogoStaysPixelAlignedAtOneAndTwoTimesScale() throws {
+  _ = NSApplication.shared
+  let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources")
+  let saved = NSApp.applicationIconImage
+  defer { NSApp.applicationIconImage = saved }
+  // Exercise automatic ICNS selection and the 32px small master explicitly at 1x.
+  for source in ["TinyStats.icns", "AppIcon.iconset/icon_16x16@2x.png"] {
+    let icon = try #require(NSImage(contentsOf: resources.appendingPathComponent(source)))
+    NSApp.applicationIconImage = icon
+    let detail = DetailController()
+    detail.isPopoverPresentation = true
+    detail.view.setFrameSize(SystemStyle.popoverSize)
+    let brand = try #require(
+      detail.view.subviews.compactMap { $0 as? MenuActionRow }.first { $0.usesBrandIcon })
+    if source.hasSuffix(".png") {
+      // NSApplication normalizes its icon to the host's backing scale; override the
+      // fixture image directly so the 32px representation really reaches draw(_:).
+      let small = try #require(icon.copy() as? NSImage)
+      small.size = .init(width: 16, height: 16)
+      brand.image = small
+      #expect(small.representations.map(\.pixelsWide) == [32])
+    }
+    for theme in [AppTheme.light, .dark] {
+      detail.view.appearance = theme.nativeAppearance
+      detail.view.layoutSubtreeIfNeeded()
+      for scale in source.hasSuffix(".icns") ? [1, 2] : [1] {
+        let bitmap = try footerBitmap(brand, scale: scale)
+        let ink = try footerInkBounds(bitmap)
+        #expect(ink.size == NSSize(width: 15, height: 15))
+        #expect(abs(ink.midX - brand.bounds.midX) <= 0.5)
+        #expect(abs(ink.midY - brand.bounds.midY) <= 0.5)
+        let mark = try footerInkBounds(bitmap, markInside: ink)
+        #expect(
+          mark.width >= 10 && mark.height >= 10, "The 32px crop must retain the enlarged mark")
+        #expect(
+          mark.width < ink.width - 2 && mark.height < ink.height - 2,
+          "The complete mark must leave paper beyond the rim instead of filling the crop")
+        print("FOOTER \(source) \(theme.rawValue) \(scale)x: tile=\(ink), mark=\(mark)")
+        if scale == 1,
+          let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"]
+        {
+          let folder = URL(fileURLWithPath: path, isDirectory: true)
+          try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+          let name = source.hasSuffix(".icns") ? "footer-ink-logo-1x" : "footer-logo-32px-1x"
+          try #require(bitmap.representation(using: .png, properties: [:])).write(
+            to: folder.appendingPathComponent("\(name)-\(theme.rawValue).png"))
+        }
+      }
+    }
   }
 }

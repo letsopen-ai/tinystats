@@ -610,11 +610,11 @@ import Testing
   for name in [NSAppearance.Name.aqua, .darkAqua] {
     controller.view.appearance = NSAppearance(named: name)
     var wroteZoom = false
-    func render(_ state: String) throws -> Data {
+    func render(_ state: String, scale: Int = 2) throws -> Data {
       let rect = NSRect(x: 0, y: 0, width: 344, height: 54)
       let bitmap = try #require(
         NSBitmapImageRep(
-          bitmapDataPlanes: nil, pixelsWide: 688, pixelsHigh: 108,
+          bitmapDataPlanes: nil, pixelsWide: 344 * scale, pixelsHigh: 54 * scale,
           bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
           colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
       bitmap.size = rect.size
@@ -627,7 +627,7 @@ import Testing
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         try png.write(
           to: url.appendingPathComponent("footer-\(state)-\(name == .aqua ? "light" : "dark").png"))
-        if state == "normal", !wroteZoom {
+        if state == "normal", scale == 2, !wroteZoom {
           wroteZoom = true
           // Four times the actual 2x pixels, including History/readings/Pause for comparison.
           let zoom = try #require(
@@ -649,6 +649,7 @@ import Testing
       return png
     }
     let normal = try render("normal")
+    _ = try render("normal-1x", scale: 1)
     button.mouseEntered(with: event)
     let hover = try render("hover")
     button.highlight(true)

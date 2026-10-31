@@ -171,7 +171,6 @@ import AppKit
       formatter.dateStyle = .full
       formatter.timeStyle = .none
       button.setAccessibilityLabel(formatter.string(from: date) + (isToday ? ", today" : ""))
-      button.toolTip = button.accessibilityLabel()
     }
     layoutGrid()
     setAccessibilityLabel("\(heading.stringValue) calendar")
