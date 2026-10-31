@@ -17,9 +17,15 @@ import Testing
       let picker = MenuBarStylePicker(module: module, settings: settings)
       picker.frame.size = .init(width: 640, height: 180)
       picker.layoutSubtreeIfNeeded()
+      #expect(picker.isAccessibilityElement() && picker.accessibilityRole() == .radioGroup)
+      #expect(picker.accessibilityLabel() == "\(module.title) menu bar style")
       #expect(picker.styles == MenuBarStyle.available(for: module, sensorKey: sensorKey))
       #expect(picker.tiles.map(\.style) == picker.styles)
       for tile in picker.tiles {
+        #expect(!tile.isFlipped)
+        #expect(tile.accessibilityRole() == .radioButton)
+        #expect(tile.accessibilityParent() as? MenuBarStylePicker === picker)
+        #expect(tile.accessibilityValue() as? Int == (tile.state == .on ? 1 : 0))
         #expect(tile.title.isEmpty && tile.attributedTitle.string.isEmpty)
         #expect(tile.accessibilityLabel() == tile.style.title)
         #expect(tile.toolTip == tile.style.title)
@@ -34,7 +40,9 @@ import Testing
 @Test @MainActor func pictureTileClicksWriteOnlyStyleAndModuleSelectionDoesNotWriteSettings() throws
 {
   var settings = Settings()
-  settings.readouts = Module.allCases.filter { $0 != .overview }
+  settings.readouts = Module.allCases.filter { $0 != .overview && $0 != .gpu }
+  settings.styles[Module.gpu.rawValue] = .ring
+  settings.batteryMenu[.charged].style = .pie
   let controller = PreferencesController(
     settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
   defer { controller.close() }
@@ -47,10 +55,16 @@ import Testing
     let picker = try #require(
       styleViews(root).compactMap { $0 as? MenuBarStylePicker }.first { $0.module == module })
     #expect(!picker.isHiddenOrHasHiddenAncestor)
+    #expect(abs(picker.bounds.width - (picker.superview?.bounds.width ?? 0)) < 1)
     for tile in picker.tiles {
+      let before = saved.last ?? settings
       tile.performClick(nil)
       let result = try #require(saved.last)
       #expect(result.style(for: module) == tile.style)
+      for other in Module.allCases where other != .overview && other != module {
+        #expect(result.style(for: other) == before.style(for: other))
+      }
+      #expect(result.batteryMenu == settings.batteryMenu)
       #expect(picker.tiles.filter { $0.state == .on }.map(\.style) == [tile.style])
       #expect(
         result.readouts == settings.readouts && !result.weather.enabled && !result.calendarEvents)
@@ -112,6 +126,7 @@ import Testing
   let picker = try #require(
     styleViews(root).compactMap { $0 as? MenuBarStylePicker }.first { $0.module == .cpu })
   let first = try #require(picker.tiles.first)
+  #expect(picker.tiles.filter(\.canBecomeKeyView).count == 1)
   #expect(window.makeFirstResponder(first))
   func key(_ code: UInt16) throws -> NSEvent {
     try #require(
@@ -126,6 +141,7 @@ import Testing
   #expect(window.firstResponder === picker.tiles[1])
   picker.tiles[1].keyDown(with: try key(49))
   #expect(result?.style(for: .cpu) == picker.tiles[1].style)
+  #expect(picker.tiles.filter(\.canBecomeKeyView) == [picker.tiles[1]])
   picker.tiles[1].keyDown(with: try key(125))
   let focused = try #require(window.firstResponder as? MenuBarStyleTile)
   #expect(focused.frame.minY > picker.tiles[1].frame.minY)
@@ -146,30 +162,100 @@ import Testing
   }
 }
 
-@Test @MainActor func menuBarBottomFormatToolsFitOneRowWithin36PointBudget() throws {
-  let old = SystemSettingsForm.group([
-    SystemSettingsForm.row(
-      "Battery", NSButton(title: "Battery formats…", target: nil, action: nil)),
-    SystemSettingsForm.row("Time", NSButton(title: "Clock formats…", target: nil, action: nil)),
-  ])
-  let host = NSView(frame: .init(x: 0, y: 0, width: 640, height: 200))
-  host.addSubview(old)
-  old.translatesAutoresizingMaskIntoConstraints = false
-  old.widthAnchor.constraint(equalToConstant: 640).isActive = true
-  host.layoutSubtreeIfNeeded()
-  #expect(old.fittingSize.height == 72)
+@Test @MainActor func moduleToolsAppearOnlyAfterTheirOwnTilesAndCPUEndsAtTheGrid() throws {
   let controller = PreferencesController(
     settings: Settings(), interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
-  root.layoutSubtreeIfNeeded()
-  let tools = try #require(
-    styleViews(root).first { $0.identifier?.rawValue == "menu-bar-format-tools" })
-  #expect(
-    tools.bounds.height == 36
-      && tools.bounds.height <= PreferencesController.menuBarToolsHeightBudget)
-  let buttons = styleViews(tools).compactMap { $0 as? NSButton }
-  #expect(buttons.count == 2 && buttons.allSatisfy { $0.isEnabled && $0.frame.height >= 20 })
+  for module in [Module.cpu, .memory, .battery, .clock, .sensors, .cpu] {
+    controller.selectStyleModule(module)
+    root.layoutSubtreeIfNeeded()
+    let views = styleViews(root)
+    let picker = try #require(
+      views.compactMap { $0 as? MenuBarStylePicker }.first { $0.module == module })
+    let editor = try #require(picker.superview as? NSStackView)
+    let options = try #require(editor.superview)
+    #expect(abs(picker.bounds.width - options.bounds.width) < 1)
+    let tools = views.filter {
+      $0.identifier?.rawValue.hasPrefix("menu-bar-") == true
+        && $0.identifier?.rawValue.hasSuffix("-tools") == true && !$0.isHiddenOrHasHiddenAncestor
+    }
+    if module == .cpu || module == .memory {
+      #expect(tools.isEmpty && editor.arrangedSubviews.last === picker)
+      let document = try #require(options.enclosingScrollView?.documentView)
+      let bottom = picker.convert(picker.bounds, to: document).maxY
+      #expect(
+        document.bounds.height - bottom <= PreferencesController.menuBarCPUBottomChromeBudget + 0.5)
+      #expect(options.bounds.height <= PreferencesController.menuBarCPUOptionsHeightBudget)
+    } else {
+      #expect(tools.count == 1)
+      let tool = try #require(tools.first)
+      #expect(editor.arrangedSubviews.last === tool)
+      #expect(tool.bounds.height <= PreferencesController.menuBarToolsHeightBudget)
+      if module == .sensors {
+        let label = try #require(
+          styleViews(tool).compactMap { $0 as? NSTextField }.first {
+            $0.stringValue == "Menu bar sensor"
+          })
+        #expect(label.bounds.width >= label.intrinsicContentSize.width - 1)
+      }
+    }
+  }
+}
+
+@Test @MainActor func chipsSelectEditorsByClickFocusAndVoiceOverWithoutChangingMembership() throws {
+  var settings = Settings()
+  settings.readouts = [.network, .cpu]
+  let controller = PreferencesController(
+    settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
+  defer { controller.close() }
+  let window = try #require(controller.window)
+  let root = try #require(window.contentView)
+  let tray = try #require(styleViews(root).compactMap { $0 as? MenuBarCustomization }.first)
+  #expect(controller.selectedStyleModule == .network && tray.selectedModule == .network)
+  #expect(!styleViews(root).contains { $0.accessibilityLabel() == "Readout to customize" })
+  var writes = 0
+  controller.onChange = { _ in writes += 1 }
+  for module in [Module.cpu, .memory, .battery, .network] {
+    let chip = try #require(tray.chips[module])
+    chip.performClick(nil)
+    #expect(controller.selectedStyleModule == module && chip.isAccessibilitySelected())
+    #expect(tray.chips.values.filter { $0.isAccessibilitySelected() }.count == 1)
+    #expect(window.makeFirstResponder(chip))
+    #expect(controller.selectedStyleModule == module)
+    #expect(chip.accessibilityPerformPress())
+    #expect(tray.order == settings.readouts && writes == 0)
+  }
+}
+
+@Test @MainActor func unchangedSelectionDoesNotRedrawAndZeroWidthKeepsInitialHeight() throws {
+  let picker = MenuBarStylePicker(module: .cpu, settings: Settings())
+  let height = picker.fittingSize.height
+  picker.layoutSubtreeIfNeeded()
+  #expect(picker.fittingSize.height == height)
+  for tile in picker.tiles { tile.needsDisplay = false }
+  picker.update(settings: Settings())
+  #expect(picker.tiles.allSatisfy { !$0.needsDisplay })
+  let tile = try #require(picker.tiles.first)
+  let image = try #require(tile.previewImage())
+  let bitmap = try #require(image.representations.first as? NSBitmapImageRep)
+  #expect(bitmap.pixelsHigh == 48)
+  tile.viewDidChangeBackingProperties()
+  #expect(tile.cachedPreview == nil)
+  picker.toolTip = "Per-state styles"
+  #expect(picker.tiles.allSatisfy { $0.toolTip?.contains("Per-state styles") == true })
+  picker.toolTip = nil
+  #expect(picker.tiles.allSatisfy { $0.toolTip == $0.style.title })
+}
+
+@Test @MainActor func electricalSensorExamplesKeepTheirRealUnits() {
+  for (key, value) in [("VC0C", "1.2V"), ("IC0C", "2.4A"), ("PSTR", "6.8W")] {
+    var settings = Settings()
+    settings.sensorKey = key
+    #expect(
+      MenuBarStyleExample.readout(module: .sensors, style: .value, settings: settings).value
+        == value)
+  }
 }
 
 @Test @MainActor func clockPictureUsesRealSingleLineFallbackAndFitsLongConfiguredLiterals() throws {
@@ -213,4 +299,15 @@ import Testing
   NSWorkspace.shared.notificationCenter.post(
     name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
   #expect(tile.cachedPreview == nil)
+}
+
+@Test @MainActor func pictureGridBalancesEqualColumnsWithoutOrphanRows() {
+  for width: CGFloat in [328, 426, 640, 788] {
+    let picker = MenuBarStylePicker(module: .cpu, settings: Settings())
+    picker.frame.size = .init(width: width, height: 200)
+    picker.layoutSubtreeIfNeeded()
+    let rows = Dictionary(grouping: picker.tiles, by: { $0.frame.minY })
+    #expect(rows.values.allSatisfy { $0.count >= 2 })
+    #expect(Set(picker.tiles.map { $0.frame.width }).count == 1)
+  }
 }

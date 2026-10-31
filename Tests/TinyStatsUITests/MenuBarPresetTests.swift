@@ -53,7 +53,8 @@ import Testing
     let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
     let preview = try #require(
       presetDescendants(root).compactMap { $0 as? MenuBarPreviewView }.first)
-    let cpuStyle: MenuBarStylePicker = try presetControl(root, "CPU menu bar style")
+    let cpuStyle: MenuBarStylePicker = try presetControl(
+      root, "\(enabledReadouts[0].title) menu bar style")
     #expect(presets.selectedSegment == -1 && !cpuStyle.isHiddenOrHasHiddenAncestor)
     #expect(
       (0..<presets.segmentCount).map { presets.label(forSegment: $0) } == [
@@ -113,8 +114,8 @@ import Testing
   let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
   let disclosure: NSButton = try presetControl(root, "Customize menu bar readouts and styles")
   let cpu: MenuBarStylePicker = try presetControl(root, "CPU menu bar style")
-  let toggles = presetDescendants(root).compactMap { $0 as? SystemSettingSwitch }
-  #expect(toggles.filter { $0.state == .on }.map(\.title) == ["CPU", "Memory", "Network"])
+  let tray = try #require(presetDescendants(root).compactMap { $0 as? MenuBarCustomization }.first)
+  #expect(tray.order == [.cpu, .memory, .network])
   #expect(!cpu.isHiddenOrHasHiddenAncestor && presets.selectedSegment == 2)
   #expect(disclosure.isAccessibilityExpanded())
   var changes = 0
@@ -155,13 +156,10 @@ import Testing
   font.selectItem(withTitle: MenuBarSize.standard.title)
   try presetActivate(font)
   #expect(presets.selectedSegment == 0)
-  let gpu = try #require(
-    presetDescendants(root).compactMap { $0 as? SystemSettingSwitch }.first { $0.title == "GPU" })
-  gpu.state = .on
-  try presetActivate(gpu)
+  let tray = try #require(presetDescendants(root).compactMap { $0 as? MenuBarCustomization }.first)
+  #expect(tray.perform(.add(at: tray.order.count), for: .gpu))
   #expect(presets.selectedSegment == -1)
-  gpu.state = .off
-  try presetActivate(gpu)
+  #expect(tray.perform(.remove, for: .gpu))
   #expect(presets.selectedSegment == 0)
   var external = Settings()
   external.readouts = [.network]
@@ -211,15 +209,11 @@ import Testing
   }
   let previews = try editors.map { try #require($0) }
   #expect(previews.allSatisfy { $0.renderers.first?.readouts.first?.style == .value })
-  let activeChecks = presetDescendants(root).compactMap { $0 as? SystemSettingSwitch }.filter {
-    [Module.battery.title, Module.clock.title].contains($0.title)
-  }
-  for check in activeChecks { check.state = .off }
-  try presetActivate(try #require(activeChecks.first))
-  let helper = try #require(
-    presetDescendants(root).compactMap { $0 as? NSTextField }.first {
-      $0.stringValue.hasPrefix("Keep at least one readout")
-    })
+  let tray = try #require(presetDescendants(root).compactMap { $0 as? MenuBarCustomization }.first)
+  #expect(tray.perform(.remove, for: .battery))
+  #expect(!tray.perform(.remove, for: .clock))
+  #expect(tray.lastAnnouncement.hasPrefix("Keep at least one readout"))
+  #expect(tray.perform(.add(at: 0), for: .battery))
   let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
   var result: Settings?
   controller.onChange = { result = $0 }
@@ -231,7 +225,7 @@ import Testing
     presets.selectedSegment = index
     try presetActivate(presets)
     #expect(result?.readouts == settings.readouts)
-    #expect(helper.stringValue.hasPrefix("Each readout opens its own page."))
+    #expect(tray.order == settings.readouts)
     #expect(previews[0].renderers.first?.readouts.first?.style == style)
     #expect(previews[1].renderers.first?.readouts.first?.style == (index == 1 ? .text : style))
     #expect(previews.allSatisfy { $0.renderers.first?.readouts.first?.appearance.size == size })

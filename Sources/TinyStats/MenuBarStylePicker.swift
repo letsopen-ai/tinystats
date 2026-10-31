@@ -31,11 +31,20 @@ import TinyStatsCore
       result.secondary = "↓ 2.4 MB/s"
     case .sensors:
       let temperature = settings.sensorKey == "cpu" || settings.sensorKey.hasPrefix("T")
-      result.label = temperature ? "CPU" : settings.sensorKey.hasPrefix("F") ? "FAN" : "PWR"
-      result.value =
-        temperature
-        ? (settings.fahrenheit ? "126°" : "52°")
-        : settings.sensorKey.hasPrefix("F") ? "1200 rpm" : "6.8W"
+      switch settings.sensorKey.first {
+      case "F":
+        result.label = "FAN"
+        result.value = "1200 rpm"
+      case "V":
+        result.label = "VOLT"
+        result.value = "1.2V"
+      case "I":
+        result.label = "CUR"
+        result.value = "2.4A"
+      default:
+        result.label = temperature ? "CPU" : "PWR"
+        result.value = temperature ? (settings.fahrenheit ? "126°" : "52°") : "6.8W"
+      }
       result.progress = temperature ? 52 / 120 * 100 : nil
       result.historyMaximum = temperature ? 100 : nil
     case .battery:
@@ -103,12 +112,21 @@ import TinyStatsCore
   override var isEnabled: Bool {
     didSet { for tile in tiles { tile.isEnabled = isEnabled } }
   }
+  override var toolTip: String? {
+    didSet {
+      for tile in tiles {
+        tile.toolTip = toolTip.map { "\(tile.style.title). \($0)" } ?? tile.style.title
+      }
+    }
+  }
   init(module: Module, settings: Settings, batteryState: BatteryMenuState? = nil) {
     self.module = module
     self.batteryState = batteryState
     super.init(frame: .zero)
     heightConstraint = heightAnchor.constraint(equalToConstant: 44)
     heightConstraint.isActive = true
+    setAccessibilityElement(true)
+    setAccessibilityRole(.radioGroup)
     setAccessibilityLabel("\(module.title) menu bar style")
     update(settings: settings)
   }
@@ -148,26 +166,42 @@ import TinyStatsCore
   }
   func selectItem(withTitle title: String) {
     guard let index = styles.firstIndex(where: { $0.title == title }) else { return }
+    guard
+      index != indexOfSelectedItem
+        || tiles.enumerated().contains(where: {
+          $0.element.state != ($0.offset == index ? .on : .off)
+        })
+    else { return }
     indexOfSelectedItem = index
     for (offset, tile) in tiles.enumerated() {
-      tile.state = offset == index ? .on : .off
-      tile.needsDisplay = true
+      let state: NSControl.StateValue = offset == index ? .on : .off
+      if tile.state != state {
+        tile.state = state
+        tile.needsDisplay = true
+        NSAccessibility.post(element: tile, notification: .valueChanged)
+      }
     }
+    window?.recalculateKeyViewLoop()
   }
   override func layout() {
     super.layout()
-    var x: CGFloat = 0
-    var y: CGFloat = 0
-    for tile in tiles {
-      let width = min(max(0, bounds.width), max(64, tile.previewWidth + 24))
-      if x > 0 && x + width > bounds.width {
-        x = 0
-        y += 48
+    guard bounds.width > 0, !tiles.isEmpty else { return }
+    // Equal columns, balanced across rows: never leave a lone last tile on a wide pane.
+    let capacity = min(7, max(1, Int((bounds.width + 8) / 72)))
+    let rows = Int(ceil(Double(tiles.count) / Double(capacity)))
+    let columns = Int(ceil(Double(tiles.count) / Double(rows)))
+    let width = max(0, (bounds.width - CGFloat(columns - 1) * 8) / CGFloat(columns))
+    var index = 0
+    for row in 0..<rows {
+      let count = tiles.count / rows + (row < tiles.count % rows ? 1 : 0)
+      for column in 0..<count {
+        tiles[index].frame = .init(
+          x: CGFloat(column) * (width + 8), y: CGFloat(row) * 48,
+          width: width, height: 40)
+        index += 1
       }
-      tile.frame = .init(x: x, y: y, width: width, height: 40)
-      x += width + 8
     }
-    let height = y + 40
+    let height = CGFloat(rows) * 48 - 8
     if heightConstraint.constant != height { heightConstraint.constant = height }
   }
   @objc private func selected(_ sender: MenuBarStyleTile) {
@@ -200,9 +234,13 @@ import TinyStatsCore
 @MainActor final class MenuBarStyleTile: NSButton {
   let style: MenuBarStyle
   let renderer = MenuBarReadoutView()
+  // NSButton is flipped; keep the production renderer's bitmap upright.
+  override var isFlipped: Bool { false }
+  var increaseContrast: () -> Bool = {
+    NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+  }
   private(set) var cachedPreview: NSImage?
   var previewWidth: CGFloat { renderer.preferredWidth }
-  override var isFlipped: Bool { false }
   init(style: MenuBarStyle) {
     self.style = style
     super.init(frame: .zero)
@@ -210,7 +248,7 @@ import TinyStatsCore
     isBordered = false
     setButtonType(.toggle)
     setAccessibilityLabel(style.title)
-    setAccessibilityHelp("Illustrative menu bar preview. \(style.title)")
+    setAccessibilityRole(.radioButton)
     toolTip = style.title
     NotificationCenter.default.addObserver(
       self, selector: #selector(invalidatePreview), name: NSColor.systemColorsDidChangeNotification,
@@ -237,12 +275,23 @@ import TinyStatsCore
     super.viewDidChangeEffectiveAppearance()
     invalidatePreview()
   }
+  override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
+    invalidatePreview()
+  }
+  override func accessibilityValue() -> Any? { state == .on ? 1 : 0 }
   func previewImage() -> NSImage? {
     if let cachedPreview { return cachedPreview }
     renderer.appearance = effectiveAppearance
-    guard let bitmap = renderer.bitmapImageRepForCachingDisplay(in: renderer.bounds) else {
-      return nil
-    }
+    let scale = window?.backingScaleFactor ?? 2
+    guard
+      let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: Int(ceil(renderer.bounds.width * scale)),
+        pixelsHigh: Int(ceil(renderer.bounds.height * scale)), bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+    else { return nil }
+    bitmap.size = renderer.bounds.size
     effectiveAppearance.performAsCurrentDrawingAppearance {
       renderer.cacheDisplay(in: renderer.bounds, to: bitmap)
     }
@@ -252,6 +301,9 @@ import TinyStatsCore
     return image
   }
   override var acceptsFirstResponder: Bool { isEnabled }
+  override var canBecomeKeyView: Bool {
+    isEnabled && !isHiddenOrHasHiddenAncestor && state == .on
+  }
   override var focusRingMaskBounds: NSRect { bounds.insetBy(dx: 2, dy: 2) }
   override func drawFocusRingMask() {
     NSBezierPath(roundedRect: focusRingMaskBounds, xRadius: 7, yRadius: 7).fill()
@@ -259,7 +311,7 @@ import TinyStatsCore
   override func keyDown(with event: NSEvent) {
     if [123, 124, 125, 126].contains(event.keyCode) {
       (superview as? MenuBarStylePicker)?.moveFocus(from: self, key: event.keyCode)
-    } else if event.keyCode == 49 || event.keyCode == 36 {
+    } else if event.keyCode == 49 {
       performClick(nil)
     } else {
       super.keyDown(with: event)
@@ -273,8 +325,16 @@ import TinyStatsCore
       SystemStyle.accent.withAlphaComponent(0.12).setFill()
       path.fill()
     }
-    (state == .on ? SystemStyle.accent : NSColor.separatorColor).setStroke()
-    path.lineWidth = state == .on ? 2 : 0.5
+    // A faint neutral strip evokes the menu bar without adding another material.
+    NSColor.labelColor.withAlphaComponent(0.04).setFill()
+    NSRect(x: 3, y: 8, width: max(0, bounds.width - 6), height: 24).fill()
+    let contrast =
+      increaseContrast()
+      || [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua].contains(
+        effectiveAppearance.name)
+    (state == .on ? SystemStyle.accent : contrast ? NSColor.secondaryLabelColor : .separatorColor)
+      .setStroke()
+    path.lineWidth = state == .on ? 2 : contrast ? 1 : 0.5
     path.stroke()
     // User-formatted clock literals can exceed the pane width. Fit their real render as a
     // single image, preserving its aspect ratio instead of clipping or changing the readout.

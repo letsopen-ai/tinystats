@@ -180,7 +180,7 @@ import TinyStatsCore
       if let field = formatMenus[state], let style = styleMenus[state] {
         value[state] = .init(
           format: BatteryMenuFormat.allCases[max(0, field.indexOfSelectedItem)],
-          style: MenuBarStyle.available(for: .battery)[max(0, style.indexOfSelectedItem)])
+          style: style.selectedStyle ?? settings.batteryMenu[state].style)
       }
     }
     value.validate()

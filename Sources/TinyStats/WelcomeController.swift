@@ -205,6 +205,7 @@ enum WelcomePresentation {
       body.removeArrangedSubview(view)
       view.removeFromSuperview()
     }
+    body.detachesHiddenViews = false
     readouts.removeAll()
     styles.removeAll()
     history = nil
@@ -276,7 +277,9 @@ enum WelcomePresentation {
         picker.action = #selector(menuChanged)
         picker.isHidden = module != styleModule
         body.addArrangedSubview(picker)
-        picker.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
+        let width = picker.widthAnchor.constraint(equalTo: body.widthAnchor)
+        width.identifier = "welcome-style-width"
+        width.isActive = true
         styles[module] = picker
       }
       text("Combined preview · Placeholder readings; scroll horizontally", secondary: true)
@@ -422,6 +425,15 @@ enum WelcomePresentation {
     }
     styleModule = Self.starterModules[styleModuleSelector.indexOfSelectedItem]
     for (module, picker) in styles { picker.isHidden = module != styleModule }
+    if let picker = styles[styleModule],
+      !body.constraints.contains(where: {
+        $0.identifier == "welcome-style-width" && $0.firstItem as? NSView === picker
+      })
+    {
+      let width = picker.widthAnchor.constraint(equalTo: body.widthAnchor)
+      width.identifier = "welcome-style-width"
+      width.isActive = true
+    }
   }
   @objc private func menuChanged() {
     var settings = currentSettings()
