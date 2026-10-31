@@ -4,230 +4,151 @@ import Testing
 @testable import TinyStats
 @testable import TinyStatsCore
 
-@MainActor private func presetDescendants(_ root: NSView) -> [NSView] {
-  root.subviews.flatMap { [$0] + presetDescendants($0) }
+@MainActor private func layoutViews(_ root: NSView) -> [NSView] {
+  root.subviews.flatMap { [$0] + layoutViews($0) }
 }
-
-@MainActor private func presetActivate(_ control: NSControl) throws {
-  #expect(
-    NSApplication.shared.sendAction(
-      try #require(control.action), to: control.target, from: control))
-}
-
-@MainActor private func presetControl<T: NSView>(_ root: NSView, _ label: String) throws -> T {
-  try #require(
-    presetDescendants(root).compactMap { $0 as? T }.first { $0.accessibilityLabel() == label })
-}
-
-@Test @MainActor func menuBarPresetsApplyImmediatelyAndRefreshExpandedControlsAndLivePreview()
-  throws
+@MainActor private func layoutControl(_ root: NSView, _ label: String) throws -> NSSegmentedControl
 {
-  _ = NSApplication.shared
-  // Exercise both explicit Weather choices without requesting permission or starting collectors.
-  let cases: [(Bool, String, [Module], [MenuBarStyle])] = [
-    (false, "cpu", [.sensors, .disks, .cpu], [.horizontal, .horizontal, .horizontal]),
-    (
-      true, "F0Ac", [.sensors, .disks, .cpu, .network, .clock, .weather],
-      [.text, .horizontal, .horizontal, .text, .text, .text]
-    ),
-  ]
-  for (weatherEnabled, sensorKey, enabledReadouts, compactStyles) in cases {
-    var settings = Settings()
-    settings.readouts = enabledReadouts
-    settings.sensorKey = sensorKey
-    for module in enabledReadouts {
-      settings.styles[module.rawValue] = .value
-      settings.appearances[module.rawValue] = .init(size: .large, color: .purple)
-    }
-    settings.styles[Module.gpu.rawValue] = .ring
-    settings.appearances[Module.gpu.rawValue] = .init(size: .large, color: .purple)
-    settings.interval = 10
-    settings.persistHistory = false
-    settings.weather = .currentLocationDefault
-    settings.weather.enabled = weatherEnabled
-    let controller = PreferencesController(
-      settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
-    defer { controller.close() }
-    let root = try #require(controller.window?.contentView)
-    let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
-    let disclosure: NSButton = try presetControl(root, "Customize menu bar styles")
-    let preview = try #require(
-      presetDescendants(root).compactMap { $0 as? MenuBarPreviewView }.first)
-    let cpuStyle: MenuBarStylePicker = try presetControl(
-      root, "\(enabledReadouts[0].title) menu bar style")
-    #expect(presets.selectedSegment == -1 && !cpuStyle.isHiddenOrHasHiddenAncestor)
-    #expect(
-      (0..<presets.segmentCount).map { presets.label(forSegment: $0) } == [
-        "Simple text", "Compact bars", "Separate",
-      ])
-    var changes: [Settings] = []
-    controller.onChange = { changes.append($0) }
-    #expect(presets.toolTip?.contains("Separate stacks label + value") == true)
-    for (index, styles, size) in [
-      (0, Array(repeating: MenuBarStyle.text, count: enabledReadouts.count), MenuBarSize.standard),
-      (1, compactStyles, .compact),
-      (2, Array(repeating: .stacked, count: enabledReadouts.count), .standard),
-    ] {
-      presets.selectedSegment = index
-      try presetActivate(presets)
-      #expect(changes.count == index + 1 && presets.selectedSegment == index)
-      let result = try #require(changes.last)
-      var expected = settings
-      #expect(result.readouts == enabledReadouts)
-      expected.separateItems = true
-      for (module, style) in zip(expected.readouts, styles) {
-        expected.styles[module.rawValue] = style
-        expected.appearances[module.rawValue] = .init(size: size, color: .purple)
-        let popup: MenuBarStylePicker = try presetControl(root, "\(module.title) menu bar style")
-        let font: NSPopUpButton = try presetControl(root, "\(module.title) menu bar font size")
-        #expect(popup.titleOfSelectedItem == style.title && font.titleOfSelectedItem == size.title)
-        #expect(font.isEnabled == style.usesFont)
-      }
-      #expect(result == expected)
-      #expect(preview.renderers.count == enabledReadouts.count)
-      for (renderer, module) in zip(preview.renderers, expected.readouts) {
-        let reading = try #require(renderer.readouts.first)
-        #expect(renderer.readouts.count == 1)
-        #expect(reading.style == expected.style(for: module))
-        #expect(reading.appearance.size == size)
-        let expectedReading = MenuBarReadout.make(
-          module: module, snapshot: Snapshot(), settings: expected, history: [])
-        #expect(reading.value == expectedReading.value)
-        #expect(reading.progress == nil)
-      }
-      // A preset leaves disclosure alone; the next two choices update an already expanded matrix.
-      #expect(!cpuStyle.isHiddenOrHasHiddenAncestor)
-      #expect(disclosure.isAccessibilityExpanded())
-    }
-  }
+  try #require(
+    layoutViews(root).compactMap { $0 as? NSSegmentedControl }.first {
+      $0.accessibilityLabel() == label
+    })
+}
+@MainActor private func layoutActivate(_ control: NSControl) throws {
+  #expect(NSApp.sendAction(try #require(control.action), to: control.target, from: control))
 }
 
-@Test @MainActor func menuBarStyleDisclosureHidesTheWholeMatrixWithoutChangingDefaults() throws {
+@Test @MainActor func menuBarLayoutsPreserveCompactPresetMigrationAndPersistOne() throws {
   _ = NSApplication.shared
-  let defaults = Settings()
-  #expect(defaults.readouts == [.cpu, .memory, .network] && defaults.separateItems)
-  #expect(!defaults.weather.enabled)
-  let controller = PreferencesController(
-    settings: defaults, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
-  defer { controller.close() }
-  let root = try #require(controller.window?.contentView)
-  let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
-  let disclosure: NSButton = try presetControl(root, "Customize menu bar styles")
-  let cpu: MenuBarStylePicker = try presetControl(root, "CPU menu bar style")
-  let tray = try #require(presetDescendants(root).compactMap { $0 as? MenuBarCustomization }.first)
-  #expect(tray.order == [.cpu, .memory, .network])
-  #expect(!cpu.isHiddenOrHasHiddenAncestor && presets.selectedSegment == 2)
-  #expect(disclosure.isAccessibilityExpanded())
-  var changes = 0
-  controller.onChange = { _ in changes += 1 }
-  disclosure.performClick(nil)
-  #expect(cpu.isHiddenOrHasHiddenAncestor && !disclosure.isAccessibilityExpanded())
-  controller.selectPage(.general)
-  controller.selectMenuBarTab()
-  #expect(cpu.isHiddenOrHasHiddenAncestor)
-  disclosure.performClick(nil)
-  #expect(!cpu.isHiddenOrHasHiddenAncestor && disclosure.isAccessibilityExpanded())
-  #expect(changes == 0)
-
-}
-
-@Test @MainActor func manualMenuBarEditsClearAndRestoreOnlyMatchingPresetHighlights() throws {
-  _ = NSApplication.shared
-  let controller = PreferencesController(
-    settings: Settings(), interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
-  defer { controller.close() }
-  let root = try #require(controller.window?.contentView)
-  let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
-  let disclosure: NSButton = try presetControl(root, "Customize menu bar styles")
-  disclosure.performClick(nil)
-  presets.selectedSegment = 0
-  try presetActivate(presets)
-  let style: MenuBarStylePicker = try presetControl(root, "CPU menu bar style")
-  style.selectItem(withTitle: MenuBarStyle.icon.title)
-  try presetActivate(style)
-  #expect(presets.selectedSegment == -1)
-  style.selectItem(withTitle: MenuBarStyle.text.title)
-  try presetActivate(style)
-  #expect(presets.selectedSegment == 0)
-  let font: NSPopUpButton = try presetControl(root, "Memory menu bar font size")
-  font.selectItem(withTitle: MenuBarSize.large.title)
-  try presetActivate(font)
-  #expect(presets.selectedSegment == -1)
-  font.selectItem(withTitle: MenuBarSize.standard.title)
-  try presetActivate(font)
-  #expect(presets.selectedSegment == 0)
-  let tray = try #require(presetDescendants(root).compactMap { $0 as? MenuBarCustomization }.first)
-  #expect(tray.perform(.add(at: tray.order.count), for: .gpu))
-  #expect(presets.selectedSegment == -1)
-  #expect(tray.perform(.remove, for: .gpu))
-  #expect(presets.selectedSegment == 0)
-  var external = Settings()
-  external.readouts = [.network]
-  controller.updateMenuBarSettings(external)
-  #expect(presets.selectedSegment == 2)
-  external.appearances[Module.network.rawValue] = .init(size: .large)
-  controller.updateMenuBarSettings(external)
-  #expect(presets.selectedSegment == -1)
-  let networkSize: NSPopUpButton = try presetControl(root, "Network menu bar font size")
-  #expect(networkSize.titleOfSelectedItem == MenuBarSize.large.title)
-  external.appearances[Module.network.rawValue] = .init(size: .compact)
-  external.styles[Module.network.rawValue] = .text
-  // Inactive modules do not participate in matching.
-  external.styles[Module.cpu.rawValue] = .ring
-  controller.updateMenuBarSettings(external)
-  #expect(presets.selectedSegment == 1)
-  #expect(networkSize.titleOfSelectedItem == MenuBarSize.compact.title)
-  let preview = try #require(
-    presetDescendants(root).compactMap { $0 as? MenuBarPreviewView }.first)
-  #expect(preview.renderers.first?.readouts.first?.appearance.size == .compact)
-}
-
-@Test @MainActor func menuBarPresetsClearReadoutErrorsAndRefreshOpenFormatEditors() throws {
-  _ = NSApplication.shared
-  var settings = Settings()
-  settings.readouts = [.battery, .clock]
-  settings.styles[Module.battery.rawValue] = .value
-  settings.styles[Module.clock.rawValue] = .value
+  let settings = try JSONDecoder().decode(
+    Settings.self,
+    from: Data(
+      #"{"readouts":["cpu","memory","network"],"styles":{"cpu":"horizontal","memory":"horizontal","network":"text","gpu":"ring"},"appearances":{"cpu":{"size":"compact"},"memory":{"size":"compact"},"network":{"size":"compact"}}}"#
+        .utf8))
   let controller = PreferencesController(
     settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
-  let disclosure: NSButton = try presetControl(root, "Customize menu bar styles")
+  let control = try layoutControl(root, "Menu bar layout")
+  #expect(control.selectedSegment == 0)
+  #expect(control.segmentCount == 2)
+  #expect((0..<2).map { control.toolTip(forSegment: $0) } == ["Separate", "One"])
+  #expect(
+    (0..<2).allSatisfy {
+      control.label(forSegment: $0)?.isEmpty != false && control.image(forSegment: $0) != nil
+    })
+  let preview = try #require(layoutViews(root).compactMap { $0 as? MenuBarPreviewView }.first)
+  var changed: Settings?
+  controller.onChange = { changed = $0 }
+  for index in [1, 0, 1] {
+    control.selectedSegment = index
+    try layoutActivate(control)
+    var expected = settings
+    expected.separateItems = index == 0
+    #expect(changed == expected)
+    #expect(preview.renderers.count == (index == 0 ? 3 : 1))
+    #expect(
+      preview.renderers.flatMap(\.readouts).map(\.style) == [.horizontal, .horizontal, .text])
+    #expect(preview.renderers.flatMap(\.readouts).allSatisfy { $0.appearance.size == .compact })
+    #expect(
+      StatusItemController.groups(for: expected)
+        == (index == 0 ? [[.cpu], [.memory], [.network]] : [[.cpu, .memory, .network]]))
+  }
+  let restored = try JSONDecoder().decode(
+    Settings.self, from: JSONEncoder().encode(try #require(changed)))
+  let reopened = PreferencesController(
+    settings: restored, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
+  defer { reopened.close() }
+  #expect(
+    try layoutControl(#require(reopened.window?.contentView), "Menu bar layout").selectedSegment
+      == 1)
+}
+
+@Test @MainActor func menuBarSpacingControlChangesGeometryInBothLayoutsAndStylePictures() throws {
+  _ = NSApplication.shared
+  for separate in [true, false] {
+    var settings = Settings()
+    settings.separateItems = separate
+    let controller = PreferencesController(
+      settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
+    defer { controller.close() }
+    let root = try #require(controller.window?.contentView)
+    root.layoutSubtreeIfNeeded()
+    let spacing = try layoutControl(root, "Menu bar spacing")
+    #expect(
+      spacing.selectedSegment == 1
+        && spacing.frame.height <= PreferencesController.menuBarToolsHeightBudget)
+    let row = try #require(spacing.superview as? SystemFormRow)
+    #expect(row.frame.height <= PreferencesController.menuBarLayoutRowHeightBudget)
+    let preview = try #require(layoutViews(root).compactMap { $0 as? MenuBarPreviewView }.first)
+    let picker = try #require(
+      layoutViews(root).compactMap { $0 as? MenuBarStylePicker }.first { $0.module == .cpu })
+    var changed: Settings?
+    controller.onChange = { changed = $0 }
+    var widths: [CGFloat] = []
+    var tileWidths: [CGFloat] = []
+    for index in 0..<3 {
+      spacing.selectedSegment = index
+      try layoutActivate(spacing)
+      #expect(changed?.menuBarSpacing == MenuBarSpacing.allCases[index])
+      #expect(changed?.separateItems == separate && changed?.styles == settings.styles)
+      #expect(preview.renderers.allSatisfy { $0.spacing == MenuBarSpacing.allCases[index] })
+      widths.append(preview.preferredWidth)
+      tileWidths.append(try #require(picker.tiles.first).previewWidth)
+      let decoded = try JSONDecoder().decode(
+        Settings.self, from: JSONEncoder().encode(try #require(changed)))
+      #expect(decoded == changed)
+    }
+    #expect(widths[0] < widths[1] && widths[1] < widths[2])
+    #expect(tileWidths[0] < tileWidths[1] && tileWidths[1] < tileWidths[2])
+    #expect(widths[2] - widths[0] == 18)
+    #expect(preview.renderers[0].preferredWidth > 0)
+    controller.updateMenuBarSettings(settings)
+    #expect(spacing.selectedSegment == 1)
+  }
+}
+
+@Test @MainActor func menuBarStyleEditsAndDisclosurePreserveLayoutChoice() throws {
+  _ = NSApplication.shared
+  var settings = Settings()
+  settings.separateItems = false
+  let controller = PreferencesController(
+    settings: settings, interfaces: [], snapshot: Snapshot(), history: [], initialPage: .menuBar)
+  defer { controller.close() }
+  let root = try #require(controller.window?.contentView)
+  let layout = try layoutControl(root, "Menu bar layout")
+  let disclosure = try #require(
+    layoutViews(root).compactMap { $0 as? NSButton }.first {
+      $0.accessibilityLabel() == "Customize menu bar styles"
+    })
+  let picker = try #require(
+    layoutViews(root).compactMap { $0 as? MenuBarStylePicker }.first { $0.module == .cpu })
+  var changed: Settings?
+  controller.onChange = { changed = $0 }
+  picker.selectItem(withTitle: MenuBarStyle.ring.title)
+  try layoutActivate(picker)
+  #expect(changed?.separateItems == false && changed?.style(for: .cpu) == .ring)
+  #expect(layout.selectedSegment == 1)
   disclosure.performClick(nil)
-  for label in ["Battery menu bar formats", "Clock menu bar formats"] {
-    let button: NSButton = try presetControl(root, label)
-    try presetActivate(button)
+  #expect(picker.isHiddenOrHasHiddenAncestor)
+  controller.selectPage(.general)
+  controller.selectMenuBarTab()
+  #expect(picker.isHiddenOrHasHiddenAncestor && layout.selectedSegment == 1)
+  disclosure.performClick(nil)
+  #expect(!picker.isHiddenOrHasHiddenAncestor)
+  var external = settings
+  external.separateItems = true
+  controller.updateMenuBarSettings(external)
+  #expect(layout.selectedSegment == 0)
+}
+
+@Test @MainActor func combinedReadoutRoutesSegmentsWithoutRealStatusItems() {
+  let renderer = MenuBarReadoutView()
+  renderer.spacing = .relaxed
+  renderer.readouts = [Module.cpu, .memory].map {
+    MenuBarStyleExample.readout(module: $0, style: .stacked, settings: Settings())
   }
-  let battery = try #require(
-    NSApp.windows.first { $0.title == "Battery Menu Bar Format" && $0.isVisible })
-  let clock = try #require(
-    NSApp.windows.first { $0.title == "Clock Menu Bar Formats" && $0.isVisible })
-  let editors = try [battery, clock].map { window in
-    try #require(window.contentView).subviews
-      .flatMap { [$0] + presetDescendants($0) }
-      .compactMap { $0 as? MenuBarPreviewView }.first
-  }
-  let previews = try editors.map { try #require($0) }
-  #expect(previews.allSatisfy { $0.renderers.first?.readouts.first?.style == .value })
-  let tray = try #require(presetDescendants(root).compactMap { $0 as? MenuBarCustomization }.first)
-  #expect(tray.perform(.remove, for: .battery))
-  #expect(!tray.perform(.remove, for: .clock))
-  #expect(tray.lastAnnouncement.hasPrefix("Keep at least one readout"))
-  #expect(tray.perform(.add(at: 0), for: .battery))
-  let presets: SystemPresetChoices = try presetControl(root, "Menu bar presets")
-  var result: Settings?
-  controller.onChange = { result = $0 }
-  for (index, style, size) in [
-    (0, MenuBarStyle.text, MenuBarSize.standard),
-    (1, .horizontal, .compact),
-    (2, .stacked, .standard),
-  ] {
-    presets.selectedSegment = index
-    try presetActivate(presets)
-    #expect(result?.readouts == settings.readouts)
-    #expect(tray.order == settings.readouts)
-    #expect(previews[0].renderers.first?.readouts.first?.style == style)
-    #expect(previews[1].renderers.first?.readouts.first?.style == (index == 1 ? .text : style))
-    #expect(previews.allSatisfy { $0.renderers.first?.readouts.first?.appearance.size == size })
-  }
+  #expect(renderer.module(at: 0) == .cpu)
+  #expect(renderer.module(at: renderer.preferredWidth - 1) == .memory)
+  #expect(renderer.itemSpacing == 7 && renderer.sidePadding == 3)
 }

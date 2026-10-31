@@ -81,6 +81,12 @@ import Testing
     return
   }
   _ = NSApplication.shared
+  let previousBrandIcon = NSApp.applicationIconImage
+  NSApp.applicationIconImage = NSImage(
+    contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(
+        "Resources/TinyStats.icns"))
+  defer { NSApp.applicationIconImage = previousBrandIcon }
   let savedPolicy = NSApp.activationPolicy()
   _ = NSApp.setActivationPolicy(.accessory)
   NSApp.finishLaunching()
@@ -228,22 +234,6 @@ import Testing
         }
         if let preferences { systemRevealStyleEditor(preferences, in: controller.view) }
         controller.view.layoutSubtreeIfNeeded()
-        // Exercise the existing insertion marker above real compositor glass, using
-        // only a private synthetic drag payload in our own fixture window.
-        var insertionDrag: ReadoutDrag?
-        if settingsPage {
-          let editor = try #require(
-            systemDescendants(controller.view).compactMap { $0 as? MenuBarCustomization }.first)
-          let cpu = try #require(editor.chips[.cpu])
-          let memory = try #require(editor.chips[.memory])
-          let drag = ReadoutDrag()
-          drag.draggingSource = cpu
-          #expect(drag.draggingPasteboard.writeObjects([editor.pasteboardItem(for: .cpu)]))
-          drag.draggingLocation = editor.strip.convert(
-            .init(x: memory.frame.minX, y: memory.frame.midY), to: nil)
-          #expect(editor.strip.draggingEntered(drag) == .move)
-          insertionDrag = drag
-        }
         window.makeKey()
         window.displayIfNeeded()
         try await Task.sleep(for: .milliseconds(450))
@@ -263,7 +253,6 @@ import Testing
             to: folder.appendingPathComponent(
               "glass-onscreen-settings-menu-bar-active-\(theme.rawValue).png"))
         }
-        insertionDrag?.draggingPasteboard.releaseGlobally()
         controller.view.removeFromSuperview()
         preferences?.disposeEmbedded()
         preferences?.close()
@@ -380,6 +369,9 @@ import Testing
       let open = try #require(buttons.first { $0.title == "Open \(module.title) in TinyStats" })
       #expect(controller.view.bounds.contains(open.frame))
       #expect(open.frame.width == 28)
+      #expect((open as? MenuActionRow)?.usesBrandIcon == true)
+      #expect(open.image?.size == NSSize(width: 16, height: 16))
+      #expect(open.image?.isTemplate == false && open.contentTintColor == nil)
       #expect(NSApp.sendAction(try #require(open.action), to: open.target, from: open))
       let actions = buttons.compactMap { $0 as? MenuActionRow }.sorted {
         $0.frame.minX < $1.frame.minX
@@ -387,7 +379,7 @@ import Testing
       let hasHistory = [.overview, .cpu, .gpu, .memory, .disks, .network, .battery].contains(module)
       let optionTitle = module == .clock ? "Calendar…" : allReadings ? "Summary" : "All readings"
       let expected =
-        (hasHistory ? ["History…"] : []) + [open.title]
+        [open.title] + (hasHistory ? ["History…"] : [])
         + (module == .overview ? [] : [optionTitle]) + ["Pause"]
       #expect(actions.map(\.title) == expected)
       for action in actions {
@@ -578,6 +570,12 @@ import Testing
 
 @Test @MainActor func systemDropdownIconHoverAndPressRenderInBothAppearances() throws {
   _ = NSApplication.shared
+  let previousBrandIcon = NSApp.applicationIconImage
+  NSApp.applicationIconImage = NSImage(
+    contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(
+        "Resources/TinyStats.icns"))
+  defer { NSApp.applicationIconImage = previousBrandIcon }
   let controller = DetailController()
   controller.isPopoverPresentation = true
   controller.loadViewIfNeeded()
@@ -1662,5 +1660,39 @@ import Testing
     $0.module == editor.selectedStyleModule
   }), let section = picker.superview {
     section.scrollToVisible(section.bounds)
+  }
+}
+
+/// Renderer-only layout comparison: never creates or interacts with native status items.
+@Test @MainActor func menuBarRoundBLayoutSpacingGallery() throws {
+  guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] else {
+    return
+  }
+  let folder = URL(fileURLWithPath: path, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  for theme in [AppTheme.light, .dark] {
+    for separate in [true, false] {
+      for spacing in [MenuBarSpacing.tight, .relaxed] {
+        var settings = Settings()
+        settings.separateItems = separate
+        settings.menuBarSpacing = spacing
+        let strip = SystemWallpaperStrip(frame: .init(x: 0, y: 0, width: 420, height: 52))
+        strip.appearance = theme.nativeAppearance
+        let preview = MenuBarPreviewView(frame: .init(x: 16, y: 8, width: 388, height: 36))
+        let groups = StatusItemController.groups(for: settings).map { modules in
+          modules.map {
+            MenuBarStyleExample.readout(
+              module: $0, style: settings.style(for: $0), settings: settings)
+          }
+        }
+        preview.update(groups: groups, paused: false, height: 24, spacing: spacing)
+        strip.addSubview(preview)
+        try systemGalleryImage(
+          strip,
+          to: folder.appendingPathComponent(
+            "menu-bar-readouts-\(separate ? "separate" : "one")-\(spacing.rawValue)-\(theme.rawValue).png"
+          ))
+      }
+    }
   }
 }

@@ -211,7 +211,9 @@ import TinyStatsCore
     let reading = MenuBarReadout.make(
       module: .battery, snapshot: snapshot, settings: settings,
       history: isExample ? [] : history)
-    preview.update(groups: [[reading]], paused: isExample ? false : paused, height: barHeight)
+    preview.update(
+      groups: [[reading]], paused: isExample ? false : paused, height: barHeight,
+      spacing: settings.menuBarSpacing)
     preview.frame.size = .init(width: max(610, preview.preferredWidth), height: max(36, barHeight))
     preview.needsDisplay = true
     let state =

@@ -4,6 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Add Separate / One menu bar layout and saved spacing without changing module styles; place the TinyStats logo first in dropdown footers. Preview version 0.36.1 (64).
+
 - Replace module display-style text menus with accessible production-renderer picture tiles, including Battery power states and the welcome tour. Preview examples follow appearance and font settings; compact the bottom Battery/Clock actions into one row. Bump the preview to 0.36.0 (63).
 
 - Add appearance-aware candy module identity palettes to existing glyphs, charts and meters. Separate the light CPU/GPU companions from GPU/Sensors primaries and warm light Disk to marigold, preserving the existing contrast and series-separation guards. Use a neutral 10% label-colour sidebar selection and module-coloured footer icon hover and paused Play. Keep status-item text and graphics monochrome, including CPU efficiency/performance core bars: efficiency uses 50% opacity and core-kind boundaries gain a 2pt gap. Native controls retain the system accent; text and semantic states retain their existing colours.

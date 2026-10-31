@@ -531,8 +531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       entry.item.menu = nil
       return
     }
-    // Every native item owns its destination. Forwarded/proxy click coordinates and
-    // accessibility presses cannot accidentally select a different readout.
+    // Separate items own their destination; One resolves native segment clicks in its renderer.
     let module = entry.module
     if popover?.isShown == true {
       if detail?.selected == module {
@@ -805,7 +804,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     let settings = PreferencesApplication.merging(value, current: self.settings)
     let rebuild =
       self.settings.separateItems != settings.separateItems
-      || (settings.separateItems && self.settings.readouts != settings.readouts)
+      || self.settings.readouts != settings.readouts
     self.settings = settings
     settings.save(to: Self.preferenceStore)
     self.worker?.update(settings)

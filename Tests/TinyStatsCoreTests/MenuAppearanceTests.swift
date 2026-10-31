@@ -63,10 +63,26 @@ import Testing
   #expect(!settings.needsMenuBarHistory)
 }
 
-@Test func legacyCombinedMenuMigratesToNativeReadoutItems() throws {
+@Test func savedCombinedMenuRemainsOne() throws {
   let legacy = try JSONDecoder().decode(
     Settings.self,
     from: Data(#"{"separateItems":false,"readouts":["cpu","memory","network"]}"#.utf8))
-  #expect(legacy.separateItems && Settings().separateItems)
+  #expect(!legacy.separateItems && Settings().separateItems)
   #expect(legacy.readouts == [.cpu, .memory, .network])
+}
+
+@Test func menuBarSpacingAndLayoutDecodeDefaultsAndRejectUnknownValues() throws {
+  for json in [
+    #"{}"#, #"{"separateItems":"false","menuBarSpacing":false}"#, #"{"menuBarSpacing":"future"}"#,
+  ] {
+    let settings = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+    #expect(settings.separateItems && settings.menuBarSpacing == .standard)
+  }
+  for spacing in MenuBarSpacing.allCases {
+    var settings = Settings()
+    settings.separateItems = false
+    settings.menuBarSpacing = spacing
+    #expect(
+      try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings)) == settings)
+  }
 }

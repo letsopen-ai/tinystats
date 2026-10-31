@@ -404,7 +404,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let width = max(0, w - 2 * inset)
     popoverMaterial.frame = view.bounds
     navigation?.sidebar.isHidden = true
-    let actions = [historyButton, openWindowRow, readingsButton].filter {
+    let actions = [openWindowRow, historyButton, readingsButton].filter {
       !$0.isHidden
     }
     let actionSize = SystemStyle.Space.action
@@ -1250,7 +1250,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     updateSampleHelp()
     guard isPopoverPresentation else { return }
     historyButton.setIcon("clock.arrow.circlepath", fallback: "clock")
-    openWindowRow.setIcon("arrow.up.forward.app", fallback: "macwindow")
+    openWindowRow.setBrandIcon()
     if selected == .clock {
       readingsButton.setIcon("calendar", fallback: "clock")
     } else if showsAllReadings {

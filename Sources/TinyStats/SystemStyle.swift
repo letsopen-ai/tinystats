@@ -360,19 +360,22 @@ enum SystemStyle {
   private var hoverTracking: NSTrackingArea?
   private var hovering = false
   private var iconName: String?
+  private(set) var usesBrandIcon = false
   var accentModule: Module = .overview { didSet { updateTint() } }
   var showsAccent = false { didSet { updateTint() } }
   func refreshTint() { updateTint() }
   private func updateTint() {
     contentTintColor =
-      usesIconPresentation
-      ? (showsAccent
-        ? SystemStyle.moduleAccent(accentModule)
-        : hovering
+      usesBrandIcon
+      ? nil
+      : usesIconPresentation
+        ? (showsAccent
           ? SystemStyle.moduleAccent(accentModule)
-          : glassEnvironment().treatment == .glass
-            ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor)
-      : .labelColor
+          : hovering
+            ? SystemStyle.moduleAccent(accentModule)
+            : glassEnvironment().treatment == .glass
+              ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor)
+        : .labelColor
   }
   var glassEnvironment: () -> GlassSurface.Environment = { .current }
   var usesIconPresentation = false {
@@ -390,8 +393,21 @@ enum SystemStyle {
     // AppKit can restore image-leading placement when a button's title changes.
     defer { imagePosition = .imageOnly }
     guard iconName != name || image == nil else { return }
+    usesBrandIcon = false
     iconName = name
     image = Self.symbolImage(name, fallback: fallback)
+  }
+  func setBrandIcon() {
+    usesBrandIcon = true
+    iconName = nil
+    if let icon = NSApp.applicationIconImage.copy() as? NSImage {
+      icon.size = .init(width: 16, height: 16)
+      icon.isTemplate = false
+      image = icon
+    }
+    imageScaling = .scaleNone
+    imagePosition = .imageOnly
+    updateTint()
   }
   static func symbolImage(_ name: String, fallback: String) -> NSImage? {
     (NSImage(systemSymbolName: name, accessibilityDescription: nil)
