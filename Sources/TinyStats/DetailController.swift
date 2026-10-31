@@ -544,6 +544,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     locations.frame = .init(x: 365, y: 39, width: 155, height: 26)
     locations.autoresizingMask = [.minXMargin]
     controls.addSubview(locations)
+    for button in [enable, allow, locations] {
+      button.toolTip = button.title
+      button.setAccessibilityLabel(button.title)
+    }
     let privacy = NSTextField(
       wrappingLabelWithString:
         "Forecasts send rounded coordinates and your IP address to api.met.no, including with this tab closed. Location permission is requested only with Allow."
@@ -568,7 +572,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     {
       choices.append(manual)
     }
-    picker.toolTip = weatherCitiesStatus
+    picker.toolTip = "Weather city\n" + weatherCitiesStatus
     guard choices != weatherChoices || weatherChoiceConfiguration != settings.weather else {
       return
     }

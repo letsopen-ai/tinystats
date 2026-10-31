@@ -32,6 +32,7 @@ import AppKit
       button.frame = .init(x: x, y: 105, width: title == "Today" ? 45 : 24, height: 24)
       button.setAccessibilityLabel(
         title == "‹" ? "Previous month" : title == "›" ? "Next month" : "Select today")
+      button.toolTip = button.accessibilityLabel()
       addSubview(button)
     }
     heading.frame = .init(x: 34, y: 109, width: 185, height: 19)
@@ -170,6 +171,7 @@ import AppKit
       formatter.dateStyle = .full
       formatter.timeStyle = .none
       button.setAccessibilityLabel(formatter.string(from: date) + (isToday ? ", today" : ""))
+      button.toolTip = button.accessibilityLabel()
     }
     layoutGrid()
     setAccessibilityLabel("\(heading.stringValue) calendar")

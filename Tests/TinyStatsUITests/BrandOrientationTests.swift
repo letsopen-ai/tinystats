@@ -148,22 +148,6 @@ import Testing
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try #require(bitmap.representation(using: .png, properties: [:])).write(
           to: folder.appendingPathComponent("brand-\(name)-\(theme.rawValue).png"))
-        if name == "footer" {
-          // Four times the captured pixels; nearest-neighbour keeps the real rendered edges visible.
-          let zoom = try #require(
-            NSBitmapImageRep(
-              bitmapDataPlanes: nil, pixelsWide: bitmap.pixelsWide * 4,
-              pixelsHigh: bitmap.pixelsHigh * 4, bitsPerSample: 8, samplesPerPixel: 4,
-              hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
-              bitsPerPixel: 0))
-          for y in 0..<zoom.pixelsHigh {
-            for x in 0..<zoom.pixelsWide {
-              zoom.setColor(try #require(bitmap.colorAt(x: x / 4, y: y / 4)), atX: x, y: y)
-            }
-          }
-          try #require(zoom.representation(using: .png, properties: [:])).write(
-            to: folder.appendingPathComponent("footer-logo-zoom-\(theme.rawValue).png"))
-        }
       }
     }
   }

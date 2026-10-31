@@ -244,6 +244,17 @@ import Testing
         let stem = "glass-onscreen-\(surface)\(gradient ? "-gradient" : "")-\(theme.rawValue)"
         let image = try await SCScreenshotManager.captureImage(
           contentFilter: filter, configuration: config)
+        if surface == "cpu", gradient {
+          // Crop only our fixture's footer from the real compositor capture over its gradient.
+          let crop = CGRect(
+            x: controller.view.frame.minX, y: 780 - controller.view.frame.minY - 54,
+            width: controller.view.bounds.width, height: 54)
+          let footer = try #require(image.cropping(to: crop))
+          try #require(
+            NSBitmapImageRep(cgImage: footer).representation(using: .png, properties: [:])
+          )
+          .write(to: folder.appendingPathComponent("footer-glass-gradient-\(theme.rawValue).png"))
+        }
         try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
           .write(to: folder.appendingPathComponent(stem + ".png"))
         try systemGalleryImage(backdrop, to: folder.appendingPathComponent(stem + "-bitmap.png"))
@@ -598,6 +609,7 @@ import Testing
       windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
   for name in [NSAppearance.Name.aqua, .darkAqua] {
     controller.view.appearance = NSAppearance(named: name)
+    var wroteZoom = false
     func render(_ state: String) throws -> Data {
       let rect = NSRect(x: 0, y: 0, width: 344, height: 54)
       let bitmap = try #require(
@@ -615,6 +627,24 @@ import Testing
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         try png.write(
           to: url.appendingPathComponent("footer-\(state)-\(name == .aqua ? "light" : "dark").png"))
+        if state == "normal", !wroteZoom {
+          wroteZoom = true
+          // Four times the actual 2x pixels, including History/readings/Pause for comparison.
+          let zoom = try #require(
+            NSBitmapImageRep(
+              bitmapDataPlanes: nil, pixelsWide: bitmap.pixelsWide * 4,
+              pixelsHigh: bitmap.pixelsHigh * 4, bitsPerSample: 8, samplesPerPixel: 4,
+              hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
+              bitsPerPixel: 0))
+          for y in 0..<zoom.pixelsHigh {
+            for x in 0..<zoom.pixelsWide {
+              zoom.setColor(try #require(bitmap.colorAt(x: x / 4, y: y / 4)), atX: x, y: y)
+            }
+          }
+          try #require(zoom.representation(using: .png, properties: [:])).write(
+            to: url.appendingPathComponent(
+              "footer-logo-zoom-\(name == .aqua ? "light" : "dark").png"))
+        }
       }
       return png
     }

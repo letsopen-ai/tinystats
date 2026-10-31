@@ -466,12 +466,16 @@ enum SystemStyle {
         ).fill()
       }
       if usesBrandIcon, let image {
-        // The small brand masters have a 1/16 transparent margin on every side. Crop that
-        // margin so the paper itself is 16pt; NSImage chooses the representation at draw scale.
+        // Crop to the mark's content plus a small paper inset: the old full-paper crop
+        // left only 7.5pt of letter ink beside 12.5–14pt symbol ink at 2x. A 15pt tile
+        // with this tighter crop gives the mark comparable optical weight. Half-point
+        // edges land on pixels at 2x; the 28pt target and hover/focus geometry stay intact.
         // NSButton is flipped: explicitly preserve the source image’s upright orientation.
-        let tile = NSRect(x: bounds.midX - 8, y: bounds.midY - 8, width: 16, height: 16)
+        let tile = NSRect(x: bounds.midX - 7.5, y: bounds.midY - 7.5, width: 15, height: 15)
         let dark = SystemStyle.isDark(effectiveAppearance)
-        let paper = NSBezierPath(roundedRect: tile, xRadius: 3.6, yRadius: 3.6)
+        let paper = NSBezierPath(roundedRect: tile, xRadius: 3, yRadius: 3)
+        NSGraphicsContext.saveGraphicsState()
+        paper.addClip()
         if dark {
           NSColor.black.setFill()
           paper.fill()
@@ -479,16 +483,15 @@ enum SystemStyle {
         image.draw(
           in: tile,
           from: .init(
-            x: image.size.width / 16, y: image.size.height / 16,
-            width: image.size.width * 14 / 16, height: image.size.height * 14 / 16),
+            x: image.size.width * 0.22, y: image.size.height * 0.26,
+            width: image.size.width * 0.56, height: image.size.height * 0.56),
           operation: .sourceOver, fraction: dark ? 0.9 : 1, respectFlipped: true, hints: nil)
-        if !dark {
-          NSColor.separatorColor.setStroke()
-          let edge = NSBezierPath(
-            roundedRect: tile.insetBy(dx: 0.25, dy: 0.25), xRadius: 3.35, yRadius: 3.35)
-          edge.lineWidth = 0.5
-          edge.stroke()
-        }
+        NSGraphicsContext.restoreGraphicsState()
+        NSColor.separatorColor.setStroke()
+        let edge = NSBezierPath(
+          roundedRect: tile.insetBy(dx: 0.25, dy: 0.25), xRadius: 2.75, yRadius: 2.75)
+        edge.lineWidth = 0.5
+        edge.stroke()
       } else {
         cell?.drawInterior(withFrame: bounds, in: self)
       }
