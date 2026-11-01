@@ -96,6 +96,10 @@ import Testing
     contentRect: .init(x: 80, y: 80, width: 1080, height: 780), styleMask: [.borderless],
     backing: .buffered, defer: false)
   window.isReleasedWhenClosed = false
+  window.level = .floating
+  window.collectionBehavior = [
+    .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .canJoinAllApplications,
+  ]
   let backdrop = GlassGalleryBackdrop(frame: .init(x: 0, y: 0, width: 1080, height: 780))
   window.contentView = backdrop
   defer {
@@ -1751,3 +1755,242 @@ import Testing
     }
   }
 }
+
+// BEGIN PORTABLE SIDEBAR CAPTURE — this block also runs against 8100abc unchanged.
+/// Real titled MainWindow over our own gradient, using only APIs present before the polish.
+@Test @MainActor func systemMainWindowFullOnscreenGallery() async throws {
+  guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"],
+    ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_GLASS_CAPTURE"] == "1"
+  else { return }
+  let folder = URL(fileURLWithPath: path, isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  guard CGPreflightScreenCaptureAccess() else {
+    try "Existing screen-capture access unavailable; no permission requested.\n".write(
+      to: folder.appendingPathComponent("main-window-capture.txt"), atomically: true,
+      encoding: .utf8)
+    return
+  }
+  _ = NSApplication.shared
+  let policy = NSApp.activationPolicy()
+  _ = NSApp.setActivationPolicy(.regular)
+  NSApp.finishLaunching()
+  NSApp.activate(ignoringOtherApps: true)
+  try await Task.sleep(for: .milliseconds(150))
+  // A SwiftPM runner may be unable to become active. Avoid leaving inactive regular
+  // app windows subject to Space/stage transitions between captures.
+  if !NSApp.isActive { _ = NSApp.setActivationPolicy(.accessory) }
+  defer { _ = NSApp.setActivationPolicy(policy) }
+  let screen = try #require(NSScreen.main)
+  let backdropWindow = GlassGalleryWindow(
+    contentRect: .init(
+      x: screen.frame.minX + 60, y: screen.frame.minY + 80, width: 1080, height: 800),
+    styleMask: [.borderless], backing: .buffered, defer: false)
+  backdropWindow.isReleasedWhenClosed = false
+  backdropWindow.level = .floating
+  backdropWindow.collectionBehavior = [
+    .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .canJoinAllApplications,
+  ]
+  let backdrop = GlassGalleryBackdrop(frame: .init(x: 0, y: 0, width: 1080, height: 800))
+  backdrop.gradient = true
+  backdropWindow.contentView = backdrop
+  defer {
+    backdropWindow.orderOut(nil)
+    backdropWindow.close()
+  }
+  backdropWindow.orderFrontRegardless()
+  var metrics: [String] = []
+  for theme in [AppTheme.light, .dark] {
+    for page in ["sensors", "overview", "settings-menu-bar", "sensors-solid"] {
+      let window = MainWindow()
+      window.level = .floating
+      window.collectionBehavior = [
+        .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .canJoinAllApplications,
+      ]
+      window.title = "TinyStats"
+      window.appearance = theme.nativeAppearance
+      window.setFrameOrigin(
+        .init(x: backdropWindow.frame.minX + 80, y: backdropWindow.frame.minY + 60))
+      let detail = DetailController()
+      detail.glassEnvironment = {
+        .init(
+          supportsGlass: true, reduceTransparency: page == "sensors-solid", increaseContrast: false)
+      }
+      detail.settings.theme = theme
+      detail.selected = page == "overview" ? .overview : .sensors
+      var sample = Snapshot()
+      sample.device = .init(model: "Mac mini", chip: "Apple M4", operatingSystem: "macOS")
+      sample.cpu = .init(usage: 23, cores: [30, 16], load: [1.2, 1.1, 1], user: 15, system: 8)
+      sample.memory = .init(
+        total: 24_000_000_000, active: 9_000_000_000, inactive: 2_000_000_000, wired: 2_600_000_000,
+        compressed: 2_700_000_000, free: 7_700_000_000, speculative: 0, purgeable: 100_000_000,
+        swapUsed: 400_000_000, swapTotal: 1_000_000_000, pressure: 1)
+      sample.download = 2048
+      sample.upload = 512
+      sample.sensors = [
+        .init(key: "TC0P", name: "CPU proximity", kind: .temperature, value: 52),
+        .init(key: "F0Ac", name: "Fan 1", kind: .fan, value: 1200),
+        .init(key: "PSTR", name: "System total power", kind: .power, value: 6.8),
+      ]
+      for index in 0..<30 {
+        sample.uptime = Double(1000 + index * 5)
+        sample.timestamp = Date(timeIntervalSince1970: 1_700_000_000 + sample.uptime)
+        sample.sensorsSampledAt = sample.uptime
+        sample.sensors[0].value = Double(48 + index % 5)
+        detail.update(sample, history: [])
+      }
+      window.contentViewController = detail
+      var preferences: PreferencesController?
+      if page == "settings-menu-bar" {
+        let editor = PreferencesController(
+          settings: detail.settings, interfaces: [], snapshot: sample, history: [],
+          initialPage: .menuBar)
+        preferences = editor
+        detail.showSettingsView(try #require(editor.embeddedView(page: .menuBar)), page: .menuBar)
+      }
+      defer {
+        preferences?.disposeEmbedded()
+        preferences?.close()
+        window.orderOut(nil)
+        window.close()
+      }
+      NSApp.activate(ignoringOtherApps: true)
+      window.makeKeyAndOrderFront(nil)
+      window.orderFrontRegardless()
+      detail.view.needsLayout = true
+      detail.view.layoutSubtreeIfNeeded()
+      window.displayIfNeeded()
+      try await Task.sleep(for: .milliseconds(600))
+      // Flush layout after the native toolbar has settled without resizing the window.
+      detail.view.layoutSubtreeIfNeeded()
+      window.displayIfNeeded()
+      try await Task.sleep(for: .milliseconds(150))
+      var content = try await SCShareableContent.excludingDesktopWindows(
+        true, onScreenWindowsOnly: true)
+      var owned = content.windows.filter {
+        $0.windowID == CGWindowID(window.windowNumber)
+          || $0.windowID == CGWindowID(backdropWindow.windowNumber)
+      }
+      #expect(owned.count == 2)
+      var ownedWindow = try #require(owned.first { $0.windowID == CGWindowID(window.windowNumber) })
+      var display = try #require(
+        content.displays.first { $0.frame.contains(ownedWindow.frame) } ?? content.displays.first)
+      // Displays/Spaces may change during a long gallery run. Reposition our own
+      // fixtures once, rather than silently saving an offscreen or partial crop.
+      if !display.frame.contains(ownedWindow.frame),
+        let currentScreen = NSScreen.screens.first(where: {
+          ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
+            == display.displayID
+        })
+      {
+        backdropWindow.setFrameOrigin(
+          .init(x: currentScreen.frame.minX + 60, y: currentScreen.frame.minY + 80))
+        window.setFrameOrigin(
+          .init(x: currentScreen.frame.minX + 140, y: currentScreen.frame.minY + 140))
+        backdropWindow.orderFrontRegardless()
+        window.orderFrontRegardless()
+        window.displayIfNeeded()
+        try await Task.sleep(for: .milliseconds(300))
+        content = try await SCShareableContent.excludingDesktopWindows(
+          true, onScreenWindowsOnly: true)
+        owned = content.windows.filter {
+          $0.windowID == CGWindowID(window.windowNumber)
+            || $0.windowID == CGWindowID(backdropWindow.windowNumber)
+        }
+        ownedWindow = try #require(owned.first { $0.windowID == CGWindowID(window.windowNumber) })
+        display = try #require(
+          content.displays.first { $0.frame.contains(ownedWindow.frame) } ?? content.displays.first)
+      }
+      try #require(display.frame.contains(ownedWindow.frame), "Our entire fixture must be onscreen")
+      let filter = SCContentFilter(display: display, including: owned)
+      let config = SCStreamConfiguration()
+      config.sourceRect = ownedWindow.frame.offsetBy(
+        dx: -display.frame.minX, dy: -display.frame.minY)
+      let scale =
+        NSScreen.screens.first {
+          ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
+            == display.displayID
+        }?.backingScaleFactor ?? 1
+      config.width = Int(window.frame.width * scale)
+      config.height = Int(window.frame.height * scale)
+      config.scalesToFit = true
+      config.showsCursor = false
+      print(
+        "Owned \(page)-\(theme.rawValue) capture: source=\(config.sourceRect), display=\(display.frame), windows=\(owned.map(\.frame)), output=\(config.width)×\(config.height)"
+      )
+      let captured = try await SCScreenshotManager.captureImage(
+        contentFilter: filter, configuration: config)
+      let stem = "main-window-full-\(page)-\(theme.rawValue)"
+      try #require(NSBitmapImageRep(cgImage: captured).representation(using: .png, properties: [:]))
+        .write(to: folder.appendingPathComponent(stem + ".png"))
+      let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap {
+        window.standardWindowButton($0)
+      }
+      metrics.append(
+        "\(stem): frame=\(window.frame.size), root=\(detail.view.bounds), layout=\(window.contentLayoutRect), title=\(window.title), visibility=\(window.titleVisibility.rawValue), active=\(NSApp.isActive), key=\(window.isKeyWindow)"
+      )
+      for button in buttons where button.window === window {
+        metrics.append("traffic light in root: \(detail.view.convert(button.bounds, from: button))")
+      }
+      if let settingsRoot = preferences?.embeddedView(page: .menuBar) {
+        metrics.append("Settings root in detail: \(settingsRoot.frame)")
+        for form in systemDescendants(settingsRoot).compactMap({ $0 as? SystemSettingsForm })
+        where !form.isHiddenOrHasHiddenAncestor {
+          metrics.append("Settings form in detail: \(form.convert(form.bounds, to: detail.view))")
+        }
+      }
+      for label in detail.view.subviews.compactMap({ $0 as? NSTextField }) where !label.isHidden {
+        metrics.append("Content \(label.stringValue) in root: \(label.frame)")
+      }
+      let labels = systemDescendants(detail.view).compactMap { $0 as? NSTextField }
+      for label in labels where ["TinyStats", "Advanced", "Settings"].contains(label.stringValue) {
+        metrics.append(
+          "\(label.stringValue) in root: \(label.convert(label.bounds, to: detail.view))")
+      }
+      if page == "sensors" {
+        let captureScale = CGFloat(captured.width) / window.frame.width
+        let brand = try #require(labels.first { $0.stringValue == "TinyStats" })
+        let header = try #require(labels.first { $0.stringValue == "Advanced" })
+        for (name, rect) in [
+          ("sidebar-top-zoom", CGRect(x: 0, y: 0, width: 148, height: 190)),
+          (
+            "sidebar-header-zoom",
+            CGRect(
+              x: 8, y: window.frame.height - header.convert(header.bounds, to: nil).midY - 65,
+              width: 132, height: 130)
+          ),
+        ] {
+          let crop = try #require(
+            captured.cropping(
+              to: .init(
+                x: rect.minX * captureScale, y: rect.minY * captureScale,
+                width: rect.width * captureScale, height: rect.height * captureScale))
+          )
+          let output = try #require(
+            NSBitmapImageRep(
+              bitmapDataPlanes: nil, pixelsWide: Int(rect.width * 3),
+              pixelsHigh: Int(rect.height * 3),
+              bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+              colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+          let context = try #require(NSGraphicsContext(bitmapImageRep: output))
+          NSGraphicsContext.saveGraphicsState()
+          NSGraphicsContext.current = context
+          context.imageInterpolation = .high
+          NSImage(cgImage: crop, size: rect.size).draw(
+            in: .init(x: 0, y: 0, width: rect.width * 3, height: rect.height * 3))
+          NSGraphicsContext.restoreGraphicsState()
+          try #require(output.representation(using: .png, properties: [:])).write(
+            to: folder.appendingPathComponent("\(name)-\(theme.rawValue).png"))
+        }
+        metrics.append(
+          "brand top distance from window top: \(window.frame.height - brand.convert(brand.bounds, to: nil).maxY)pt"
+        )
+      }
+    }
+  }
+  try
+    ("ScreenCaptureKit display filter includes only our titled MainWindow and synthetic gradient window; no other windows, real menu bar, sampling or permission request. Solid policy is injected locally.\n"
+    + metrics.joined(separator: "\n") + "\n").write(
+      to: folder.appendingPathComponent("main-window-capture.txt"), atomically: true,
+      encoding: .utf8)
+}
+// END PORTABLE SIDEBAR CAPTURE

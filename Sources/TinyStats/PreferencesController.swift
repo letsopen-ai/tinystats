@@ -587,6 +587,18 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     if hostedRoot == nil {
       hostedRoot = window?.contentView
       window?.contentView = nil
+      // The embedded host has no tab selector. Remove its standalone top reserve
+      // before autoresizing so the form stays inside the shared page inset.
+      tabs.tabViewType = .noTabsNoBorder
+      if let hostedRoot { tabs.frame = hostedRoot.bounds.insetBy(dx: 22, dy: 0) }
+    }
+    for page in [generalPage, menuBarPage] {
+      for form in page.subviews.compactMap({ $0 as? SystemSettingsForm }) {
+        // The main window already owns titlebar clearance. AppKit's automatic
+        // scroll inset would reserve the overlapping native toolbar band again.
+        form.automaticallyAdjustsContentInsets = false
+        form.contentInsets = .init()
+      }
     }
     return hostedRoot
   }
