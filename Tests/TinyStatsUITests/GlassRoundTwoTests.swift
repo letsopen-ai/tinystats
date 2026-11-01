@@ -63,7 +63,7 @@ import Testing
       #expect(
         advanced.frame
           == NSRect(
-            x: 17, y: navigation.sidebar.bounds.height - 382 - gap, width: 100, height: 15))
+            x: 16, y: navigation.sidebar.bounds.height - 382 - gap, width: 100, height: 15))
       let weather = try #require(
         controls.compactMap { $0 as? NSButton }.first { $0.title == "Weather" })
       #expect(weather.frame.minY - advanced.frame.maxY == 4 + gap)

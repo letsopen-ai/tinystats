@@ -4,6 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Extend the main window sidebar beneath the traffic lights, hide the redundant system title, align subsection headings with icons and emphasize only the selected navigation item. Preview version 0.36.4 (67).
+
 - Match the dropdown logo’s optical weight to its neighbouring icons; verify footer tooltips and VoiceOver labels in every module/state and add matching help to Weather and calendar actions. Preview version 0.36.3 (66).
 
 - Fix the upside-down dropdown logo; verify footer, Overview and Welcome orientation against the source artwork. Put the Menu Bar preview beside Layout in one compact row, remove the Spacing setting and always use 0pt side padding / 1pt gaps. Ignore obsolete saved spacing values and omit the key on save. Preview version 0.36.2 (65).

@@ -26,6 +26,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
   }
   var onOpenInWindow: (() -> Void)?
+  private let titlebarDragRegion = TitlebarDragRegion()
   private let headlinePlatter = PlatterView()
   private let readingsPlatter = PlatterView()
   private let tracePlatter = PlatterView()
@@ -231,6 +232,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     sensorCountLabel.alignment = .right
     view.addSubview(sensorCountLabel)
     sensorCountLabel.isHidden = true
+    view.addSubview(titlebarDragRegion)
     navigation.layout(in: view.bounds)
     configurePresentation()
     refresh()
@@ -324,7 +326,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   }
   private func layoutContent() {
     let w = view.bounds.width
-    let h = view.bounds.height
+    let topInset = isPopoverPresentation ? 0 : MainWindow.topContentInset(in: view)
+    let h = view.bounds.height - topInset
+    titlebarDragRegion.isHidden = topInset == 0
+    titlebarDragRegion.frame = .init(x: 0, y: h, width: w, height: topInset)
     sensorCountLabel.frame = .init(x: 242, y: h - 42, width: 152, height: 20)
     guard w > 0, h > 0 else { return }
     navigation?.layout(in: view.bounds)
@@ -1384,4 +1389,10 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     fade.endPoint = .init(x: 0.5, y: 0)
     CATransaction.commit()
   }
+}
+
+/// Only the reserved top band initiates a native drag; page controls stay below it.
+@MainActor private final class TitlebarDragRegion: NSView {
+  override var mouseDownCanMoveWindow: Bool { true }
+  override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
 }
