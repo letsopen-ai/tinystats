@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       window.isReleasedWhenClosed = false
       window.delegate = self
       window.contentViewController = detail
-      detail?.view.frame.size = window.contentLayoutRect.size
+      detail?.view.frame.size = window.contentView?.bounds.size ?? window.contentLayoutRect.size
       window.appearance = settings.theme.nativeAppearance
       window.center()
       window.makeKeyAndOrderFront(nil)
@@ -836,7 +836,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       previewWindow = window
       popover?.contentViewController = nil
       window.contentViewController = detail
-      detail.view.frame.size = window.contentLayoutRect.size
+      detail.view.frame.size = window.contentView?.bounds.size ?? window.contentLayoutRect.size
       if let origin { window.setFrameOrigin(origin) } else { window.center() }
       window.makeKeyAndOrderFront(nil)
       popover?.performClose(nil)

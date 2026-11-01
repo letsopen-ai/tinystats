@@ -26,6 +26,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
   }
   var onOpenInWindow: (() -> Void)?
+  private let titlebarDragRegion = TitlebarDragRegion()
   private let headlinePlatter = PlatterView()
   private let readingsPlatter = PlatterView()
   private let tracePlatter = PlatterView()
@@ -231,6 +232,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     sensorCountLabel.alignment = .right
     view.addSubview(sensorCountLabel)
     sensorCountLabel.isHidden = true
+    view.addSubview(titlebarDragRegion)
     navigation.layout(in: view.bounds)
     configurePresentation()
     refresh()
@@ -324,7 +326,13 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   }
   private func layoutContent() {
     let w = view.bounds.width
-    let h = view.bounds.height
+    let topInset = isPopoverPresentation ? 0 : MainWindow.pageContentInset(in: view)
+    let h = view.bounds.height - topInset
+    let dragHeight =
+      isPopoverPresentation ? 0 : min(MainWindow.topContentInset(in: view), topInset + 16)
+    titlebarDragRegion.isHidden = dragHeight == 0
+    titlebarDragRegion.frame = .init(
+      x: 0, y: view.bounds.maxY - dragHeight, width: w, height: dragHeight)
     sensorCountLabel.frame = .init(x: 242, y: h - 42, width: 152, height: 20)
     guard w > 0, h > 0 else { return }
     navigation?.layout(in: view.bounds)
@@ -1383,5 +1391,30 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     fade.startPoint = .init(x: 0.5, y: 1)
     fade.endPoint = .init(x: 0.5, y: 0)
     CATransaction.commit()
+  }
+}
+
+/// Only the reserved top band initiates a native drag; page controls stay below it.
+@MainActor final class TitlebarDragRegion: NSView {
+  enum DoubleClickAction { case zoom, minimize, none }
+  static func doubleClickAction(_ preference: String?) -> DoubleClickAction {
+    switch preference?.lowercased() {
+    case "minimize": .minimize
+    case "none": .none
+    default: .zoom
+    }
+  }
+  override var mouseDownCanMoveWindow: Bool { true }
+  override func mouseDown(with event: NSEvent) {
+    guard event.clickCount == 2 else {
+      window?.performDrag(with: event)
+      return
+    }
+    switch Self.doubleClickAction(UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick"))
+    {
+    case .zoom: window?.performZoom(nil)
+    case .minimize: window?.performMiniaturize(nil)
+    case .none: break
+    }
   }
 }
