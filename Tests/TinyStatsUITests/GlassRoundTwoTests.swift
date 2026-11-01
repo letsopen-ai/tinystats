@@ -57,16 +57,12 @@ import Testing
         controls.compactMap { $0 as? NSTextField }.first {
           $0.stringValue == "Advanced"
         })
-      let gap =
-        navigation.sidebarMaterial.treatment == .legacy
-        ? 0 : DetailNavigationCoordinator.modernAdvancedSectionGap
-      #expect(
-        advanced.frame
-          == NSRect(
-            x: 16, y: navigation.sidebar.bounds.height - 382 - gap, width: 100, height: 15))
       let weather = try #require(
         controls.compactMap { $0 as? NSButton }.first { $0.title == "Weather" })
-      #expect(weather.frame.minY - advanced.frame.maxY == 4 + gap)
+      #expect(weather.frame.minY - advanced.frame.maxY == 16)
+      let sensors = try #require(
+        controls.compactMap { $0 as? NSButton }.first { $0.title == "Sensors" })
+      #expect(advanced.frame.minY - sensors.frame.maxY == 6)
       let ordered = controls.sorted { $0.frame.minY < $1.frame.minY }
       for pair in zip(ordered, ordered.dropFirst()) {
         #expect(pair.0.frame.maxY <= pair.1.frame.minY)

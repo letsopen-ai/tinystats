@@ -16,6 +16,8 @@ import Testing
   #expect(window.styleMask.contains(.fullSizeContentView))
   #expect(window.titlebarAppearsTransparent && window.titlebarSeparatorStyle == .none)
   #expect(!window.isMovableByWindowBackground)
+  #expect(window.toolbarStyle == .unified)
+  #expect(window.frame.size == NSSize(width: 884, height: 692))
   #expect(window.toolbar?.items.isEmpty == true)
   #expect(window.toolbar?.showsBaselineSeparator == false)
   for policy in ["glass", "solid", "contrast", "legacy"] {
@@ -26,6 +28,8 @@ import Testing
         increaseContrast: policy == "contrast")
     }
     window.contentViewController = detail
+    window.orderFrontRegardless()
+    window.displayIfNeeded()
     for size in [MainWindow.minimumSize, NSSize(width: 1200, height: 850)] {
       window.setContentSize(size)
       window.contentView?.layoutSubtreeIfNeeded()
@@ -50,10 +54,11 @@ import Testing
         let hit = try #require(frameView.hitTest(point))
         #expect(hit.mouseDownCanMoveWindow)
       }
-      let clearance = MainWindow.topContentInset(in: root)
+      let geometry = MainWindow.titlebarGeometry(in: root)
+      let clearance = geometry.pageInset
       #expect(clearance > 0)
       let brandFrame = brand.convert(brand.bounds, to: root)
-      #expect(abs(root.bounds.maxY - brandFrame.maxY - clearance - 12) < 0.5)
+      #expect(abs(root.bounds.maxY - brandFrame.maxY - geometry.brandTop) < 0.5)
       for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
         let button = try #require(window.standardWindowButton(type))
         let frame = root.convert(button.bounds, from: button)
@@ -66,15 +71,42 @@ import Testing
         let sidebarFrame = sidebar.convert(sidebar.bounds, to: root)
         #expect(sidebarFrame.minX <= frame.minX && sidebarFrame.maxX >= frame.maxX)
       }
+      let weather = try #require(
+        sidebarDescendants(root).compactMap { $0 as? NavigationButton }.first {
+          $0.module == .weather
+        })
+      let sensors = try #require(
+        sidebarDescendants(root).compactMap { $0 as? NavigationButton }.first {
+          $0.module == .sensors
+        })
+      let advanced = try #require(labels.first { $0.stringValue == "Advanced" })
+      #expect(weather.frame.minY - advanced.frame.maxY == 16)
+      #expect(advanced.frame.minY - sensors.frame.maxY == 6)
+      let settings = try #require(labels.first { $0.stringValue == "Settings" })
+      let general = try #require(
+        sidebarDescendants(root).compactMap { $0 as? NavigationButton }.first {
+          $0.title == "General"
+        })
+      #expect(settings.frame.minY - general.frame.maxY == 6)
       for module in Module.allCases {
         for all in [false, true] {
           detail.selected = module
           detail.showsAllReadings = all
           root.layoutSubtreeIfNeeded()
+          let pageTitle = try #require(
+            root.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == module.title }
+          )
+          #expect(abs(pageTitle.frame.maxY - brandFrame.maxY) < 0.5)
           for child in root.subviews
           where child !== sidebar && !child.isHidden && child.frame.minX >= 144 {
             #expect(child.frame.maxY <= root.bounds.maxY - clearance + 0.5)
             #expect(root.bounds.contains(child.frame))
+            if child is NSControl {
+              let point = child.convert(
+                NSPoint(x: child.bounds.midX, y: child.bounds.midY), to: frameView.superview)
+              let hit = try #require(frameView.hitTest(point))
+              #expect(hit === child || hit.isDescendant(of: child))
+            }
           }
         }
       }
@@ -90,6 +122,15 @@ import Testing
         root.layoutSubtreeIfNeeded()
         #expect(content.frame.maxY <= root.bounds.maxY - clearance + 0.5)
         #expect(root.bounds.contains(content.frame))
+        let form = try #require(
+          sidebarDescendants(content).compactMap { $0 as? SystemSettingsForm }.first {
+            !$0.isHiddenOrHasHiddenAncestor
+          })
+        #expect(!form.automaticallyAdjustsContentInsets && form.contentInsets.top == 0)
+        let document = try #require(form.documentView)
+        let stack = try #require(document.subviews.compactMap { $0 as? NSStackView }.first)
+        let first = try #require(stack.arrangedSubviews.first)
+        #expect(abs(first.convert(first.bounds, to: root).maxY - brandFrame.maxY) <= 3)
       }
     }
   }
@@ -98,6 +139,7 @@ import Testing
 @Test @MainActor func sidebarSelectionFontsFollowActionsShortcutsAndSettingsWithoutFrameJitter()
   throws
 {
+  _ = NSApplication.shared
   let detail = DetailController()
   let window = MainWindow()
   window.contentViewController = detail
@@ -122,13 +164,17 @@ import Testing
     for button in buttons {
       #expect(button.state == (button === selected ? .on : .off))
       #expect(
+        (button.cell?.accessibilityValue() as? NSNumber)?.intValue == (button === selected ? 1 : 0))
+      #expect(
         button.font
           == NSFont.systemFont(ofSize: 12, weight: button === selected ? .semibold : .regular))
     }
     #expect(buttons.map(\.frame) == frames)
   }
   for button in buttons {
-    #expect(NSApp.sendAction(try #require(button.action), to: button.target, from: button))
+    button.performClick(nil)
+    check(button)
+    button.performClick(nil)
     check(button)
   }
   // The native key-equivalent path shares the same action; no global event or real menu bar.
@@ -146,6 +192,7 @@ import Testing
 }
 
 @Test @MainActor func nativeTitlebarGeometryChangesRelayoutWithoutChangingRootSize() throws {
+  _ = NSApplication.shared
   let window = MainWindow()
   let detail = DetailController()
   window.contentViewController = detail
@@ -161,11 +208,49 @@ import Testing
     window.toolbar?.isVisible = visible
     window.displayIfNeeded()
     root.layoutSubtreeIfNeeded()
-    let clearance = MainWindow.topContentInset(in: root)
+    let clearance = MainWindow.titlebarGeometry(in: root).brandTop
     clearances.append(clearance)
     #expect(root.bounds.size == size)
     #expect(
-      abs(root.bounds.maxY - brand.convert(brand.bounds, to: root).maxY - clearance - 12) < 0.5)
+      abs(root.bounds.maxY - brand.convert(brand.bounds, to: root).maxY - clearance) < 0.5)
   }
   #expect(clearances[0] > clearances[1] && clearances[2] == clearances[0])
+}
+
+@Test @MainActor func fullScreenGeometryIgnoresForeignButtonsAndTracksToolbarReveal() throws {
+  _ = NSApplication.shared
+  let window = MainWindow()
+  let other = MainWindow()
+  defer {
+    window.close()
+    other.close()
+  }
+  let root = try #require(window.contentView)
+  let local = try #require(window.standardWindowButton(.closeButton))
+  let foreign = try #require(other.standardWindowButton(.closeButton))
+  let localFrames = MainWindow.localButtonFrames(in: root, buttons: [foreign, local])
+  #expect(localFrames == [root.convert(local.bounds, from: local)])
+  local.isHidden = true
+  #expect(MainWindow.localButtonFrames(in: root, buttons: [foreign, local]).isEmpty)
+  let bounds = NSRect(x: 0, y: 0, width: 884, height: 692)
+  var insets: [CGFloat] = []
+  for toolbarHeight: CGFloat in [0, 52, 0] {
+    let geometry = MainWindow.titlebarGeometry(
+      bounds: bounds, layoutRect: NSRect(x: 0, y: 0, width: 884, height: 692 - toolbarHeight),
+      isFullScreen: true, buttonFrames: [NSRect(x: 20, y: -10_000, width: 14, height: 14)])
+    #expect(geometry.nativeInset == toolbarHeight)
+    #expect(geometry.brandTop == toolbarHeight + 12)
+    #expect(bounds.height - geometry.pageInset >= 650)
+    #expect(geometry.brandTop + 400 < bounds.height - 120)
+    insets.append(geometry.pageInset)
+  }
+  #expect(insets == [0, 42, 0])
+}
+
+@Test @MainActor func titleBandDoubleClickRespectsSystemAction() {
+  _ = NSApplication.shared
+  #expect(TitlebarDragRegion.doubleClickAction("Minimize") == .minimize)
+  #expect(TitlebarDragRegion.doubleClickAction("Maximize") == .zoom)
+  #expect(TitlebarDragRegion.doubleClickAction("None") == .none)
+  #expect(TitlebarDragRegion.doubleClickAction(nil) == .zoom)
 }

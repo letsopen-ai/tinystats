@@ -22,7 +22,7 @@ import Testing
   #expect(detail.view.bounds.size == NSSize(width: 1200, height: 850))
   #expect(
     root.frame.width == 740
-      && root.frame.height == 850 - MainWindow.topContentInset(in: detail.view))
+      && root.frame.height == 850 - MainWindow.pageContentInset(in: detail.view))
   for module in Module.allCases {
     detail.selected = module
     detail.view.layoutSubtreeIfNeeded()

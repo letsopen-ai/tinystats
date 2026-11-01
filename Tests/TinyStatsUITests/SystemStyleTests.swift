@@ -96,6 +96,10 @@ import Testing
     contentRect: .init(x: 80, y: 80, width: 1080, height: 780), styleMask: [.borderless],
     backing: .buffered, defer: false)
   window.isReleasedWhenClosed = false
+  window.level = .floating
+  window.collectionBehavior = [
+    .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .canJoinAllApplications,
+  ]
   let backdrop = GlassGalleryBackdrop(frame: .init(x: 0, y: 0, width: 1080, height: 780))
   window.contentView = backdrop
   defer {
@@ -1768,9 +1772,13 @@ import Testing
   }
   _ = NSApplication.shared
   let policy = NSApp.activationPolicy()
-  _ = NSApp.setActivationPolicy(.accessory)
+  _ = NSApp.setActivationPolicy(.regular)
   NSApp.finishLaunching()
   NSApp.activate(ignoringOtherApps: true)
+  try await Task.sleep(for: .milliseconds(150))
+  // A SwiftPM runner may be unable to become active. Avoid leaving inactive regular
+  // app windows subject to Space/stage transitions between captures.
+  if !NSApp.isActive { _ = NSApp.setActivationPolicy(.accessory) }
   defer { _ = NSApp.setActivationPolicy(policy) }
   let screen = try #require(NSScreen.main)
   let backdropWindow = GlassGalleryWindow(
@@ -1778,6 +1786,10 @@ import Testing
       x: screen.frame.minX + 60, y: screen.frame.minY + 80, width: 1080, height: 800),
     styleMask: [.borderless], backing: .buffered, defer: false)
   backdropWindow.isReleasedWhenClosed = false
+  backdropWindow.level = .floating
+  backdropWindow.collectionBehavior = [
+    .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .canJoinAllApplications,
+  ]
   let backdrop = GlassGalleryBackdrop(frame: .init(x: 0, y: 0, width: 1080, height: 800))
   backdrop.gradient = true
   backdropWindow.contentView = backdrop
@@ -1790,6 +1802,10 @@ import Testing
   for theme in [AppTheme.light, .dark] {
     for page in ["sensors", "overview", "settings-menu-bar", "sensors-solid"] {
       let window = MainWindow()
+      window.level = .floating
+      window.collectionBehavior = [
+        .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .canJoinAllApplications,
+      ]
       window.title = "TinyStats"
       window.appearance = theme.nativeAppearance
       window.setFrameOrigin(
@@ -1848,28 +1864,59 @@ import Testing
       detail.view.layoutSubtreeIfNeeded()
       window.displayIfNeeded()
       try await Task.sleep(for: .milliseconds(150))
-      let content = try await SCShareableContent.excludingDesktopWindows(
+      var content = try await SCShareableContent.excludingDesktopWindows(
         true, onScreenWindowsOnly: true)
-      let owned = content.windows.filter {
+      var owned = content.windows.filter {
         $0.windowID == CGWindowID(window.windowNumber)
           || $0.windowID == CGWindowID(backdropWindow.windowNumber)
       }
       #expect(owned.count == 2)
-      let display = try #require(
-        content.displays.first {
-          $0.displayID
-            == (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
-              as? CGDirectDisplayID)
+      var ownedWindow = try #require(owned.first { $0.windowID == CGWindowID(window.windowNumber) })
+      var display = try #require(
+        content.displays.first { $0.frame.contains(ownedWindow.frame) } ?? content.displays.first)
+      // Displays/Spaces may change during a long gallery run. Reposition our own
+      // fixtures once, rather than silently saving an offscreen or partial crop.
+      if !display.frame.contains(ownedWindow.frame),
+        let currentScreen = NSScreen.screens.first(where: {
+          ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
+            == display.displayID
         })
+      {
+        backdropWindow.setFrameOrigin(
+          .init(x: currentScreen.frame.minX + 60, y: currentScreen.frame.minY + 80))
+        window.setFrameOrigin(
+          .init(x: currentScreen.frame.minX + 140, y: currentScreen.frame.minY + 140))
+        backdropWindow.orderFrontRegardless()
+        window.orderFrontRegardless()
+        window.displayIfNeeded()
+        try await Task.sleep(for: .milliseconds(300))
+        content = try await SCShareableContent.excludingDesktopWindows(
+          true, onScreenWindowsOnly: true)
+        owned = content.windows.filter {
+          $0.windowID == CGWindowID(window.windowNumber)
+            || $0.windowID == CGWindowID(backdropWindow.windowNumber)
+        }
+        ownedWindow = try #require(owned.first { $0.windowID == CGWindowID(window.windowNumber) })
+        display = try #require(
+          content.displays.first { $0.frame.contains(ownedWindow.frame) } ?? content.displays.first)
+      }
+      try #require(display.frame.contains(ownedWindow.frame), "Our entire fixture must be onscreen")
       let filter = SCContentFilter(display: display, including: owned)
       let config = SCStreamConfiguration()
-      config.sourceRect = .init(
-        x: window.frame.minX - screen.frame.minX, y: screen.frame.maxY - window.frame.maxY,
-        width: window.frame.width, height: window.frame.height)
-      config.width = Int(window.frame.width * screen.backingScaleFactor)
-      config.height = Int(window.frame.height * screen.backingScaleFactor)
+      config.sourceRect = ownedWindow.frame.offsetBy(
+        dx: -display.frame.minX, dy: -display.frame.minY)
+      let scale =
+        NSScreen.screens.first {
+          ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
+            == display.displayID
+        }?.backingScaleFactor ?? 1
+      config.width = Int(window.frame.width * scale)
+      config.height = Int(window.frame.height * scale)
       config.scalesToFit = true
       config.showsCursor = false
+      print(
+        "Owned \(page)-\(theme.rawValue) capture: source=\(config.sourceRect), display=\(display.frame), windows=\(owned.map(\.frame)), output=\(config.width)×\(config.height)"
+      )
       let captured = try await SCScreenshotManager.captureImage(
         contentFilter: filter, configuration: config)
       let stem = "main-window-full-\(page)-\(theme.rawValue)"
@@ -1881,11 +1928,18 @@ import Testing
       metrics.append(
         "\(stem): frame=\(window.frame.size), root=\(detail.view.bounds), layout=\(window.contentLayoutRect), title=\(window.title), visibility=\(window.titleVisibility.rawValue), active=\(NSApp.isActive), key=\(window.isKeyWindow)"
       )
-      for button in buttons {
+      for button in buttons where button.window === window {
         metrics.append("traffic light in root: \(detail.view.convert(button.bounds, from: button))")
       }
       if let settingsRoot = preferences?.embeddedView(page: .menuBar) {
         metrics.append("Settings root in detail: \(settingsRoot.frame)")
+        for form in systemDescendants(settingsRoot).compactMap({ $0 as? SystemSettingsForm })
+        where !form.isHiddenOrHasHiddenAncestor {
+          metrics.append("Settings form in detail: \(form.convert(form.bounds, to: detail.view))")
+        }
+      }
+      for label in detail.view.subviews.compactMap({ $0 as? NSTextField }) where !label.isHidden {
+        metrics.append("Content \(label.stringValue) in root: \(label.frame)")
       }
       let labels = systemDescendants(detail.view).compactMap { $0 as? NSTextField }
       for label in labels where ["TinyStats", "Advanced", "Settings"].contains(label.stringValue) {
