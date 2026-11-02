@@ -49,7 +49,7 @@ Keep the source manifest and local logs under `build/ci` locally. In the PR, sum
 
 For collection/UI performance changes, run real diagnostics and measure the Release app with `scripts/benchmark-app.py`, following [Performance](docs/PERFORMANCE.md). Distinguish measured costs from targets, and real native UI/hardware checks from synthetic fixtures. A pass on one host is not native macOS 14/15 or Intel validation.
 
-Documentation-only changes need `git diff --check` and a factual/link review, without rebuilding an unchanged app. There is currently no dedicated repository-wide doc/link checker. There is no hosted CI yet, so the local check is the required gate.
+Documentation-only changes need `git diff --check` and a factual/link review, without rebuilding an unchanged app. There is currently no dedicated repository-wide doc/link checker. A manually dispatched [self-hosted Mac smoke workflow](docs/SELF_HOSTED_CI.md) covers selected checks. The complete local check remains the required gate.
 
 ## Pull request workflow
 
