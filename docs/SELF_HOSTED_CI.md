@@ -4,8 +4,8 @@ The `Mac CI smoke` workflow is manually dispatched from `main` on the private
 `niechen/tinystats` repository. Its runner labels are
 `self-hosted`, `macOS`, `ARM64`, `mac-mini-m4`, `unsigned`, and `tinystats`.
 
-The Mac has one repository-scoped runner registration per repository. Each
-runs as the standard local account `runner` using a system LaunchDaemon, so the
+The runner setup uses one repository-scoped registration per repository. Each
+instance is configured to run as the standard local account `runner` using a system LaunchDaemon, so the
 owner can keep using a separate desktop account. Runner processes do not run as
 root. The initial workflow does not automatically execute pull requests.
 

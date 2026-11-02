@@ -145,6 +145,8 @@ build/TinyStats.app/Contents/MacOS/TinyStats --preview              # persistent
 
 The code is split into `Sources/TinyStatsCore` (models, collectors, settings, history), `Sources/CTinyStats` (system API wrappers) and `Sources/TinyStats` (AppKit UI and the sampling worker). Start with [Design](docs/DESIGN.md), [Performance](docs/PERFORMANCE.md) and [Compatibility](docs/COMPATIBILITY.md).
 
+The manually dispatched [self-hosted Mac smoke workflow](docs/SELF_HOSTED_CI.md) compiles the native executable and runs selected pure logic tests. Keep using `verify-local.sh` for the complete required gate.
+
 ## Contributing
 
 Bug reports, hardware diagnostics from different Macs, documentation and focused code changes are all welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md), check the [roadmap](docs/ROADMAP.md) for open work, and report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). Changes are recorded in the [changelog](CHANGELOG.md).
