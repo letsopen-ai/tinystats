@@ -1,0 +1,78 @@
+name: Production release
+on:
+  workflow_run:
+    workflows: [Mac CI smoke]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: >-
+      github.repository == 'niechen/tinystats' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: read
+      deployments: write
+    steps:
+      # No checkout, PR artifact or cache is used in this credentialed workflow.
+      - name: Request signed release and await verified publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: python
+        run: |
+          import json, os, subprocess, time
+          from pathlib import Path
+          repo = os.environ['GITHUB_REPOSITORY']
+          def api(path, data=None):
+              command = ['gh', 'api', 'repos/' + repo + '/' + path]
+              if data is not None:
+                  command += ['--method', 'POST', '--input', '-']
+              result = subprocess.run(command, input=json.dumps(data) if data is not None else None,
+                                      text=True, capture_output=True, check=True)
+              return json.loads(result.stdout)
+          sha = os.environ['SOURCE_SHA']
+          if api('git/ref/heads/main')['object']['sha'] != sha:
+              print('Superseded main commit; no release requested.')
+              raise SystemExit(0)
+          deployment = api('deployments', {
+              'ref': sha, 'task': 'release-signed', 'environment': 'production',
+              'auto_merge': False, 'required_contexts': [],
+              'production_environment': True,
+              'description': 'Signed production release after main CI',
+              'payload': {'schema': 1, 'ci_run_id': int(os.environ['CI_RUN_ID']),
+                          'release_run_id': int(os.environ['GITHUB_RUN_ID'])}})
+          deployment_id = deployment['id']
+          link = 'https://github.com/' + repo + '/deployments'
+          with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
+              summary.write('Release request `' + str(deployment_id) + '` for `' + sha + '`.\n\n')
+              summary.write('[Publication status](' + link + ') — signing runs in the owner account on the Mac.\n')
+          deadline = time.monotonic() + 21000
+          while time.monotonic() < deadline:
+              statuses = api('deployments/' + str(deployment_id) + '/statuses')
+              state = statuses[0]['state'] if statuses else 'pending'
+              if state == 'success':
+                  print('Signed release published and verified.')
+                  break
+              if state == 'inactive':
+                  print('Release superseded or version already published; see deployment status.')
+                  break
+              if state in ('error', 'failure'):
+                  raise SystemExit('Release failed: ' + statuses[0].get('description', 'Inspect the Mac release log.'))
+              time.sleep(30)
+          else:
+              api('deployments/' + str(deployment_id) + '/statuses', {
+                  'state': 'error', 'auto_inactive': False,
+                  'description': 'Timed out waiting for the Mac signing service.'})
+              raise SystemExit('Signing service did not complete before the release timeout.')

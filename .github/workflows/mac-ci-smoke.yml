@@ -1,14 +1,21 @@
 name: Mac CI smoke
 on:
   workflow_dispatch:
+  push:
+    branches: ["**"]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
 concurrency:
-  group: mac-ci-smoke
-  cancel-in-progress: false
+  group: mac-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   unsigned-smoke:
-    if: github.repository == 'niechen/tinystats' && github.ref == 'refs/heads/main'
+    if: >-
+      github.repository == 'niechen/tinystats' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, unsigned, tinystats]
     timeout-minutes: 30
     env:
