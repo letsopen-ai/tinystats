@@ -145,7 +145,7 @@ build/TinyStats.app/Contents/MacOS/TinyStats --preview              # persistent
 
 The code is split into `Sources/TinyStatsCore` (models, collectors, settings, history), `Sources/CTinyStats` (system API wrappers) and `Sources/TinyStats` (AppKit UI and the sampling worker). Start with [Design](docs/DESIGN.md), [Performance](docs/PERFORMANCE.md) and [Compatibility](docs/COMPATIBILITY.md).
 
-The manually dispatched [self-hosted Mac smoke workflow](docs/SELF_HOSTED_CI.md) compiles the native executable and runs selected pure logic tests. Keep using `verify-local.sh` for the complete required gate.
+The automatic push/PR [self-hosted Mac smoke workflow](docs/SELF_HOSTED_CI.md) compiles the native executable and runs selected pure logic tests. Keep using `verify-local.sh` for the complete required gate.
 
 ## Contributing
 

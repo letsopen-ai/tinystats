@@ -1,6 +1,6 @@
 # Distribution and release checklist
 
-TinyStats is currently distributed as source. Building from source produces an ad-hoc signed app (see the [README](../README.md#install)). A signed, notarized binary release is a separate milestone tracked by the checklist below.
+TinyStats can be built from source with an ad-hoc signature (see the [README](../README.md#install)). The automatic production-release pipeline below requires Developer ID signing and Apple notarization; configuration alone does not complete the release-readiness checklist.
 
 ## Reproducible build
 
@@ -31,3 +31,41 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 - [ ] Review the known gaps in the [roadmap](ROADMAP.md) and decide which are acceptable for the release.
 - [ ] Reproduce the [performance](PERFORMANCE.md) measurements on representative hardware.
 - [ ] Publish checksums and installation instructions with the release; add a Homebrew cask once a stable signed download URL exists.
+
+## Automatic production releases
+
+Branch pushes and same-repository PRs run `Mac CI smoke`. Only successful main
+push CI starts `Production release`. It queues a GitHub production Deployment
+for the separately installed owner-session worker documented in
+[Teleframe signed-release operations](https://github.com/niechen/teleframe/blob/main/docs/SIGNED_RELEASES.md#automatic-main-releases).
+No signing credential is installed in the shared `runner` account. Fork PRs are
+skipped; main release source is trusted with the owner's signing authority.
+
+The owner worker uses `scripts/release_signed.py` from a clean, freshly fetched
+main checkout outside synced Documents. It requires the complete final-tree
+`verify-local.sh` gate, builds universal Release output with the configured
+Developer ID identity, submits to Apple using the `teleframe-notary` Keychain
+profile, requires Accepted notarization, staples and validates the ticket, checks
+Gatekeeper/signature/team/version/architecture, and then repackages the stapled
+app. The ZIP, SHA-256 sums and public release manifest are uploaded to a draft
+GitHub Release and downloaded again for byte comparison before production
+publication. No privileged traffic service is bundled or installed.
+
+`VERSION` and `Resources/Info.plist` must agree. Advance both marketing versions
+and the plist build number in a reviewed main change to publish a new version.
+A previously published `vX.Y.Z` is a no-op; existing artifacts are never replaced.
+Tag collisions, incomplete drafts, notarization rejection, stale main or an
+expired release request fail closed. A failed draft requires inspection and
+reconciliation; automatic retry never deletes or overwrites its assets. Failed
+attempts and logs stay owner-only on the Mac.
+
+The owner account must already have the signing wrapper/config at
+`~/Library/Application Support/Teleframe/Signing`, including `apple-signing.json`
+with `developerIDIdentity` (SHA-1 fingerprint or full Developer ID name) and
+`team` fields, an accessible Developer ID private key and the notarization Keychain profile. Creating workflows or a
+LaunchAgent does not establish unattended credential access. Missing credentials
+fail the deployment. View Actions → Production release and GitHub Deployments
+for the result. Deployment status `success` means verified publication. An
+`inactive`/skipped request may leave Actions green without publishing; queue
+acceptance alone is not publication.
+The physical-device, minimum-OS/Intel runtime and UX checks above remain separate.
