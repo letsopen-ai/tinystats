@@ -52,6 +52,34 @@ class GuardTests(unittest.TestCase):
                 event.write_text(json.dumps({'workflow_run': {'id': 1, 'head_sha': 'b' * 40}}))
                 with self.assertRaises(ValueError): guard.from_environment(self.sha)
 
+    def test_queued_metadata_is_not_active_authority(self):
+        with self.assertRaises(guard.ReleaseQueued):
+            self.check(release=dict(self.release, status='queued'))
+
+    def test_queue_lag_revalidates_and_cancelled_or_expired_runs_still_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            event = Path(directory) / 'event.json'
+            event.write_text(json.dumps({'workflow_run': {'id': 1, 'head_sha': self.sha}}))
+            env = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': guard.REPO,
+                   'GITHUB_EVENT_NAME': 'workflow_run', 'GITHUB_EVENT_PATH': str(event), 'GITHUB_RUN_ID': '2'}
+            with patch.dict(os.environ, env, clear=True), \
+                 patch.object(guard.time, 'sleep') as sleep, \
+                 patch.object(guard, 'validate', side_effect=[guard.ReleaseQueued('queued'), self.sha]) as validate:
+                self.assertEqual(guard.from_environment(self.sha), self.sha)
+                self.assertEqual(validate.call_count, 2)
+                sleep.assert_called_once_with(5)
+            with patch.dict(os.environ, env, clear=True), \
+                 patch.object(guard.time, 'sleep') as sleep, \
+                 patch.object(guard, 'validate', side_effect=ValueError('cancelled')):
+                with self.assertRaisesRegex(ValueError, 'cancelled'): guard.from_environment(self.sha)
+                sleep.assert_not_called()
+            with patch.dict(os.environ, env, clear=True), \
+                 patch.object(guard.time, 'sleep') as sleep, \
+                 patch.object(guard.time, 'monotonic', side_effect=[0, 121]), \
+                 patch.object(guard, 'validate', side_effect=guard.ReleaseQueued('queued')):
+                with self.assertRaisesRegex(ValueError, 'deadline'): guard.from_environment(self.sha)
+                sleep.assert_not_called()
+
     def test_run_id_validation(self):
         for ident in ('0', '-1', '1/../../x', '１２'):
             with self.subTest(ident=ident), self.assertRaises(ValueError): guard.validate(self.sha, ident, '2')
