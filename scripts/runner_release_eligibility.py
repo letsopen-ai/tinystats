@@ -19,7 +19,7 @@ def verify_published(version, tagged_commit, release):
     if not isinstance(assets, list) or not required.issubset({asset.get('name') for asset in assets}):
         raise ValueError('Existing release assets are incomplete')
     with tempfile.TemporaryDirectory(prefix='tinystats-release-check-') as directory:
-        args = ['gh', 'release', 'download', 'v' + version, '--repo', 'niechen/tinystats', '--dir', directory]
+        args = ['gh', 'release', 'download', 'v' + version, '--repo', 'letsopen-ai/tinystats', '--dir', directory]
         for item in sorted(required):
             args += ['--pattern', item]
         subprocess.run(args, check=True, timeout=300)

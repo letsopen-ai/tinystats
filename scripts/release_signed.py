@@ -17,7 +17,7 @@ import sys
 from notary_config import keychain_arguments
 
 ROOT = Path(__file__).resolve().parents[1]
-REPO = 'niechen/tinystats'
+REPO = 'letsopen-ai/tinystats'
 
 
 def run(args, capture=False):
