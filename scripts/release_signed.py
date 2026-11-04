@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 from notary_config import keychain_arguments
+from signing_config import identity_keychain_arguments
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = 'letsopen-ai/tinystats'
@@ -129,7 +130,7 @@ def main():
     else:
         config = json.loads((Path.home() / 'Library/Application Support/Teleframe/Signing/apple-signing.json').read_text())
         wanted, team = config['developerIDIdentity'], config['team']
-    listing = run(['security', 'find-identity', '-v', '-p', 'codesigning'], True).stdout
+    listing = run(['security', 'find-identity', '-v', '-p', 'codesigning', *identity_keychain_arguments(os.environ)], True).stdout
     matches = [(key, name) for key, name in re.findall(r'([0-9A-Fa-f]{40}) \"(Developer ID Application:[^\"]+)\"', listing)
                if (key.upper() == wanted.upper() or name == wanted) and name.endswith('(' + team + ')')]
     if not matches:
