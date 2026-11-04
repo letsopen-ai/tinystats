@@ -4,8 +4,14 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 
 REPO = 'letsopen-ai/tinystats'
+
+
+class ReleaseQueued(ValueError):
+    """Known initial metadata lag; never authorizes signing by itself."""
+
 
 
 def api(path):
@@ -43,6 +49,8 @@ def validate(commit, ci_id, release_id):
             raise ValueError('Workflow identity or source mismatch')
     if ci.get('event') != 'push' or ci.get('status') != 'completed' or ci.get('conclusion') != 'success':
         raise ValueError('Release requires successful main push CI')
+    if release.get('event') == 'workflow_run' and release.get('status') == 'queued':
+        raise ReleaseQueued('Release run is not active')
     if release.get('event') != 'workflow_run' or release.get('status') != 'in_progress':
         raise ValueError('Release run is not active')
     return commit
@@ -57,4 +65,12 @@ def from_environment(commit):
     trigger = event.get('workflow_run') or {}
     if trigger.get('head_sha') != commit or type(trigger.get('id')) is not int:
         raise ValueError('Trigger source does not match release')
-    return validate(commit, str(trigger['id']), os.environ.get('GITHUB_RUN_ID', ''))
+    deadline = time.monotonic() + 120
+    while True:
+        try:
+            return validate(commit, str(trigger['id']), os.environ.get('GITHUB_RUN_ID', ''))
+        except ReleaseQueued:
+            if time.monotonic() >= deadline:
+                raise ValueError('Release run did not become active before the status deadline') from None
+            print('Waiting for GitHub to mark this release run active...', flush=True)
+            time.sleep(5)
