@@ -32,11 +32,11 @@ cp LICENSE THIRD_PARTY_NOTICES.md "$app/Contents/Resources/"
 xattr -cr "$app"
 if [[ -n "${TINYSTATS_SIGN_IDENTITY:-}" ]]; then
   python3 scripts/signing_config.py
-  signing_keychain=()
+  sign_command=(codesign --force --options runtime --timestamp --sign "$TINYSTATS_SIGN_IDENTITY")
   if [[ -n "${TELEFRAME_SIGNING_KEYCHAIN:-}" ]]; then
-    signing_keychain=(--keychain "$TELEFRAME_SIGNING_KEYCHAIN")
+    sign_command+=(--keychain "$TELEFRAME_SIGNING_KEYCHAIN")
   fi
-  codesign "${signing_keychain[@]}" --force --options runtime --timestamp --sign "$TINYSTATS_SIGN_IDENTITY" "$app"
+  "${sign_command[@]}" "$app"
 else
   codesign --force --sign - "$app"
 fi
