@@ -2,12 +2,28 @@ import tempfile
 from pathlib import Path
 import sys
 import subprocess
+import time
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from runner_release_lock import release_lock
 
 
 class ReleaseLockTests(unittest.TestCase):
+    def test_waiting_job_acquires_lock_after_other_process_finishes(self):
+        with tempfile.TemporaryDirectory() as home:
+            code = ('import sys; sys.path.insert(0, sys.argv[1]); '
+                    'from runner_release_lock import release_lock; '
+                    'cm=release_lock(sys.argv[2], wait_seconds=1); cm.__enter__(); print("acquired", flush=True)')
+            with release_lock(home):
+                process = subprocess.Popen([sys.executable, '-c', code,
+                                            str(Path(__file__).resolve().parents[1]), home],
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                time.sleep(0.1)
+                self.assertIsNone(process.poll())
+            out, err = process.communicate(timeout=4)
+            self.assertEqual(process.returncode, 0, err)
+            self.assertIn(b'acquired', out)
+
     def test_concurrent_job_refused_then_lock_can_be_reused(self):
         with tempfile.TemporaryDirectory() as home:
             with release_lock(home):

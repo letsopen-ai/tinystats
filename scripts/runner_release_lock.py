@@ -4,10 +4,11 @@ import fcntl
 import os
 from pathlib import Path
 import stat
+import time
 
 
 @contextmanager
-def release_lock(home):
+def release_lock(home, wait_seconds=0):
     root = Path(home) / 'Library' / 'Application Support' / 'Mac CI Release Lock'
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     st = root.lstat()
@@ -19,10 +20,16 @@ def release_lock(home):
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077 or st.st_nlink != 1:
             raise ValueError('Release lock file must be owned and private')
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError('Another release job is already using this account') from None
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError('Another release job is already using this account') from None
+                time.sleep(min(5, remaining))
         try:
             yield
         finally:
