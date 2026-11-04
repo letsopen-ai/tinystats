@@ -6,7 +6,7 @@ permissions:
 jobs:
   diagnose:
     if: github.repository == 'letsopen-ai/tinystats' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, release, tinystats]
+    runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, letsopen-org, release, tinystats]
     timeout-minutes: 5
     steps:
       - name: Report only test crash reason and stack symbols
