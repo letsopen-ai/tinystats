@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 
-REPO = 'niechen/tinystats'
+REPO = 'letsopen-ai/tinystats'
 
 
 def api(path):

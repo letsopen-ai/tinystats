@@ -34,38 +34,36 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 
 ## Automatic production releases
 
-Branch pushes and same-repository PRs run `Mac CI smoke`. Only successful main
-push CI starts `Production release`. It queues a GitHub production Deployment
-for the separately installed owner-session worker documented in
-[Teleframe signed-release operations](https://github.com/niechen/teleframe/blob/main/docs/SIGNED_RELEASES.md#automatic-main-releases).
-No signing credential is installed in the shared `runner` account. Fork PRs are
-skipped; main release source is trusted with the owner's signing authority.
+Branch pushes and same-repository PRs run `Mac CI smoke`. A successful main
+push CI may start `Production release` on the dedicated M4 `release-runner`
+account. The job checks the triggering CI and current main against GitHub,
+then skips a version that already has a tag. It checks out the exact source in
+a separate directory and runs the full `verify-local.sh` gate before loading
+signing secrets. Fork PRs do not receive signing credentials. Only trusted main
+source may use this runner and its signing authority.
 
-The owner worker uses `scripts/release_signed.py` from a clean, freshly fetched
-main checkout outside synced Documents. It requires the complete final-tree
-`verify-local.sh` gate, builds universal Release output with the configured
-Developer ID identity, submits to Apple using the `teleframe-notary` Keychain
-profile, requires Accepted notarization, staples and validates the ticket, checks
-Gatekeeper/signature/team/version/architecture, and then repackages the stapled
-app. The ZIP, SHA-256 sums and public release manifest are uploaded to a draft
-GitHub Release and downloaded again for byte comparison before production
-publication. No privileged traffic service is bundled or installed.
+The job imports the existing Developer ID identity into a temporary keychain,
+checks its team and fingerprint, creates a temporary notarization profile, and
+runs `scripts/release_signed.py`. It builds universal Release output, requires
+Accepted Apple notarization, staples and validates the ticket, and verifies
+Gatekeeper, signature, team, version and architectures. The ZIP, SHA-256 sums
+and public manifest are uploaded to a draft GitHub Release and downloaded for
+byte comparison before publication. No privileged traffic service is bundled.
+A successful workflow or configuration alone does not qualify the migration:
+verify a new signed release and independently download its assets.
 
 `VERSION` and `Resources/Info.plist` must agree. Advance both marketing versions
 and the plist build number in a reviewed main change to publish a new version.
-A previously published `vX.Y.Z` is a no-op; existing artifacts are never replaced.
-Tag collisions, incomplete drafts, notarization rejection, stale main or an
-expired release request fail closed. A failed draft requires inspection and
-reconciliation; automatic retry never deletes or overwrites its assets. Failed
-attempts and logs stay owner-only on the Mac.
+A previously tagged `vX.Y.Z` is skipped; existing artifacts are never replaced.
+Tag collisions, incomplete drafts, notarization rejection, stale main or a
+cancelled release request fail closed. Inspect and reconcile failed drafts and
+attempts before retrying; automatic retry does not overwrite them. Job-scoped
+private credentials are removed on normal completion or cancellation. If the
+runner or machine is forcibly terminated, inspect its private staging directory
+before retrying; the next attempt refuses to proceed while material remains.
+Inspect failed job output promptly: later runner checkout cleanup can remove
+its build directory. Keep any retained files private and monitor disk capacity.
 
-The owner account must already have the signing wrapper/config at
-`~/Library/Application Support/Teleframe/Signing`, including `apple-signing.json`
-with `developerIDIdentity` (SHA-1 fingerprint or full Developer ID name) and
-`team` fields, an accessible Developer ID private key and the notarization Keychain profile. Creating workflows or a
-LaunchAgent does not establish unattended credential access. Missing credentials
-fail the deployment. View Actions → Production release and GitHub Deployments
-for the result. Deployment status `success` means verified publication. An
-`inactive`/skipped request may leave Actions green without publishing; queue
-acceptance alone is not publication.
-The physical-device, minimum-OS/Intel runtime and UX checks above remain separate.
+Actions → Production release reports the result. A skipped version is not a new
+release. The physical-device, minimum-OS/Intel runtime and UX checks above
+remain separate from this automation.
