@@ -44,7 +44,7 @@ def run(environment):
     parent.mkdir(parents=True, mode=0o700, exist_ok=True)
     if parent.is_symlink() or parent.stat().st_uid != os.getuid() or parent.stat().st_mode & 0o077:
         raise ValueError('Release staging directory must be private and owned')
-    with release_lock(home):
+    with release_lock(home, wait_seconds=21600):
         if any(parent.iterdir()):
             raise RuntimeError('Previous release staging remains; inspect before retrying')
         with materialize(environment, parent) as root:
