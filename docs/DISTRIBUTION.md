@@ -21,9 +21,9 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 
 ## Signed binary release checklist
 
-- [ ] Developer ID signing completes unattended and notarization credentials are configured.
-- [ ] Build with `TINYSTATS_SIGN_IDENTITY="Developer ID Application: …" scripts/build-app.sh --universal`, submit the ZIP with `xcrun notarytool submit build/TinyStats.zip --keychain-profile <profile> --wait`, staple the app (`xcrun stapler staple build/TinyStats.app`), repackage, and confirm with `spctl --assess --type execute -vv build/TinyStats.app`.
-- [ ] `scripts/verify-local.sh` passes on the release commit.
+- [x] Developer ID signing completes unattended and notarization credentials are configured.
+- [x] Build with `TINYSTATS_SIGN_IDENTITY="Developer ID Application: …" scripts/build-app.sh --universal`, submit the ZIP with `xcrun notarytool submit build/TinyStats.zip --keychain-profile <profile> --wait`, staple the app (`xcrun stapler staple build/TinyStats.app`), repackage, and confirm with `spctl --assess --type execute -vv build/TinyStats.app`.
+- [x] `scripts/verify-local.sh` passes on the release native inputs on the MacBook; the committed receipt matches the release source.
 - [ ] Tests and the Release `--diagnose` run pass natively on macOS 14 (arm64), macOS 15 (arm64) and an Intel Mac for the release commit. A universal build compiled on one host is not runtime evidence for other OS versions or architectures; see [Compatibility](COMPATIBILITY.md).
 - [ ] Validate the System redesign in light/dark and purple/green/graphite accents, including Overview resize, toolbar actions, sidebar/History navigation, all inset Settings forms, picture styles, Separate/One layout with compact geometry, switches, Save/Apply/Cancel, authorization actions and unavailable hardware. Offscreen render fixtures are supplementary evidence.
 - [ ] Spot-check representative hardware: more than one Apple Silicon generation, a laptop with a battery, and a fan-equipped model.
@@ -31,6 +31,23 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 - [ ] Review the known gaps in the [roadmap](ROADMAP.md) and decide which are acceptable for the release.
 - [ ] Reproduce the [performance](PERFORMANCE.md) measurements on representative hardware.
 - [ ] Publish checksums and installation instructions with the release; add a Homebrew cask once a stable signed download URL exists.
+
+## Organization release verification — 5 November 2026
+
+[TinyStats 0.36.5 build 68](https://github.com/letsopen-ai/tinystats/releases/tag/v0.36.5)
+was built, Developer ID signed, notarized, stapled and published by
+[the M4 organization release job](https://github.com/letsopen-ai/tinystats/actions/runs/41873473716).
+Its annotated tag and public manifest identify source
+`53bf05506392ff83ea0fd875c38c23035f02acd0`. Tests ran locally on the MacBook,
+not on the M4: the complete gate passed 714 Swift tests plus Python tests,
+strict lint/warnings, universal app/service packaging and diagnostics.
+
+A separate MacBook download of the published ZIP matched its SHA-256
+`795c6399b0b16e0eb7cf0052e5249a58cb87b25cd0267f5e888be91497dee9e0`.
+The tag source and app version/build matched the manifest; signature verification,
+stapler validation and Gatekeeper assessment passed, and both arm64/x86_64 slices
+were present. This did not install or launch the downloaded app and does not
+complete the other hardware, older-OS, Intel runtime or UX checks above.
 
 ## Automatic production releases
 

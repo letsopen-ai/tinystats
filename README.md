@@ -86,7 +86,7 @@ A six-step welcome tour on first launch helps you choose your menu bar readouts.
 > **Signed builds are coming soon.** For now, tinyStats is built from source.
 
 ```sh
-git clone https://github.com/niechen/tinystats.git
+git clone https://github.com/letsopen-ai/tinystats.git
 cd tinystats
 scripts/build-app.sh --universal
 open build/TinyStats.app
