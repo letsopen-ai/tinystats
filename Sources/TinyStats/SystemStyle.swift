@@ -494,7 +494,7 @@ enum SystemStyle {
         let crop =
           smallMaster
           ? NSRect(x: 0.15, y: 0.15, width: 0.70, height: 0.70)
-          : NSRect(x: 0.22, y: 0.26, width: 0.56, height: 0.56)
+          : NSRect(x: 0.23, y: 0.27, width: 0.54, height: 0.54)
         image.draw(
           in: tile,
           from: .init(
