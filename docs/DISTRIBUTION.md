@@ -34,12 +34,14 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 
 ## Automatic production releases
 
-Branch pushes and same-repository PRs run `Mac CI smoke`. A successful main
+Branch pushes and same-repository PRs run Ubuntu metadata-only `Release source checks`. A successful main
 push CI may start `Production release` on the dedicated M4 `release-runner`
 account. The job checks the triggering CI and current main against GitHub,
 then skips a version that already has a tag. It checks out the exact source in
-a separate directory and runs the full `verify-local.sh` gate before loading
-signing secrets. Fork PRs do not receive signing credentials. Only trusted main
+a separate directory and verifies a committed local validation receipt before
+loading signing secrets. Run `python3 scripts/local_release_validation.py record`
+on the MacBook after committing native inputs, then commit the receipt. That
+command runs the complete `verify-local.sh` gate locally. The M4 does not run tests. Fork PRs do not receive signing credentials. Only trusted main
 source may use this runner and its signing authority.
 
 The job imports the existing Developer ID identity into a temporary keychain,
