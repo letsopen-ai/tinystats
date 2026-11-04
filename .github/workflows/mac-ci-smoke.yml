@@ -1,4 +1,4 @@
-name: Mac CI smoke
+name: Release source checks
 on:
   workflow_dispatch:
   push:
@@ -8,47 +8,23 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: mac-ci-${{ github.event.pull_request.number || github.ref }}
+  group: release-source-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
-  unsigned-smoke:
+  source-checks:
     if: >-
-      contains(fromJSON('["niechen/tinystats", "letsopen-ai/tinystats"]'), github.repository) &&
+      github.repository == 'letsopen-ai/tinystats' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, letsopen-org, unsigned, tinystats]
-    timeout-minutes: 30
-    env:
-      TELEFRAME_SIGN_IDENTITY: '-'
-      TINYSTATS_SIGN_IDENTITY: ''
-    defaults:
-      run:
-        shell: bash --noprofile --norc -eo pipefail {0}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Verify runner identity and toolchain
-        run: |
-          test "$(id -un)" = runner
-          test "$(uname -m)" = arm64
-          case " $(id -Gn) " in *' admin '*|*' wheel '*) exit 1;; esac
-          if sudo -n true >/dev/null 2>&1; then exit 1; fi
-          sw_vers
-          xcodebuild -version
-          swift --version
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          fetch-depth: 0
           persist-credentials: false
-          clean: true
-      - name: Build native executable without release signing
-        run: swift build --product TinyStats --jobs 4 --build-system native
-      - name: Run bounded pure logic tests
+      - name: Check local validation evidence for an unpublished version
+        run: python3 scripts/local_release_validation.py check --allow-published
+      - name: Record scope
         run: |
-          swift test --jobs 4 --build-system native --no-parallel --filter TinyStatsFanControlTests 2>&1 | tee "$RUNNER_TEMP/swift-smoke.log"
-          # Swift Testing can terminate early with exit 0; require a nonempty completed run.
-          grep -Eq 'Test run with [1-9][0-9]* tests?( in [0-9]+ suites?)? passed' "$RUNNER_TEMP/swift-smoke.log"
-      - name: Record validation scope
-        run: |
-          {
-            echo '### Native unsigned smoke passed'
-            echo 'Executable compilation and a selected pure logic test module passed on ARM64.'
-            echo 'Full test suite, app packaging, signing, UI, sleep and restart are separate checks.'
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo 'Metadata and local validation receipt checks only. Native tests run locally on the maintainer Mac; M4 builds/signs/releases.' >> "$GITHUB_STEP_SUMMARY"

@@ -1,7 +1,7 @@
 name: Production release
 on:
   workflow_run:
-    workflows: [Mac CI smoke]
+    workflows: [Release source checks]
     types: [completed]
     branches: [main]
 permissions:
@@ -54,10 +54,10 @@ jobs:
               output.write('EXTERNAL_TOOLCHAINS_DIR=' + search + '\n')
               output.write('TOOLCHAINS=' + identifier + ' com.apple.dt.toolchain.XcodeDefault\n')
           PY
-      - name: Validate the exact source before accessing signing credentials
+      - name: Check committed local validation before accessing signing credentials
         if: steps.eligibility.outputs.release == 'true'
         working-directory: release-source/${{ github.run_id }}-${{ github.run_attempt }}
-        run: scripts/verify-local.sh
+        run: python3 scripts/local_release_validation.py check
       - name: Sign, notarize and publish verified artifacts
         if: steps.eligibility.outputs.release == 'true'
         working-directory: release-source/${{ github.run_id }}-${{ github.run_attempt }}

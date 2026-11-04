@@ -47,28 +47,11 @@ def source_commit():
 
 
 def verify_ci_validation(sha):
-    """Recheck the exact source manifest produced by the full unsigned gate."""
-    ci = ROOT / 'build/ci'
-    before, after, marker = (ci / 'source-manifest.json', ci / 'source-manifest-after.json', ci / 'LOCAL-PASS.txt')
-    if any(p.is_symlink() or not p.is_file() for p in (before, after, marker)):
-        raise RuntimeError('Missing completed local validation evidence')
-    if not marker.read_text().startswith('Local validation passed for the inputs in source-manifest.json.'):
-        raise RuntimeError('Invalid local validation marker')
-    manifest = json.loads(before.read_text())
-    if manifest != json.loads(after.read_text()) or manifest.get('base_commit') != sha or manifest.get('build_mirror') is not False:
-        raise RuntimeError('Validation source does not match the release')
-    areas = ['Sources', 'Tests', 'Resources', 'scripts', '.github', 'Package.swift', 'Package.resolved',
-             'VERSION', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'AGENTS.md']
-    names = run(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', *areas], True).stdout.split('\0')
-    inputs = {}
-    for name in sorted(set(names)):
-        if not name: continue
-        path = ROOT / name
-        if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(ROOT.resolve()):
-            raise RuntimeError('Invalid validation input')
-        inputs[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-    if manifest.get('inputs') != inputs:
-        raise RuntimeError('Validation inputs changed after testing')
+    """Verify the committed MacBook validation receipt before M4 signing."""
+    from local_release_validation import verify
+    if run(['git', 'rev-parse', 'HEAD'], True).stdout.strip() != sha:
+        raise RuntimeError('Local validation checkout does not match the release source')
+    verify(ROOT)
 
 
 
@@ -152,7 +135,7 @@ def main():
     if not matches:
         raise RuntimeError('Configured Developer ID identity is unavailable')
     identity = matches[0][0]
-    # The direct Actions path runs the full gate before importing credentials.
+    # The direct Actions path checks the committed local gate before importing credentials.
     os.environ.pop('TINYSTATS_SIGN_IDENTITY', None)
     if args.actions_direct:
         verify_ci_validation(sha)
@@ -191,7 +174,7 @@ def main():
     notes = ROOT / 'build/release-notes.md'
     notes.write_text('Universal Mac production build of `' + sha + '`.\n\n'
         'Developer ID signed, Apple notarized and stapled. Extract TinyStats.app and move it to Applications.\n\n'
-        'The full local validation gate passed on the signing host. Native macOS 14/15 and Intel runtime, '
+        'The full local validation gate passed on the maintainer Mac for these release inputs; the M4 built and signed this package. Native macOS 14/15 and Intel runtime, '
         'hardware and UI qualification remain separate; see docs/DISTRIBUTION.md.\n')
     # Last checks immediately before any tag/release mutation.
     if args.actions_direct:

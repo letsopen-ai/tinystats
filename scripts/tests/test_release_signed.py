@@ -51,24 +51,17 @@ class SignedReleaseTests(unittest.TestCase):
         with patch.object(release, 'api', return_value={'object': {'type': 'commit', 'sha': moved}}), self.assertRaisesRegex(RuntimeError, 'verified source'):
             release.verify_release_tag('0.36.4', original)
 
-    def test_direct_release_rechecks_exact_unsigned_validation_inputs(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); (root / 'Sources').mkdir(); (root / 'build/ci').mkdir(parents=True)
-            source = root / 'Sources/test.swift'; source.write_text('fixture')
-            manifest = {'base_commit': 'a'*40, 'build_mirror': False,
-                        'inputs': {'Sources/test.swift': hashlib.sha256(b'fixture').hexdigest()}}
-            for name in ('source-manifest.json', 'source-manifest-after.json'):
-                (root / 'build/ci' / name).write_text(json.dumps(manifest))
-            (root / 'build/ci/LOCAL-PASS.txt').write_text('Local validation passed for the inputs in source-manifest.json.\n')
-            result = type('Result', (), {'stdout': 'Sources/test.swift\0'})()
-            with patch.object(release, 'ROOT', root), patch.object(release, 'run', return_value=result):
+    def test_direct_release_rechecks_source_and_committed_local_validation(self):
+        result = type('Result', (), {'stdout': 'a'*40 + '\n'})()
+        with patch.object(release, 'run', return_value=result), \
+             patch('local_release_validation.verify') as verify:
+            release.verify_ci_validation('a'*40)
+            verify.assert_called_once_with(release.ROOT)
+            with self.assertRaisesRegex(RuntimeError, 'checkout does not match'):
+                release.verify_ci_validation('b'*40)
+            verify.side_effect = RuntimeError('receipt changed')
+            with self.assertRaisesRegex(RuntimeError, 'receipt changed'):
                 release.verify_ci_validation('a'*40)
-                source.write_text('changed')
-                with self.assertRaisesRegex(RuntimeError, 'changed after testing'):
-                    release.verify_ci_validation('a'*40)
-                source.unlink(); source.symlink_to(root / 'build/ci/LOCAL-PASS.txt')
-                with self.assertRaisesRegex(RuntimeError, 'Invalid validation input'):
-                    release.verify_ci_validation('a'*40)
 
     def test_direct_actions_request_uses_fail_closed_guard(self):
         with patch('actions_release_guard.from_environment', return_value='a' * 40) as check:
