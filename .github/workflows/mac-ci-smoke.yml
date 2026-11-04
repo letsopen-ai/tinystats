@@ -16,7 +16,7 @@ jobs:
       contains(fromJSON('["niechen/tinystats", "letsopen-ai/tinystats"]'), github.repository) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, unsigned, tinystats]
+    runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, letsopen-org, unsigned, tinystats]
     timeout-minutes: 30
     env:
       TELEFRAME_SIGN_IDENTITY: '-'

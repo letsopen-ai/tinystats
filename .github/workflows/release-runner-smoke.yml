@@ -11,7 +11,7 @@ jobs:
     if: >-
       contains(fromJSON('["niechen/tinystats", "letsopen-ai/tinystats"]'), github.repository) &&
       github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, release, tinystats]
+    runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, letsopen-org, release, tinystats]
     timeout-minutes: 10
     defaults:
       run:
