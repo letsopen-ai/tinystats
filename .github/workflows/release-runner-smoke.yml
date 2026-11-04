@@ -8,7 +8,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   smoke:
-    if: github.repository == 'niechen/tinystats' && github.ref == 'refs/heads/main'
+    if: >-
+      contains(fromJSON('["niechen/tinystats", "letsopen-ai/tinystats"]'), github.repository) &&
+      github.ref == 'refs/heads/main'
     runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, release, tinystats]
     timeout-minutes: 10
     defaults:
