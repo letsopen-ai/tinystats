@@ -4,9 +4,7 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
-## 0.36.5
-
-- Run signed, notarized GitHub Releases on the dedicated organization M4 release runner using job-scoped credentials.
+- Prepare version 0.36.5 (68): run signed, notarized GitHub Releases on the dedicated organization M4 release runner using job-scoped credentials.
 - Preserve the footer logo optical weight and paper margin across the M4 rendering checks.
 
 - Extend the main window sidebar beneath the traffic lights, hide the redundant system title, align subsection headings with icons and emphasize only the selected navigation item. Use native unified traffic-light spacing, align page titles with the brand through a shared top inset, keep full-screen geometry within its own window, honour title-band double-click preferences and preserve the previous 884×692 minimum outer size. Preview version 0.36.4 (67).
