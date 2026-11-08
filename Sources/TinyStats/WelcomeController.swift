@@ -38,19 +38,6 @@ enum WelcomePresentation {
   static func recordShown(in defaults: UserDefaults) { defaults.set(true, forKey: shownKey) }
 }
 
-@MainActor private final class WelcomeBackgroundView: NSView {
-  override func draw(_ dirtyRect: NSRect) {
-    NSColor.windowBackgroundColor.setFill()
-    dirtyRect.fill()
-  }
-}
-
-@MainActor private final class WelcomeCardView: NSStackView {
-  override func draw(_ dirtyRect: NSRect) {
-    SystemStyle.drawPlatter(bounds)
-  }
-}
-
 @MainActor final class WelcomeController: NSWindowController, NSWindowDelegate {
   var currentSettings: () -> Settings
   var onMenuBarChange: ((Settings) -> Void)?
@@ -63,7 +50,11 @@ enum WelcomePresentation {
   var onOverview: (() -> Void)?
   var onMenuBarSettings: (() -> Void)?
   var onClose: (() -> Void)?
+  // Injectable only for owned fixtures; production shares General settings’ ServiceManagement path.
+  var loginEnabled: () -> Bool = { LoginItemPreference.enabled }
+  var setLoginEnabled: (Bool) -> String = { LoginItemPreference.setEnabled($0) }
   private(set) var step: Int
+  private let glassEnvironment: () -> GlassSurface.Environment
   private let heading = NSTextField(labelWithString: "")
   private let progress = NSTextField(labelWithString: "")
   private let body = NSStackView()
@@ -87,16 +78,24 @@ enum WelcomePresentation {
   // A fixed, empty fixture: unavailable readings stay unavailable, with no sampler demand.
   private let previewSnapshot = Snapshot()
   private var moreModulesExpanded = false
-  private var moreModules: NSTextField?
+  private var moreModules: NSView?
 
-  init(settings: @escaping () -> Settings, initialStep: Int = 0) {
+  init(
+    settings: @escaping () -> Settings, initialStep: Int = 0,
+    glassEnvironment: @escaping () -> GlassSurface.Environment = { .current }
+  ) {
+    self.glassEnvironment = glassEnvironment
     currentSettings = settings
     step = min(5, max(0, initialStep))
     let window = NSWindow(
       contentRect: .init(x: 0, y: 0, width: 720, height: 630),
       styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
     window.title = "Welcome to TinyStats"
-    window.contentView = WelcomeBackgroundView(frame: window.contentLayoutRect)
+    let glass = glassEnvironment().treatment == .glass
+    window.backgroundColor = glass ? .clear : .windowBackgroundColor
+    window.isOpaque = !glass
+    window.contentView = WelcomeBackgroundView(
+      frame: window.contentLayoutRect, environment: glassEnvironment)
     window.isReleasedWhenClosed = false
     super.init(window: window)
     window.delegate = self
@@ -157,27 +156,61 @@ enum WelcomePresentation {
     label.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
   }
 
-  private func button(_ title: String, action: Selector) -> NSButton {
+  private func button(
+    _ title: String, action: Selector, in container: NSStackView? = nil, symbol: String? = nil
+  ) -> NSButton {
     let button = NSButton(title: title, target: self, action: action)
     button.bezelStyle = .rounded
     button.setAccessibilityLabel(title)
-    body.addArrangedSubview(button)
+    if let symbol {
+      button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+      button.imagePosition = .imageLeading
+    }
+    (container ?? body).addArrangedSubview(button)
     return button
   }
 
-  private func card(_ title: String, _ summary: String) {
-    let heading = NSTextField(labelWithString: title)
-    heading.font = .systemFont(ofSize: 13, weight: .semibold)
-    let label = NSTextField(wrappingLabelWithString: summary)
-    label.font = .systemFont(ofSize: 12)
-    let card = WelcomeCardView(views: [heading, label])
-    card.orientation = .vertical
-    card.alignment = .leading
-    card.spacing = 2
-    card.edgeInsets = .init(top: 4, left: 10, bottom: 4, right: 10)
-    body.addArrangedSubview(card)
-    card.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
-    label.widthAnchor.constraint(equalTo: card.widthAnchor, constant: -20).isActive = true
+  private func tile(
+    _ title: String, _ caption: String, module: Module? = nil,
+    symbol: String? = nil, large: Bool = false, compact: Bool = false
+  ) -> WelcomeTileView {
+    WelcomeTileView(
+      title: title, caption: caption, symbol: symbol ?? module?.symbol ?? "square.grid.2x2",
+      module: module, large: large, compact: compact, environment: glassEnvironment)
+  }
+
+  private func fullWidth(_ view: NSView, in container: NSStackView? = nil) {
+    let container = container ?? body
+    container.addArrangedSubview(view)
+    view.widthAnchor.constraint(
+      equalTo: container.widthAnchor,
+      constant: -(container.edgeInsets.left + container.edgeInsets.right)
+    ).isActive = true
+  }
+
+  private func row(_ views: [NSView], in container: NSStackView? = nil) {
+    let row = NSStackView(views: views)
+    row.orientation = .horizontal
+    row.spacing = 10
+    row.distribution = .fillEqually
+    row.alignment = .top
+    fullWidth(row, in: container)
+  }
+
+  private func chips(_ values: [(String, String)]) {
+    let views = values.map { title, symbol in
+      let group = NSStackView(views: [
+        WelcomeGraphic.glyph(symbol, size: 15),
+        WelcomeGraphic.label(title, size: 11),
+      ])
+      group.spacing = 6
+      group.setHuggingPriority(.required, for: .horizontal)
+      return group
+    }
+    let strip = NSStackView(views: views)
+    strip.spacing = 24
+    strip.setHuggingPriority(.required, for: .horizontal)
+    body.addArrangedSubview(strip)
   }
 
   private func render() {
@@ -186,6 +219,7 @@ enum WelcomePresentation {
       view.removeFromSuperview()
     }
     body.detachesHiddenViews = false
+    body.spacing = 12
     readouts.removeAll()
     styles.removeAll()
     history = nil
@@ -204,43 +238,73 @@ enum WelcomePresentation {
     skip.setAccessibilityLabel("Skip welcome tour and keep current choices")
     switch step {
     case 0:
-      heading.stringValue = "Your Mac, at a glance"
-      text(
-        "Start with CPU, Memory and Network in your menu bar. Click a readout for a native window with the details."
-      )
-      text(
-        "Designed for a tiny footprint: one shared sampler, bounded local history and no extra polling for this tour. Resource costs vary by Mac and enabled features."
-      )
-      text(
-        "No account. No analytics. Local-only by default. Weather and internet checks stay off until you opt in; existing saved choices are preserved."
-      )
-      text(
-        "Use Tab / Shift-Tab to move, Space to select, Return for Next and Escape to Skip. Right-click a readout and choose Show welcome tour to replay it.",
-        secondary: true)
+      heading.stringValue = "Welcome to TinyStats"
+      text("Your Mac, at a glance.")
+      fullWidth(WelcomeHeroView(environment: glassEnvironment))
+      chips([
+        ("Local-only by default", "internaldrive"),
+        ("No account · No analytics", "person.crop.circle.badge.checkmark"),
+        ("Tiny footprint", "leaf"),
+      ])
+      // Explicit keycaps avoid duplicated Return and ambiguous Space/Escape symbols.
+      let keys = NSStackView()
+      keys.spacing = 18
+      keys.setHuggingPriority(.required, for: .horizontal)
+      for (key, action) in [
+        ("Tab / ⇧Tab", "Move"), ("Space", "Select"), ("Return", "Next"), ("Esc", "Skip"),
+      ] {
+        let cap = WelcomeKeycapView(key, environment: glassEnvironment)
+        let pair = NSStackView(views: [
+          cap, WelcomeGraphic.label(action, size: 11, secondary: true),
+        ])
+        pair.spacing = 5
+        pair.setHuggingPriority(.required, for: .horizontal)
+        keys.addArrangedSubview(pair)
+      }
+      body.addArrangedSubview(keys)
+      text("Replay anytime: right-click a readout → Show welcome tour", secondary: true)
     case 1:
       heading.stringValue = "Make the menu bar yours"
-      text(
-        "Choose readouts and picture styles. Keep at least one enabled; ⌘-drag menu bar items to reorder."
-      )
+      text("Choose your readouts · ⌘-drag menu bar items to reorder.")
       body.spacing = 6
       presetSelector.target = self
       presetSelector.action = #selector(presetChanged)
       presetSelector.setAccessibilityLabel("Menu bar layout")
-      body.addArrangedSubview(presetSelector)
+      let layout = WelcomeSectionView(
+        label: "Menu bar preview and layout", environment: glassEnvironment)
+      let preview = MenuBarPreviewView(frame: .zero)
+      let scroll = NSScrollView()
+      scroll.documentView = preview
+      scroll.hasHorizontalScroller = true
+      scroll.autohidesScrollers = true
+      scroll.drawsBackground = false
+      scroll.setAccessibilityLabel("Combined menu bar preview; unavailable readings shown as dash")
+      let layoutRow = NSStackView(views: [scroll, presetSelector])
+      layoutRow.spacing = 12
+      layoutRow.alignment = .centerY
+      fullWidth(layoutRow, in: layout)
+      scroll.heightAnchor.constraint(equalToConstant: 44).isActive = true
+      fullWidth(layout)
+      self.preview = preview
+      previewScroll = scroll
+      let readoutSection = WelcomeSectionView(label: "Readouts", environment: glassEnvironment)
       var checks: [NSView] = []
       for module in Self.starterModules {
-        let check = NSButton(
-          checkboxWithTitle: module.title, target: self, action: #selector(menuChanged))
+        let check = WelcomeReadoutButton(
+          module: module, target: self, action: #selector(menuChanged),
+          environment: glassEnvironment)
         check.state = settings.readouts.contains(module) ? .on : .off
         check.setAccessibilityLabel("Show \(module.title) in menu bar")
-        check.widthAnchor.constraint(equalToConstant: 150).isActive = true
         readouts[module] = check
         checks.append(check)
       }
       for start in stride(from: 0, to: checks.count, by: 4) {
-        body.addArrangedSubview(
-          SystemSettingsForm.controls(Array(checks[start..<min(start + 4, checks.count)])))
+        row(Array(checks[start..<min(start + 4, checks.count)]), in: readoutSection)
       }
+      readoutSection.addArrangedSubview(
+        WelcomeGraphic.label(
+          "Showing Weather does not enable forecasts.", size: 11, secondary: true))
+      fullWidth(readoutSection)
       styleModuleSelector.removeAllItems()
       styleModuleSelector.addItems(withTitles: Self.starterModules.map(\.title))
       styleModuleSelector.selectItem(withTitle: styleModule.title)
@@ -262,103 +326,150 @@ enum WelcomePresentation {
         width.isActive = true
         styles[module] = picker
       }
-      text("Combined preview · Placeholder readings; scroll horizontally", secondary: true)
-      let preview = MenuBarPreviewView(frame: .zero)
-      let scroll = NSScrollView()
-      scroll.documentView = preview
-      scroll.hasHorizontalScroller = true
-      scroll.autohidesScrollers = true
-      scroll.drawsBackground = false
-      scroll.setAccessibilityLabel("Combined menu bar preview")
-      body.addArrangedSubview(scroll)
-      scroll.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
-      scroll.heightAnchor.constraint(equalToConstant: 52).isActive = true
-      self.preview = preview
-      previewScroll = scroll
       updatePreview(settings)
-      text(
-        "Weather requires separate opt-in. All readouts and fonts: Settings → Menu Bar.",
-        secondary: true)
     case 2:
       heading.stringValue = "A home for every reading"
-      body.spacing = 6
-      card("Overview", "Your Mac’s key readings together in one compact summary.")
-      card("CPU & GPU", "Processor use, top apps and supported graphics activity.")
-      card("Memory / Disks / Network", "Memory pressure, storage space and traffic at a glance.")
-      card("Power & Time", "Battery, accessories, energy mode, local calendar and world clocks.")
-      card("Weather · Optional", "Forecasts and daylight after you choose to set up Weather.")
-      text(
-        "Advanced · Sensors: read-only temperatures, fan speeds and electrical readings.",
-        secondary: true)
-      let disclosure = button("More modules…", action: #selector(toggleMoreModules))
+      body.spacing = 8
+      row([
+        tile("Overview", "Your Mac in one view", symbol: "square.grid.2x2"),
+        tile("CPU & GPU", "Activity & top apps", module: .cpu),
+      ])
+      row([
+        tile("Memory", "Pressure & app usage", module: .memory),
+        tile("Disks & Network", "Storage & traffic", module: .network),
+      ])
+      row([
+        tile("Power & Time", "Battery, calendar & clocks", module: .battery),
+        tile("Weather · Optional", "Forecasts after opt-in", module: .weather),
+      ])
+      body.detachesHiddenViews = true
+      let sensors = tile(
+        "Advanced · Sensors", "Read-only · Availability varies by Mac", module: .sensors,
+        compact: true)
+      sensors.setAccessibilityHelp(
+        "Read-only temperatures, fans and electrical readings. Hardware varies; missing readings stay unavailable."
+      )
+      let disclosure = button("More modules…", action: #selector(toggleMoreModules), in: sensors)
       disclosure.image = NSImage(
         systemSymbolName: moreModulesExpanded ? "chevron.down" : "chevron.right",
         accessibilityDescription: nil)
       disclosure.imagePosition = .imageLeading
       disclosure.state = moreModulesExpanded ? .on : .off
       disclosure.setAccessibilityExpanded(moreModulesExpanded)
-      text(
-        "History · Numeric charts and CSV export. Sensors’ All readings reveals raw SMC keys.",
-        secondary: true)
-      moreModules = body.arrangedSubviews.last as? NSTextField
-      moreModules?.isHidden = !moreModulesExpanded
-      text(
-        "Hardware support varies. Missing readings remain unavailable, never a fabricated zero.",
-        secondary: true)
-      _ = button("Open Overview…", action: #selector(openOverview))
+      fullWidth(sensors)
+      let secondary = NSStackView(views: [
+        tile("History", "Charts & CSV", symbol: "clock.arrow.circlepath", compact: true),
+        tile("All readings", "Raw SMC keys · Read-only", module: .sensors, compact: true),
+      ])
+      secondary.distribution = .fillEqually
+      secondary.spacing = 10
+      secondary.identifier = .init("welcome-more-modules")
+      fullWidth(secondary)
+      secondary.isHidden = !moreModulesExpanded
+      moreModules = secondary
+      _ = button("Open Overview…", action: #selector(openOverview), symbol: "square.grid.2x2")
     case 3:
       heading.stringValue = "Online only when you choose"
-      text(
-        "Weather forecasts come from MET Norway (api.met.no). When enabled, it receives rounded coordinates and your public IP. Weather stays off until you opt in through Set up Weather."
+      chips([("Local first", "internaldrive"), ("Online off by default", "network.slash")])
+      let weather = tile(
+        "Weather", "MET Norway (api.met.no) · Optional", module: .weather, large: true)
+      weather.identifier = .init("welcome-weather")
+      for line in [
+        "Rounded coordinates + your public IP",
+        "Choose a city or allow location in setup",
+        "Opening setup enables nothing",
+      ] {
+        weather.addArrangedSubview(WelcomeGraphic.label(line, size: 11, secondary: true))
+      }
+      _ = button("Set up…", action: #selector(openWeather), in: weather, symbol: "sun.max")
+      weather.arrangedSubviews.last?.setAccessibilityLabel("Set up Weather")
+      weather.setAccessibilityHelp(
+        "Off until opt-in. Choose a city or allow location in setup. When enabled, MET Norway receives rounded coordinates and your public IP. Opening setup enables nothing. Saved choices stay yours."
       )
-      text(
-        "Remains off if you skip. Opening setup changes nothing: choose whether to enable in the existing controls. Use a manual/saved city, or explicitly allow TinyStats’ macOS location permission."
+      let internet = tile(
+        "Advanced · Internet checks", "Apple / your URL · ipify · ping address",
+        module: .network, large: true)
+      internet.identifier = .init("welcome-internet")
+      for line in [
+        "Each destination sees your source IP",
+        "Review destinations & cadence before opt-in",
+        "Opening setup enables nothing",
+      ] {
+        internet.addArrangedSubview(WelcomeGraphic.label(line, size: 11, secondary: true))
+      }
+      _ = button("Review…", action: #selector(openInternet), in: internet, symbol: "arrow.up.right")
+      internet.arrangedSubviews.last?.setAccessibilityLabel("Internet checks")
+      internet.setAccessibilityHelp(
+        "Off by default. HTTPS uses Apple’s preset or your URL; public IP uses ipify; ping uses your numeric address. Each destination sees your source IP. Review destinations and cadence before enabling. Existing online choices are preserved."
       )
-      _ = button("Set up Weather…", action: #selector(openWeather))
-      text(
-        "Optional advanced · Internet checks are off by default. HTTPS → Apple’s preset or your URL; public IP → ipify; ping → your numeric address. Each destination sees your source IP. Review destinations and cadence before enabling.",
-        secondary: true)
-      let internet = button("Advanced · Internet checks…", action: #selector(openInternet))
-      internet.setAccessibilityLabel("Internet checks")
-      text(
-        "Existing explicit online choices are preserved. You can turn each feature off in its own page at any time.",
-        secondary: true)
+      row([weather, internet])
+      weather.heightAnchor.constraint(equalTo: internet.heightAnchor).isActive = true
     case 4:
       heading.stringValue = "Keep history. Choose your alerts."
-      text(
-        "History saving starts on: keep up to 28 days of numeric readings on this Mac, using at most 8.2 MiB of disk space (about 9 MB). Turn saving Off to keep the file without updating it, or Clear it in History & storage."
-      )
+      let archive = tile(
+        "History", "On by default · Local to this Mac", symbol: "clock.arrow.circlepath",
+        large: true)
+      archive.identifier = .init("welcome-history")
+      archive.addArrangedSubview(WelcomeGraphic.label("28 days · ≤8.2 MiB", size: 13))
       let check = NSButton(
         checkboxWithTitle: "Keep history between launches", target: self,
         action: #selector(historyChanged))
-      body.addArrangedSubview(check)
+      check.setAccessibilityLabel("Keep history between launches")
+      archive.addArrangedSubview(check)
       history = check
       refreshHistoryControl()
-      _ = button("History & storage…", action: #selector(openHistory))
-      text(
-        "Notifications default off. Enable them explicitly in General settings, allow macOS permission, then choose alert rules and thresholds. Editing rules alone does not enable notifications."
-      )
-      _ = button("Notifications & alert rules…", action: #selector(openNotifications))
+      archive.addArrangedSubview(
+        WelcomeGraphic.label("Off keeps the file. Clear it in History.", size: 11, secondary: true))
+      _ = button(
+        "History & storage…", action: #selector(openHistory), in: archive, symbol: "internaldrive")
+      let alerts = tile(
+        "Notifications", "Off until you enable & allow", symbol: "bell.badge", large: true)
+      alerts.identifier = .init("welcome-notifications")
+      alerts.addArrangedSubview(WelcomeGraphic.label("Your rules. Your thresholds.", size: 13))
+      alerts.addArrangedSubview(
+        WelcomeGraphic.label(
+          "Editing rules alone does not enable alerts.", size: 11, secondary: true))
+      _ = button(
+        "Notifications & alert rules…", action: #selector(openNotifications), in: alerts,
+        symbol: "bell")
+      row([archive, alerts])
     default:
       heading.stringValue = "Ready when you are"
-      text(
-        "Click any TinyStats menu bar readout for details. Right-click a readout for Settings, pause, Show welcome tour or Quit. Choose Show welcome tour to replay this guide later."
-      )
-      text(
-        "General settings has appearance, cadence, history and notifications. Menu Bar settings has readouts, styles and fonts. Weather and Network own their optional online controls."
-      )
+      let ready = tile(
+        "Make yourself at home", "Your readings are one click away", symbol: "checkmark.circle")
       let check = NSButton(
         checkboxWithTitle: "Launch at login", target: self, action: #selector(loginChanged))
-      check.state = LoginItemPreference.enabled ? .on : .off
-      body.addArrangedSubview(check)
+      check.state = loginEnabled() ? .on : .off
+      check.setAccessibilityLabel("Launch at login")
+      let loginChoice = NSStackView(views: [
+        check,
+        WelcomeGraphic.label("Login Items may need macOS approval.", size: 11, secondary: true),
+      ])
+      loginChoice.orientation = .vertical
+      loginChoice.alignment = .leading
+      loginChoice.spacing = 5
+      ready.addArrangedSubview(loginChoice)
       login = check
-      text(
-        "Uses macOS Login Items. Enabling may require approval in System Settings → General → Login Items.",
-        secondary: true)
-      _ = button("Open Menu Bar settings…", action: #selector(openMenuBarSettings))
-      _ = button("Open Settings…", action: #selector(openSettings))
+      fullWidth(ready)
+      row([
+        tile("Click a readout", "Open its details", symbol: "cursorarrow.click"),
+        tile(
+          "Right-click a readout", "Settings · Pause · Replay · Quit",
+          symbol: "cursorarrow.and.square.on.square.dashed"),
+      ])
+      let actions = NSStackView()
+      actions.spacing = 12
+      _ = button(
+        "Open Menu Bar settings…", action: #selector(openMenuBarSettings), in: actions,
+        symbol: "menubar.rectangle")
+      _ = button(
+        "Open Settings…", action: #selector(openSettings), in: actions, symbol: "gearshape")
+      body.addArrangedSubview(actions)
+      ready.setAccessibilityHelp(
+        "Right-click a readout and choose Show welcome tour to replay. General settings: appearance, cadence, history and notifications. Menu Bar: readouts, styles and fonts. Weather and Network: optional online controls."
+      )
     }
-    if step != 1 && step != 2 { body.spacing = 14 }
+    (window?.contentView as? WelcomeBackgroundView)?.systemStyleDidChange()
     window?.recalculateKeyViewLoop()
     window?.makeFirstResponder(next)
     NSAccessibility.post(element: heading, notification: .layoutChanged)
@@ -388,7 +499,7 @@ enum WelcomePresentation {
     }
     for popup in styles.values { popup.update(settings: settings) }
     updatePreview(settings)
-    login?.state = LoginItemPreference.enabled ? .on : .off
+    login?.state = loginEnabled() ? .on : .off
     window?.appearance = settings.theme.nativeAppearance
   }
   func setHistoryBusy(_ busy: Bool) {
@@ -438,7 +549,7 @@ enum WelcomePresentation {
     settings.validate()
     onMenuBarChange?(settings)
     updatePreview(settings)
-    message.stringValue = "Menu bar choices saved. Showing Weather does not enable forecasts."
+    message.stringValue = "Menu bar choices saved."
   }
   @objc private func presetChanged() {
     guard (0...1).contains(presetSelector.selectedSegment) else { return }
@@ -486,8 +597,8 @@ enum WelcomePresentation {
     refreshHistoryControl()
   }
   @objc private func loginChanged() {
-    message.stringValue = LoginItemPreference.setEnabled(login?.state == .on)
-    login?.state = LoginItemPreference.enabled ? .on : .off
+    message.stringValue = setLoginEnabled(login?.state == .on)
+    login?.state = loginEnabled() ? .on : .off
   }
   @objc private func openWeather() { onWeather?() }
   @objc private func openInternet() { onInternet?() }

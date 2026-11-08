@@ -217,9 +217,8 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   let copy = welcomeViews(root).compactMap { ($0 as? NSTextField)?.stringValue }.joined(
     separator: "\n")
   for phrase in [
-    "CPU, Memory and Network", "tiny footprint", "No analytics",
-    "Weather and internet checks stay off until you opt in", "existing saved choices are preserved",
-    "Tab / Shift-Tab", "right-click", "Show welcome tour",
+    "Your Mac, at a glance", "tiny footprint", "No analytics", "Local-only by default",
+    "Tab / ⇧Tab", "right-click", "Show welcome tour", "CPU", "Memory", "Network",
   ] {
     #expect(copy.localizedCaseInsensitiveContains(phrase))
   }
@@ -292,22 +291,26 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
   let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
-  let cards = body.arrangedSubviews.compactMap { $0 as? NSStackView }
-  #expect(cards.count == 5)
-  #expect(cards.allSatisfy { $0.arrangedSubviews.compactMap { $0 as? NSTextField }.count == 2 })
+  let cards = welcomeViews(body).compactMap { $0 as? WelcomeTileView }
+  #expect(cards.count == 9)
+  #expect(cards.allSatisfy { welcomeViews($0).contains { $0 is NSImageView } })
   let labels = welcomeViews(root).compactMap { $0 as? NSTextField }
   #expect(labels.contains { $0.stringValue == "CPU & GPU" })
-  #expect(!labels.contains { $0.stringValue.hasPrefix("CPU · Total and per-core") })
-  #expect(
-    labels.contains {
-      $0.stringValue.hasPrefix("Advanced · Sensors") && $0.textColor == .secondaryLabelColor
+  #expect(labels.contains { $0.stringValue == "Advanced · Sensors" })
+  let more = try #require(
+    welcomeViews(root).first {
+      $0.identifier?.rawValue == "welcome-more-modules"
     })
-  let more = try #require(labels.first { $0.stringValue.hasPrefix("History ·") })
   let disclosure = try #require(
     welcomeViews(root).compactMap { $0 as? NSButton }.first { $0.title == "More modules…" })
   #expect(more.isHidden)
+  root.layoutSubtreeIfNeeded()
+  let collapsedHeight = body.frame.height
   try welcomeActivate(disclosure)
+  root.layoutSubtreeIfNeeded()
   #expect(!more.isHidden && disclosure.state == .on)
+  #expect(body.frame.height > collapsedHeight + 50)
+  #expect(welcomeViews(more).compactMap { $0 as? WelcomeTileView }.count == 2)
   var opened = 0
   controller.onOverview = { opened += 1 }
   let overview = try #require(
@@ -317,15 +320,15 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   controller.nextStep()
   controller.previousStep()
   #expect(
-    welcomeViews(root).compactMap { $0 as? NSTextField }.first {
-      $0.stringValue.hasPrefix("History ·")
+    welcomeViews(root).first {
+      $0.identifier?.rawValue == "welcome-more-modules"
     }?.isHidden == false)
   let reopened = WelcomeController(settings: { settings }, initialStep: 2)
   defer { reopened.close() }
   let reopenedRoot = try #require(reopened.window?.contentView)
   #expect(
-    welcomeViews(reopenedRoot).compactMap { $0 as? NSTextField }.first {
-      $0.stringValue.hasPrefix("History ·")
+    welcomeViews(reopenedRoot).first {
+      $0.identifier?.rawValue == "welcome-more-modules"
     }?.isHidden == true)
 }
 
@@ -336,8 +339,9 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   let root = try #require(controller.window?.contentView)
   let copy = welcomeViews(root).compactMap { ($0 as? NSTextField)?.stringValue }.joined(
     separator: "\n")
-  #expect(copy.contains("Click any TinyStats menu bar readout for details."))
-  #expect(copy.contains("Right-click a readout for Settings, pause, Show welcome tour or Quit."))
+  #expect(copy.contains("Click a readout") && copy.contains("Open its details"))
+  #expect(
+    copy.contains("Right-click a readout") && copy.contains("Settings · Pause · Replay · Quit"))
   var actions: [String] = []
   controller.onMenuBarSettings = { actions.append("menuBar") }
   controller.onSettings = { actions.append("general") }
@@ -450,23 +454,23 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   #expect(
     labels.contains {
       $0.stringValue.contains("MET Norway (api.met.no)")
-        && $0.stringValue.contains("rounded coordinates and your public IP")
     })
-  #expect(labels.contains { $0.stringValue.hasPrefix("Remains off if you skip.") })
+  #expect(labels.contains { $0.stringValue.contains("Rounded coordinates + your public IP") })
+  #expect(labels.contains { $0.stringValue.hasPrefix("Opening setup enables nothing") })
+  #expect(labels.contains { $0.stringValue == "Online off by default" })
   #expect(
     labels.contains {
-      $0.stringValue.hasPrefix("Optional advanced · Internet checks are off by default.")
-        && $0.textColor == .secondaryLabelColor
+      $0.stringValue == "Advanced · Internet checks"
     })
   let setup = welcomeViews(root).compactMap { $0 as? NSButton }.filter {
-    $0.title == "Set up Weather…" || $0.title == "Advanced · Internet checks…"
+    $0.title == "Set up…" || $0.title == "Review…"
   }
-  #expect(setup.map(\.title) == ["Set up Weather…", "Advanced · Internet checks…"])
+  #expect(setup.map(\.title) == ["Set up…", "Review…"])
   #expect(
     !welcomeViews(root).compactMap { $0 as? NSButton }.contains {
       $0.title.contains("Calendar")
     })
-  for title in ["Set up Weather…", "Advanced · Internet checks…"] {
+  for title in ["Set up…", "Review…"] {
     let button = try #require(
       welcomeViews(root).compactMap { $0 as? NSButton }.first { $0.title == title })
     try welcomeActivate(button)
@@ -478,6 +482,9 @@ private func welcomeStore() throws -> (String, UserDefaults) {
 
 @Test @MainActor func welcomeStepsFitNativeWindowInLightAndDark() throws {
   _ = NSApplication.shared
+  let previousIcon = NSApp.applicationIconImage
+  NSApp.applicationIconImage = NSImage(contentsOfFile: "Resources/TinyStats.icns")
+  defer { NSApp.applicationIconImage = previousIcon }
   for (theme, name) in [(AppTheme.light, "light"), (.dark, "dark")] {
     var settings = Settings()
     settings.theme = theme
@@ -507,7 +514,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
       for label in labels {
         #expect(label.bounds.height >= label.intrinsicContentSize.height - 1)
       }
-      if let path = ProcessInfo.processInfo.environment["TINYSTATS_WELCOME_RENDER_PATH"] {
+      if let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"] {
         let directory = URL(fileURLWithPath: path, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
@@ -515,7 +522,9 @@ private func welcomeStore() throws -> (String, UserDefaults) {
           root.cacheDisplay(in: root.bounds, to: bitmap)
         }
         try #require(bitmap.representation(using: .png, properties: [:])).write(
-          to: directory.appendingPathComponent("welcome-\(step + 1)-\(name).png"))
+          to: directory.appendingPathComponent(
+            "welcome-step-\(step + 1)-\(["greet", "menubar", "home", "online", "history", "ready"][step])-\(name).png"
+          ))
       }
       controller.close()
     }
@@ -544,5 +553,204 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   }
   controller.nextStep()
   let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
+  #expect(body.detachesHiddenViews)  // Home must remove the collapsed secondary row.
+  controller.nextStep()
   #expect(!body.detachesHiddenViews)
+}
+
+/// Real laid-out content, not copy constants: no teaching label may need a second line.
+@Test @MainActor func welcomeGraphicSequenceHasShortCopyAndAccessibleNavigation() throws {
+  _ = NSApplication.shared
+  for theme in [AppTheme.light, .dark] {
+    var settings = Settings()
+    settings.theme = theme
+    for step in 0..<6 {
+      let controller = WelcomeController(settings: { settings }, initialStep: step)
+      defer { controller.close() }
+      let root = try #require(controller.window?.contentView)
+      root.layoutSubtreeIfNeeded()
+      let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
+      let visible = welcomeViews(body).filter { !$0.isHiddenOrHasHiddenAncestor }
+      let copy = visible.compactMap { $0 as? NSTextField }
+      #expect(copy.allSatisfy { $0.bounds.height <= 20 && $0.stringValue.count <= 100 })
+      // At most one multi-sentence wrapping caption; formerly up to four long paragraphs.
+      #expect(
+        copy.filter {
+          $0.cell?.wraps == true && $0.stringValue.components(separatedBy: ". ").count > 1
+        }.count <= 1)
+      let controls = welcomeViews(root).compactMap { $0 as? NSButton }
+      for label in [
+        "Skip welcome tour and keep current choices", "Previous welcome step",
+        step == 5 ? "Finish welcome tour" : "Next welcome step",
+      ] {
+        #expect(controls.contains { $0.accessibilityLabel() == label })
+      }
+      #expect(controls.first { $0.title == "Back" }?.isEnabled == (step > 0))
+      switch step {
+      case 0:
+        let hero = try #require(visible.compactMap { $0 as? WelcomeHeroView }.first)
+        #expect(hero.bounds.height >= 240)
+        #expect(
+          hero.preview.renderers.flatMap(\.readouts).compactMap(\.module) == [
+            .cpu, .memory, .network,
+          ])
+        let readings = hero.preview.renderers.flatMap(\.readouts)
+        #expect(readings.map(\.value) == ["42%", "68%", "↑ 128 KB/s"])
+        #expect(readings[2].secondary == "↓ 2.4 MB/s")
+        #expect(copy.contains { $0.stringValue == "Example menu bar · Illustrative readings" })
+        for child in welcomeViews(hero).dropFirst() {
+          #expect(hero.bounds.contains(hero.convert(child.bounds, from: child)))
+        }
+        let nodes = try #require(hero.subviews.compactMap { $0 as? NSStackView }.first)
+        let centers = nodes.arrangedSubviews.map { hero.convert($0.bounds, from: $0).midX }
+        #expect(centers.count == 3)
+        #expect(abs(centers[1] - hero.bounds.midX) < 1)
+        #expect(abs((centers[1] - centers[0]) - (centers[2] - centers[1])) < 1)
+        #expect(
+          visible.compactMap { $0 as? NSImageView }.filter {
+            $0.contentTintColor != .secondaryLabelColor
+          }.count >= 3)
+      case 1:
+        #expect(visible.compactMap { $0 as? WelcomeReadoutButton }.count == 7)
+        #expect(visible.contains { $0 is MenuBarPreviewView })
+      case 2:
+        #expect(visible.compactMap { $0 as? WelcomeTileView }.count >= 5)
+      case 3:
+        #expect(visible.contains { $0.identifier?.rawValue == "welcome-weather" })
+        #expect(visible.contains { $0.identifier?.rawValue == "welcome-internet" })
+      case 4:
+        #expect(visible.compactMap { $0 as? WelcomeTileView }.count == 2)
+      default:
+        #expect(visible.compactMap { $0 as? WelcomeTileView }.count == 3)
+      }
+    }
+  }
+}
+
+@Test @MainActor func welcomeLoginUsesSharedPreferencePathWithOwnedFixture() throws {
+  _ = NSApplication.shared
+  let controller = WelcomeController(settings: { Settings() }, initialStep: 5)
+  defer { controller.close() }
+  var enabled = false
+  var changes: [Bool] = []
+  controller.loginEnabled = { enabled }
+  controller.setLoginEnabled = {
+    enabled = $0
+    changes.append($0)
+    return "Fixture login preference updated."
+  }
+  controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+  let root = try #require(controller.window?.contentView)
+  let login = try #require(
+    welcomeViews(root).compactMap { $0 as? NSButton }.first { $0.title == "Launch at login" })
+  #expect(login.state == .off)
+  login.state = .on
+  try welcomeActivate(login)
+  #expect(changes == [true] && login.state == .on)
+  enabled = false
+  controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+  #expect(login.state == .off && changes == [true])
+}
+
+@Test @MainActor func welcomeSolidAndLegacyTreatmentsKeepTheGraphicSequence() throws {
+  _ = NSApplication.shared
+  let previousIcon = NSApp.applicationIconImage
+  NSApp.applicationIconImage = NSImage(contentsOfFile: "Resources/TinyStats.icns")
+  defer { NSApp.applicationIconImage = previousIcon }
+  for theme in [AppTheme.light, .dark] {
+    for treatment in [GlassSurface.Treatment.solid, .legacy] {
+      var settings = Settings()
+      settings.theme = theme
+      let controller = WelcomeController(
+        settings: { settings },
+        glassEnvironment: {
+          .init(
+            supportsGlass: treatment != .legacy, reduceTransparency: treatment == .solid,
+            increaseContrast: false)
+        })
+      defer { controller.close() }
+      let root = try #require(controller.window?.contentView)
+      root.layoutSubtreeIfNeeded()
+      #expect(welcomeViews(root).compactMap { $0 as? GlassSurface }.first?.treatment == treatment)
+      #expect(welcomeViews(root).contains { $0 is WelcomeHeroView })
+      #expect(controller.window?.isOpaque == true)
+      #expect(controller.window?.backgroundColor == .windowBackgroundColor)
+      guard treatment == .solid,
+        let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"]
+      else { continue }
+      let directory = URL(fileURLWithPath: path, isDirectory: true)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+      root.effectiveAppearance.performAsCurrentDrawingAppearance {
+        root.cacheDisplay(in: root.bounds, to: bitmap)
+      }
+      try #require(bitmap.representation(using: .png, properties: [:])).write(
+        to: directory.appendingPathComponent("welcome-step-1-greet-solid-\(theme.rawValue).png"))
+    }
+  }
+}
+
+@Test @MainActor func welcomeReadoutToggleExposesCheckboxStateAndDisabledFocus() throws {
+  let controller = WelcomeController(settings: { Settings() }, initialStep: 1)
+  defer { controller.close() }
+  let root = try #require(controller.window?.contentView)
+  let toggle = try #require(welcomeViews(root).compactMap { $0 as? WelcomeReadoutButton }.first)
+  #expect(toggle.accessibilityRole() == .checkBox)
+  for state in [NSControl.StateValue.off, .on] {
+    toggle.state = state
+    #expect((toggle.accessibilityValue() as? Int) == (state == .on ? 1 : 0))
+  }
+  toggle.isEnabled = false
+  #expect(!toggle.acceptsFirstResponder)
+  #expect(!toggle.isAccessibilityEnabled())
+}
+
+@Test @MainActor func welcomeCardsExposeGuidanceAndOnlineActionsAlign() throws {
+  for step in [3, 5] {
+    let controller = WelcomeController(settings: { Settings() }, initialStep: step)
+    defer { controller.close() }
+    let root = try #require(controller.window?.contentView)
+    root.layoutSubtreeIfNeeded()
+    let cards = welcomeViews(root).compactMap { $0 as? WelcomeTileView }
+    #expect(cards.allSatisfy { $0.isAccessibilityElement() && $0.accessibilityRole() == .group })
+    #expect(
+      cards.allSatisfy {
+        $0.accessibilityLabel()?.isEmpty == false && $0.accessibilityHelp()?.isEmpty == false
+      })
+    if step == 3 {
+      let internet = try #require(cards.first { $0.identifier?.rawValue == "welcome-internet" })
+      #expect(internet.accessibilityHelp()?.contains("source IP") == true)
+      #expect(
+        welcomeViews(internet).compactMap { $0 as? NSTextField }.contains {
+          $0.stringValue.contains("source IP")
+        })
+      let buttons = cards.flatMap { welcomeViews($0).compactMap { $0 as? NSButton } }
+      #expect(buttons.count == 2)
+      let frames = buttons.map { root.convert($0.bounds, from: $0) }
+      #expect(abs(frames[0].minY - frames[1].minY) < 1)
+      #expect(abs(cards[0].frame.height - cards[1].frame.height) < 1)
+    } else {
+      #expect(cards.first?.accessibilityHelp()?.contains("Show welcome tour") == true)
+      #expect(
+        welcomeViews(try #require(cards.first)).compactMap { $0 as? NSButton }.contains {
+          $0.title == "Launch at login"
+        })
+    }
+  }
+}
+
+@Test @MainActor func welcomeWindowOpacityFollowsTreatmentChanges() throws {
+  var environment = GlassSurface.Environment(
+    supportsGlass: true, reduceTransparency: false, increaseContrast: false)
+  let controller = WelcomeController(settings: { Settings() }, glassEnvironment: { environment })
+  defer { controller.close() }
+  let root = try #require(controller.window?.contentView as? WelcomeBackgroundView)
+  for treatment in [GlassSurface.Treatment.glass, .solid, .legacy, .glass] {
+    environment.supportsGlass = treatment != .legacy
+    environment.reduceTransparency = treatment == .solid
+    root.systemStyleDidChange()
+    #expect(controller.window?.isOpaque == (treatment != .glass))
+    #expect(
+      controller.window?.backgroundColor == (treatment == .glass ? .clear : .windowBackgroundColor))
+  }
 }
