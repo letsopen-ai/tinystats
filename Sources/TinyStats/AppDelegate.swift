@@ -11,6 +11,17 @@ struct PresentationTransitions {
   }
 }
 
+/// Shared by the real status menu and the welcome illustration to prevent copy drift.
+enum StatusMenuTitles {
+  static let pause = "Pause monitoring"
+  static let resume = "Resume monitoring"
+  static let settings = "Settings…"
+  static let welcome = "Show welcome tour"
+  static let activity = "Open Activity Monitor"
+  static let quit = "Quit TinyStats"
+  static let tour = [pause, settings, welcome, activity, quit]
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate {
   private static let preferenceStore = ApplicationStartup.preferenceStore()
@@ -340,16 +351,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     root.submenu = appMenu
     main.addItem(root)
     let settings = NSMenuItem(
-      title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+      title: StatusMenuTitles.settings, action: #selector(showSettings), keyEquivalent: ",")
     settings.target = self
     appMenu.addItem(settings)
     let welcome = NSMenuItem(
-      title: "Show welcome tour", action: #selector(showWelcome), keyEquivalent: "")
+      title: StatusMenuTitles.welcome, action: #selector(showWelcome), keyEquivalent: "")
     welcome.target = self
     appMenu.addItem(welcome)
     appMenu.addItem(.separator())
     appMenu.addItem(
-      withTitle: "Quit TinyStats", action: #selector(NSApplication.terminate(_:)),
+      withTitle: StatusMenuTitles.quit, action: #selector(NSApplication.terminate(_:)),
       keyEquivalent: "q")
     let editRoot = NSMenuItem()
     editRoot.title = "Edit"
@@ -504,28 +515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     guard let entry = statusItems.entry(for: sender) else { return }
     if NSApp.currentEvent?.type == .rightMouseUp {
       popover?.performClose(nil)
-      let menu = NSMenu()
-      let pause = NSMenuItem(
-        title: paused ? "Resume monitoring" : "Pause monitoring", action: #selector(togglePause),
-        keyEquivalent: "")
-      pause.target = self
-      menu.addItem(pause)
-      let preferences = NSMenuItem(
-        title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
-      preferences.target = self
-      menu.addItem(preferences)
-      let welcome = NSMenuItem(
-        title: "Show welcome tour", action: #selector(showWelcome), keyEquivalent: "")
-      welcome.target = self
-      menu.addItem(welcome)
-      let activity = NSMenuItem(
-        title: "Open Activity Monitor", action: #selector(openActivityMonitor), keyEquivalent: "")
-      activity.target = self
-      menu.addItem(activity)
-      menu.addItem(.separator())
-      menu.addItem(
-        withTitle: "Quit TinyStats", action: #selector(NSApplication.terminate(_:)),
-        keyEquivalent: "q")
+      let menu = Self.makeStatusMenu(paused: paused, target: self)
       entry.item.menu = menu
       sender.performClick(nil)
       entry.item.menu = nil
@@ -546,6 +536,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     } else {
       showDetails(relativeTo: sender, module: module)
     }
+  }
+  static func makeStatusMenu(paused: Bool, target: AppDelegate?) -> NSMenu {
+    let menu = NSMenu()
+    let pause = NSMenuItem(
+      title: paused ? StatusMenuTitles.resume : StatusMenuTitles.pause,
+      action: #selector(togglePause),
+      keyEquivalent: "")
+    pause.target = target
+    menu.addItem(pause)
+    let preferences = NSMenuItem(
+      title: StatusMenuTitles.settings, action: #selector(showSettings), keyEquivalent: ",")
+    preferences.target = target
+    menu.addItem(preferences)
+    let welcome = NSMenuItem(
+      title: StatusMenuTitles.welcome, action: #selector(showWelcome), keyEquivalent: "")
+    welcome.target = target
+    menu.addItem(welcome)
+    let activity = NSMenuItem(
+      title: StatusMenuTitles.activity, action: #selector(openActivityMonitor), keyEquivalent: "")
+    activity.target = target
+    menu.addItem(activity)
+    menu.addItem(.separator())
+    menu.addItem(
+      withTitle: StatusMenuTitles.quit, action: #selector(NSApplication.terminate(_:)),
+      keyEquivalent: "q")
+    return menu
   }
   private func showDetails(relativeTo sender: NSStatusBarButton, module: Module) {
     prepareDetails()
@@ -763,9 +779,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     if let welcome,
       welcome.window?.isVisible == true || welcome.window?.isMiniaturized == true
     {
+      NSApp.activate(ignoringOtherApps: true)
       welcome.window?.deminiaturize(nil)
       welcome.window?.makeKeyAndOrderFront(nil)
-      NSApp.activate(ignoringOtherApps: true)
       return
     }
     let controller = WelcomeController(
@@ -796,9 +812,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
     controller.setHistoryBusy(historyStorageActionPending)
     welcome = controller
+    NSApp.activate(ignoringOtherApps: true)
     controller.showWindow(nil)
     controller.window?.makeKeyAndOrderFront(nil)
-    NSApp.activate(ignoringOtherApps: true)
   }
   private func applyPreferences(_ value: Settings) {
     let settings = PreferencesApplication.merging(value, current: self.settings)
