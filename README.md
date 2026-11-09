@@ -52,7 +52,7 @@ It is an early-stage, MIT-licensed project working toward a lean, open alternati
 | 🔔 **Alerts** | Opt-in notification rules for usage, pressure, throughput, sensors, battery, thermal state, SMART and more |
 | 🎛️ **Menu bar** | Pick any readouts and give each one of 14 styles — text, value or icon only, history graphs, gauges, pie, ring, per-core bars or a battery icon |
 
-A six-step welcome tour on first launch helps you choose your menu bar readouts. Readings that your hardware does not expose are shown as unavailable rather than guessed.
+A five-step welcome tour on first launch helps you choose your menu bar readouts. Readings that your hardware does not expose are shown as unavailable rather than guessed.
 
 <table>
   <tr>

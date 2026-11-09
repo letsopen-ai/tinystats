@@ -53,9 +53,9 @@ import TinyStatsCore
     gallery.orderOut(nil)
     gallery.close()
   }
-  let slugs = ["greet", "menubar", "home", "online", "history", "ready"]
+  let slugs = ["greet", "menubar", "history", "online", "ready"]
   for theme in [AppTheme.light, .dark] {
-    for step in 0..<6 {
+    for step in 0..<5 {
       var settings = Settings()
       settings.theme = theme
       NSApp.applicationIconImage = NSImage(contentsOfFile: "Resources/TinyStats.icns")
@@ -97,7 +97,68 @@ import TinyStatsCore
     }
   }
   try
-    "Captured six light/dark welcome steps over an owned gradient; illustrative greeting readouts; empty Customize snapshots.\n"
+    "Captured five light/dark welcome steps over an owned gradient; all readouts are bounded illustrative examples.\n"
     .write(
       to: folder.appendingPathComponent("welcome-capture.txt"), atomically: true, encoding: .utf8)
+}
+
+/// Key-window evidence uses the actual welcome window, never the system menu bar.
+@Test @MainActor func welcomeOwnedKeyWindowCapture() async throws {
+  guard let path = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_RENDER_PATH"],
+    ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_GLASS_CAPTURE"] == "1",
+    #available(macOS 26, *), CGPreflightScreenCaptureAccess()
+  else { return }
+  _ = NSApplication.shared
+  let policy = NSApp.activationPolicy()
+  let previousIcon = NSApp.applicationIconImage
+  _ = NSApp.setActivationPolicy(.accessory)
+  NSApp.applicationIconImage = NSImage(contentsOfFile: "Resources/TinyStats.icns")
+  NSApp.finishLaunching()
+  defer {
+    NSApp.applicationIconImage = previousIcon
+    _ = NSApp.setActivationPolicy(policy)
+  }
+  var settings = Settings()
+  settings.theme = .light
+  let controller = WelcomeController(settings: { settings })
+  defer { controller.close() }
+  NSApp.activate(ignoringOtherApps: true)
+  controller.showWindow(nil)
+  let window = try #require(controller.window)
+  window.makeKeyAndOrderFront(nil)
+  window.contentView?.layoutSubtreeIfNeeded()
+  window.displayIfNeeded()
+  try await Task.sleep(for: .milliseconds(200))
+  // XCTest can restore the runner's prohibited policy while finishing launch.
+  if NSApp.activationPolicy() == .prohibited { _ = NSApp.setActivationPolicy(.accessory) }
+  NSApp.activate(ignoringOtherApps: true)
+  window.makeKeyAndOrderFront(nil)
+  window.makeKey()
+  window.displayIfNeeded()
+  try await Task.sleep(for: .milliseconds(150))
+  #expect(window.defaultButtonCell?.keyEquivalent == "\r")
+  let folder = URL(fileURLWithPath: path).appendingPathComponent("glass", isDirectory: true)
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  guard NSApp.isActive else {
+    try
+      "Live key-window capture unavailable: macOS kept the SwiftPM runner inactive after activation. No accent/key-window claim is made.\n"
+      .write(
+        to: folder.appendingPathComponent("welcome-key-capture.txt"), atomically: true,
+        encoding: .utf8)
+    return
+  }
+  #expect(window.isKeyWindow)
+  let content = try await SCShareableContent.excludingDesktopWindows(
+    true, onScreenWindowsOnly: false)
+  let owned = try #require(content.windows.first { $0.windowID == CGWindowID(window.windowNumber) })
+  let config = SCStreamConfiguration()
+  config.width = Int(window.frame.width * window.backingScaleFactor)
+  config.height = Int(window.frame.height * window.backingScaleFactor)
+  config.scalesToFit = true
+  config.showsCursor = false
+  config.ignoreShadowsSingleWindow = true
+  let captured = try await SCScreenshotManager.captureImage(
+    contentFilter: SCContentFilter(desktopIndependentWindow: owned), configuration: config)
+  try #require(NSBitmapImageRep(cgImage: captured).representation(using: .png, properties: [:]))
+    .write(to: folder.appendingPathComponent("welcome-key-window-light.png"))
 }

@@ -88,12 +88,14 @@ private func welcomeStore() throws -> (String, UserDefaults) {
 }
 
 @Test func welcomePreviewStepParsingIsBoundedAndOnlyAffectsPreviews() throws {
-  for step in 1...6 {
+  for step in 1...5 {
     #expect(
       WelcomePresentation.previewInitialStep(
         arguments: ["TinyStats", "--preview-onboarding-step", String(step)]) == step - 1)
   }
-  for suffix in [[], ["0"], ["7"], ["-1"], ["bad"], ["1.5"], [String(repeating: "9", count: 100)]] {
+  for suffix in [
+    [], ["0"], ["6"], ["7"], ["-1"], ["bad"], ["1.5"], [String(repeating: "9", count: 100)],
+  ] {
     #expect(
       WelcomePresentation.previewInitialStep(
         arguments: ["TinyStats", "--preview-onboarding-step"] + suffix) == 0)
@@ -200,32 +202,71 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     #expect(controller.step == 0)
     controller.previousStep()
     #expect(controller.step == 0)
-    for _ in 0..<5 { controller.nextStep() }
-    #expect(controller.step == 5)
-    controller.previousStep()
+    for _ in 0..<4 { controller.nextStep() }
     #expect(controller.step == 4)
+    controller.previousStep()
+    #expect(controller.step == 3)
     controller.skipTour()
     #expect(settings == original && changes == 0)
   }
 }
 
 @Test @MainActor func welcomeNamesDefaultReadoutsAndPrivacyChoices() throws {
-  _ = NSApplication.shared
   let controller = WelcomeController(settings: { Settings() })
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
   let copy = welcomeViews(root).compactMap { ($0 as? NSTextField)?.stringValue }.joined(
     separator: "\n")
   for phrase in [
-    "Your Mac, at a glance", "tiny footprint", "No analytics", "Local-only by default",
-    "Tab / ⇧Tab", "right-click", "Show welcome tour", "CPU", "Memory", "Network",
+    "Your Mac, at a glance.", "Tiny footprint", "No analytics", "Local-only by default", "CPU",
+    "Memory", "Network",
   ] {
-    #expect(copy.localizedCaseInsensitiveContains(phrase))
+    #expect(copy.contains(phrase))
   }
+  #expect(!copy.contains("Tab / ⇧Tab") && !copy.contains("Replay anytime"))
 }
 
-@Test @MainActor func welcomeSloganAlignsWithHeadingAndUsesLighterProminentTypography() throws {
-  _ = NSApplication.shared
+/// Difference the actual 2× strip with/without its preview, then find each visible cell's
+/// horizontal extent. No renderer-to-stage coordinate conversion participates in this oracle.
+@MainActor private func welcomeDrawnReadoutCenters(_ hero: WelcomeHeroView) throws -> [CGFloat] {
+  func raster() throws -> NSBitmapImageRep {
+    let bitmap = try #require(hero.bitmapImageRepForCachingDisplay(in: hero.bounds))
+    hero.effectiveAppearance.performAsCurrentDrawingAppearance {
+      hero.cacheDisplay(in: hero.bounds, to: bitmap)
+    }
+    return bitmap
+  }
+  let visible = try raster()
+  hero.magnifiedPreview.isHidden = true
+  defer { hero.magnifiedPreview.isHidden = false }
+  let hidden = try raster()
+  let scale = CGFloat(visible.pixelsWide) / hero.bounds.width
+  let top = Int((hero.bounds.height - hero.strip.maxY) * scale)
+  let bottom = Int((hero.bounds.height - hero.strip.minY) * scale)
+  var runs: [ClosedRange<Int>] = []
+  for x in 0..<visible.pixelsWide {
+    let changed = (top..<bottom).contains { y in
+      guard let a = visible.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+        let b = hidden.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+      else { return false }
+      return max(
+        abs(a.alphaComponent - b.alphaComponent),
+        abs(a.redComponent * a.alphaComponent - b.redComponent * b.alphaComponent),
+        abs(a.greenComponent * a.alphaComponent - b.greenComponent * b.alphaComponent),
+        abs(a.blueComponent * a.alphaComponent - b.blueComponent * b.alphaComponent)) > 0.01
+    }
+    if changed {
+      if let last = runs.last, last.upperBound == x - 1 {
+        runs[runs.count - 1] = last.lowerBound...x
+      } else {
+        runs.append(x...x)
+      }
+    }
+  }
+  return runs.map { CGFloat($0.lowerBound + $0.upperBound + 1) / (2 * scale) }
+}
+
+@Test @MainActor func welcomeSloganIsTheCentredHeadlineAboveMagnifiedMenuBar() throws {
   for theme in [AppTheme.light, .dark] {
     for treatment in [GlassSurface.Treatment.glass, .solid, .legacy] {
       var settings = Settings()
@@ -239,51 +280,35 @@ private func welcomeStore() throws -> (String, UserDefaults) {
         })
       defer { controller.close() }
       let root = try #require(controller.window?.contentView)
-      // Returning to Greet restores its tighter spacing without changing later pages.
       for step in [0, 1, 0] {
         root.layoutSubtreeIfNeeded()
-        let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
-        let heading = try #require(
-          root.subviews.compactMap { $0 as? NSTextField }.first { $0.font?.pointSize == 24 })
-        let headingFrame = root.convert(heading.bounds, from: heading)
-        let bodyFrame = root.convert(body.bounds, from: body)
-        #expect(abs(headingFrame.minY - bodyFrame.maxY - (step == 0 ? 8 : 18)) < 1)
+        let labels = root.subviews.compactMap { $0 as? NSTextField }
+        let heading = try #require(labels.first { $0.font?.pointSize == (step == 0 ? 34 : 24) })
+        let greeting = try #require(labels.first { $0.stringValue == "Welcome to TinyStats" })
+        #expect(greeting.isHidden == (step != 0))
         if step == 0 {
-          #expect(heading.stringValue == "Welcome to TinyStats")
-          let slogan = try #require(
-            welcomeViews(body).compactMap { $0 as? NSTextField }.first {
-              $0.stringValue == "Your Mac, at a glance."
-            })
-          let font = try #require(slogan.font)
-          #expect((17...18).contains(font.pointSize))
-          let weight = NSFontManager.shared.weight(of: font)
+          #expect(heading.stringValue == "Your Mac, at a glance.")
+          #expect(heading.alignment == .center && heading.textColor == .labelColor)
+          #expect(heading.font == .systemFont(ofSize: 34, weight: .bold))
+          #expect(greeting.font == .systemFont(ofSize: 15, weight: .medium))
           #expect(
-            weight
-              >= NSFontManager.shared.weight(
-                of: .systemFont(ofSize: font.pointSize, weight: .regular)))
-          #expect(
-            weight
-              <= NSFontManager.shared.weight(
-                of: .systemFont(ofSize: font.pointSize, weight: .medium)))
-          #expect(
-            weight
-              < NSFontManager.shared.weight(
-                of: .systemFont(ofSize: font.pointSize, weight: .semibold)))
-          #expect(slogan.textColor == .labelColor)
-          #expect(!slogan.isHiddenOrHasHiddenAncestor)
-          #expect(slogan.bounds.height >= slogan.intrinsicContentSize.height - 1)
-          let hero = try #require(welcomeViews(body).compactMap { $0 as? WelcomeHeroView }.first)
-          let sloganFrame = root.convert(slogan.bounds, from: slogan)
-          let heroFrame = root.convert(hero.bounds, from: hero)
-          #expect(abs(sloganFrame.minX - headingFrame.minX) < 1)
-          #expect(abs(headingFrame.minY - sloganFrame.maxY - 8) < 1)
-          #expect(abs(sloganFrame.minY - heroFrame.maxY - 12) < 1)
-          #expect(abs(heroFrame.minX - bodyFrame.minX) < 1)
-          #expect(abs(heroFrame.width - bodyFrame.width) < 1)
-          #expect(hero.bounds.height >= 240)
-          #expect(
-            welcomeViews(body).compactMap { $0 as? NSTextField }.filter { $0 !== slogan }
-              .allSatisfy { ($0.font?.pointSize ?? 0) <= 13 })
+            greeting.textColor
+              == (treatment == .glass ? SystemStyle.glassSecondaryLabel : .secondaryLabelColor))
+          #expect(34.0 / 15.0 > 2.2)
+          #expect(heading.frame == NSRect(x: 30, y: 401, width: 660, height: 41))
+          #expect(greeting.frame.minY > heading.frame.maxY)
+          let hero = try #require(welcomeViews(root).compactMap { $0 as? WelcomeHeroView }.first)
+          #expect(hero.bounds.height == 196)
+          #expect(root.convert(hero.bounds, from: hero).maxY == 381)
+          // Measure the drawn cell outlines, independently of the scroll/bounds conversion.
+          let centers = try welcomeDrawnReadoutCenters(hero)
+          let glyphs = hero.subviews.filter { $0.identifier != nil }.flatMap {
+            $0.subviews.compactMap { $0 as? NSImageView }
+          }
+          #expect(centers.count == 3 && glyphs.count == 3)
+          for (glyph, center) in zip(glyphs, centers) {
+            #expect(abs(hero.convert(glyph.bounds, from: glyph).midX - center) <= 1)
+          }
           controller.nextStep()
         } else {
           controller.previousStep()
@@ -341,8 +366,15 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     #expect(preview.renderers.count == (segment == 0 ? settings.readouts.count : 1))
     let readings = preview.renderers.flatMap(\.readouts)
     #expect(readings.compactMap(\.module) == settings.readouts)
-    #expect(readings.first { $0.module == .cpu }?.value == "—")
-    #expect(readings.first { $0.module == .cpu }?.progress == nil)
+    #expect(
+      readings.map(\.value)
+        == settings.readouts.map {
+          MenuBarStyleExample.readout(
+            module: $0, style: settings.style(for: $0), settings: settings
+          ).value
+        })
+    #expect(readings.allSatisfy { $0.value != "—" })
+    #expect(readings.first { $0.module == .cpu }?.progress == 42)
     #expect(readings.map(\.style) == settings.readouts.map { settings.style(for: $0) })
     #expect(!settings.weather.enabled && !settings.connectivityChecks && !settings.publicIPChecks)
   }
@@ -353,75 +385,52 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   #expect(preview.renderers.first?.readouts.first { $0.module == .cpu }?.style == .ring)
 }
 
-@Test @MainActor func welcomeModuleCardsDiscloseSecondaryContentAndRouteOverview() throws {
-  _ = NSApplication.shared
-  let settings = Settings()
-  let controller = WelcomeController(settings: { settings }, initialStep: 2)
+@Test @MainActor func welcomeReadyRoutesOverviewAndSettingsAndSharesRealStatusMenuTitles() throws {
+  let controller = WelcomeController(settings: { Settings() }, initialStep: 4)
   defer { controller.close() }
   let root = try #require(controller.window?.contentView)
-  let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
-  let cards = welcomeViews(body).compactMap { $0 as? WelcomeTileView }
-  #expect(cards.count == 9)
-  #expect(cards.allSatisfy { welcomeViews($0).contains { $0 is NSImageView } })
-  let labels = welcomeViews(root).compactMap { $0 as? NSTextField }
-  #expect(labels.contains { $0.stringValue == "CPU & GPU" })
-  #expect(labels.contains { $0.stringValue == "Advanced · Sensors" })
-  let more = try #require(
-    welcomeViews(root).first {
-      $0.identifier?.rawValue == "welcome-more-modules"
-    })
-  let disclosure = try #require(
-    welcomeViews(root).compactMap { $0 as? NSButton }.first { $0.title == "More modules…" })
-  #expect(more.isHidden)
+  let stage = try #require(welcomeViews(root).compactMap { $0 as? WelcomeReadyStageView }.first)
+  #expect(stage.accessibilityLabel()?.contains("sidebar for every module") == true)
+  #expect(WelcomeReadyStageView.menuTitles == StatusMenuTitles.tour)
   root.layoutSubtreeIfNeeded()
-  let collapsedHeight = body.frame.height
-  try welcomeActivate(disclosure)
-  root.layoutSubtreeIfNeeded()
-  #expect(!more.isHidden && disclosure.state == .on)
-  #expect(body.frame.height > collapsedHeight + 50)
-  #expect(welcomeViews(more).compactMap { $0 as? WelcomeTileView }.count == 2)
-  var opened = 0
-  controller.onOverview = { opened += 1 }
-  let overview = try #require(
-    welcomeViews(root).compactMap { $0 as? NSButton }.first { $0.title == "Open Overview…" })
-  try welcomeActivate(overview)
-  #expect(opened == 1)
-  controller.nextStep()
-  controller.previousStep()
+  #expect(abs(stage.bounds.maxX - stage.preview.frame.maxX - 44) <= 1)
+  let native = MenuBarPreviewView()
+  native.update(
+    groups: WelcomeGraphic.examples(WelcomeGraphic.starterSettings), paused: false,
+    height: NSStatusBar.system.thickness)
+  #expect(stage.preview.renderers.map(\.frame) == native.renderers.map(\.frame))
+  #expect(stage.preview.frame.width == native.preferredWidth)
+  let menu = AppDelegate.makeStatusMenu(paused: false, target: nil)
   #expect(
-    welcomeViews(root).first {
-      $0.identifier?.rawValue == "welcome-more-modules"
-    }?.isHidden == false)
-  let reopened = WelcomeController(settings: { settings }, initialStep: 2)
-  defer { reopened.close() }
-  let reopenedRoot = try #require(reopened.window?.contentView)
+    menu.items.filter { !$0.isSeparatorItem }.map(\.title) == WelcomeReadyStageView.menuTitles)
   #expect(
-    welcomeViews(reopenedRoot).first {
-      $0.identifier?.rawValue == "welcome-more-modules"
-    }?.isHidden == true)
+    AppDelegate.makeStatusMenu(paused: true, target: nil).items.first?.title
+      == StatusMenuTitles.resume)
+  var actions: [String] = []
+  controller.onOverview = { actions.append("overview") }
+  controller.onSettings = { actions.append("settings") }
+  for title in ["Open Overview…", "Settings…"] {
+    try welcomeActivate(
+      try #require(welcomeViews(root).compactMap { $0 as? NSButton }.first { $0.title == title }))
+  }
+  #expect(actions == ["overview", "settings"])
 }
 
-@Test @MainActor func welcomeFinishTeachesClicksAndRoutesMenuBarAndGeneralSettings() throws {
-  _ = NSApplication.shared
-  let controller = WelcomeController(settings: { Settings() }, initialStep: 5)
+@Test @MainActor func welcomeMoreReadoutsRoutesMenuBarSettingsWithoutChangingChoices() throws {
+  var settings = Settings()
+  settings.readouts.append(.gpu)
+  let original = settings
+  let controller = WelcomeController(settings: { settings }, initialStep: 1)
   defer { controller.close() }
+  var opened = 0
+  var changes = 0
+  controller.onMenuBarSettings = { opened += 1 }
+  controller.onMenuBarChange = { _ in changes += 1 }
   let root = try #require(controller.window?.contentView)
-  let copy = welcomeViews(root).compactMap { ($0 as? NSTextField)?.stringValue }.joined(
-    separator: "\n")
-  #expect(copy.contains("Click a readout") && copy.contains("Open its details"))
-  #expect(
-    copy.contains("Right-click a readout") && copy.contains("Settings · Pause · Replay · Quit"))
-  var actions: [String] = []
-  controller.onMenuBarSettings = { actions.append("menuBar") }
-  controller.onSettings = { actions.append("general") }
-  for title in ["Open Menu Bar settings…", "Open Settings…"] {
-    let button = try #require(
-      welcomeViews(root).compactMap { $0 as? NSButton }.first { $0.title == title })
-    try welcomeActivate(button)
-  }
-  #expect(actions == ["menuBar", "general"])
-  #expect(
-    welcomeViews(root).compactMap { $0 as? NSButton }.contains { $0.title == "Launch at login" })
+  let more = try #require(welcomeViews(root).compactMap { $0 as? WelcomeMoreReadoutsButton }.first)
+  #expect(more.accessibilityLabel() == "More readouts in Menu Bar settings")
+  try welcomeActivate(more)
+  #expect(opened == 1 && changes == 0 && settings == original)
 }
 
 @Test @MainActor func welcomeMenuChoicesPersistAndWeatherReadoutDoesNotEnableWeather() throws {
@@ -481,7 +490,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   let (name, store) = try welcomeStore()
   defer { store.removePersistentDomain(forName: name) }
   var settings = Settings()
-  let controller = WelcomeController(settings: { settings }, initialStep: 4)
+  let controller = WelcomeController(settings: { settings }, initialStep: 2)
   defer { controller.close() }
   var changes = 0
   controller.onHistoryPersistence = { enabled in
@@ -491,13 +500,18 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   }
   let root = try #require(controller.window?.contentView)
   let history = try #require(
-    welcomeViews(root).compactMap { $0 as? NSButton }.first {
-      $0.title == "Keep history between launches"
+    welcomeViews(root).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.accessibilityLabel() == "Keep history between launches"
     })
   #expect(history.state == .on)
   history.state = .off
   try welcomeActivate(history)
   #expect(!Settings.load(from: store).persistHistory)
+  #expect(history.accessibilityHelp()?.contains("Turning off keeps saved data") == true)
+  #expect(
+    welcomeViews(root).compactMap { $0 as? NSTextField }.contains {
+      $0.stringValue == "History paused. Saved data stays until you clear it in History & Storage."
+    })
   #expect(!Settings.load(from: store).weather.enabled)
   controller.setHistoryBusy(true)
   #expect(!history.isEnabled)
@@ -522,24 +536,28 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   #expect(labels.contains { $0.stringValue == "Online only when you choose" })
   #expect(
     labels.contains {
-      $0.stringValue.contains("MET Norway (api.met.no)")
+      $0.stringValue.contains("MET Norway · api.met.no")
     })
-  #expect(labels.contains { $0.stringValue.contains("Rounded coordinates + your public IP") })
-  #expect(labels.contains { $0.stringValue.hasPrefix("Opening setup enables nothing") })
-  #expect(labels.contains { $0.stringValue == "Online off by default" })
+  #expect(
+    welcomeViews(root).compactMap { $0 as? WelcomeTileView }.contains {
+      $0.lines.contains("Sends rounded location and your IP")
+    })
+  let stage = try #require(welcomeViews(root).compactMap { $0 as? WelcomeOnlineStageView }.first)
+  #expect(stage.weatherPill.text == "Off" && stage.internetPill.text == "Off")
+  #expect(stage.accessibilityLabel()?.contains("Opening setup changes nothing") == true)
   #expect(
     labels.contains {
-      $0.stringValue == "Advanced · Internet checks"
+      $0.stringValue == "Internet checks"
     })
   let setup = welcomeViews(root).compactMap { $0 as? NSButton }.filter {
-    $0.title == "Set up…" || $0.title == "Review…"
+    $0.title == "Set Up Weather…" || $0.title == "Review Checks…"
   }
-  #expect(setup.map(\.title) == ["Set up…", "Review…"])
+  #expect(setup.map(\.title) == ["Set Up Weather…", "Review Checks…"])
   #expect(
     !welcomeViews(root).compactMap { $0 as? NSButton }.contains {
       $0.title.contains("Calendar")
     })
-  for title in ["Set up…", "Review…"] {
+  for title in ["Set Up Weather…", "Review Checks…"] {
     let button = try #require(
       welcomeViews(root).compactMap { $0 as? NSButton }.first { $0.title == title })
     try welcomeActivate(button)
@@ -557,14 +575,9 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   for (theme, name) in [(AppTheme.light, "light"), (.dark, "dark")] {
     var settings = Settings()
     settings.theme = theme
-    for step in 0..<6 {
+    for step in 0..<5 {
       let controller = WelcomeController(settings: { settings }, initialStep: step)
       let root = try #require(controller.window?.contentView)
-      if step == 2 {
-        let disclosure = try #require(
-          welcomeViews(root).compactMap { $0 as? NSButton }.first { $0.title == "More modules…" })
-        try welcomeActivate(disclosure)
-      }
       root.layoutSubtreeIfNeeded()
       let controls = welcomeViews(root).compactMap { $0 as? NSControl }.filter {
         !$0.isHiddenOrHasHiddenAncestor
@@ -592,7 +605,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
         }
         try #require(bitmap.representation(using: .png, properties: [:])).write(
           to: directory.appendingPathComponent(
-            "welcome-step-\(step + 1)-\(["greet", "menubar", "home", "online", "history", "ready"][step])-\(name).png"
+            "welcome-step-\(step + 1)-\(["greet", "menubar", "history", "online", "ready"][step])-\(name).png"
           ))
       }
       controller.close()
@@ -622,79 +635,78 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   }
   controller.nextStep()
   let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
-  #expect(body.detachesHiddenViews)  // Home must remove the collapsed secondary row.
+  #expect(!body.detachesHiddenViews)
   controller.nextStep()
   #expect(!body.detachesHiddenViews)
 }
 
 /// Real laid-out content, not copy constants: no teaching label may need a second line.
 @Test @MainActor func welcomeGraphicSequenceHasShortCopyAndAccessibleNavigation() throws {
-  _ = NSApplication.shared
   for theme in [AppTheme.light, .dark] {
     var settings = Settings()
     settings.theme = theme
-    for step in 0..<6 {
+    for step in 0..<5 {
       let controller = WelcomeController(settings: { settings }, initialStep: step)
       defer { controller.close() }
       let root = try #require(controller.window?.contentView)
       root.layoutSubtreeIfNeeded()
       let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
-      let visible = welcomeViews(body).filter { !$0.isHiddenOrHasHiddenAncestor }
-      let copy = visible.compactMap { $0 as? NSTextField }
-      #expect(
-        copy.allSatisfy {
-          $0.bounds.height <= ($0.stringValue == "Your Mac, at a glance." ? 24 : 20)
-            && $0.stringValue.count <= 100
-        })
-      // At most one multi-sentence wrapping caption; formerly up to four long paragraphs.
-      #expect(
-        copy.filter {
-          $0.cell?.wraps == true && $0.stringValue.components(separatedBy: ". ").count > 1
-        }.count <= 1)
-      let controls = welcomeViews(root).compactMap { $0 as? NSButton }
-      for label in [
-        "Skip welcome tour and keep current choices", "Previous welcome step",
-        step == 5 ? "Finish welcome tour" : "Next welcome step",
-      ] {
-        #expect(controls.contains { $0.accessibilityLabel() == label })
+      let visible = welcomeViews(root).filter { !$0.isHiddenOrHasHiddenAncestor }
+      for label in visible.compactMap({ $0 as? NSTextField }) {
+        #expect(
+          label.bounds.height
+            <= (label.stringValue == "Your Mac, at a glance."
+              ? 44 : label.font?.pointSize == 24 ? 30 : 20))
+        #expect(label.stringValue.count <= 100)
+        #expect(
+          label.bounds.width >= label.intrinsicContentSize.width - 1,
+          "Clipped: \(label.stringValue)")
       }
-      #expect(controls.first { $0.title == "Back" }?.isEnabled == (step > 0))
+      let controls = welcomeViews(root).compactMap { $0 as? NSButton }
+      #expect(
+        controls.contains {
+          $0.accessibilityLabel() == (step == 4 ? "Finish welcome tour" : "Next welcome step")
+            && $0.keyEquivalent == "\r"
+        })
+      #expect(controls.first { $0.title == "Back" }?.isHidden == (step == 0))
+      #expect(controls.first { $0.title == "Skip" }?.isHidden == (step == 4))
+      let progress = try #require(visible.compactMap { $0 as? WelcomeProgressDots }.first)
+      #expect(progress.accessibilityLabel() == "Step \(step + 1) of 5")
+      #expect(controller.stepAnnouncement.hasPrefix("Step \(step + 1) of 5, "))
+      #expect(!body.detachesHiddenViews)
+      let stage = try #require(body.arrangedSubviews.first as? WelcomeStageView)
+      // §5.2 explicitly budgets ~164pt for Menu Bar to retain the full 52pt style grid.
+      // This specific geometry takes precedence over §12's generic 45% stage-area target.
+      if step != 1 { #expect(stage.bounds.height >= body.bounds.height * 0.45) }
       switch step {
       case 0:
-        let hero = try #require(visible.compactMap { $0 as? WelcomeHeroView }.first)
-        #expect(hero.bounds.height >= 240)
-        #expect(
-          hero.preview.renderers.flatMap(\.readouts).compactMap(\.module) == [
-            .cpu, .memory, .network,
-          ])
+        let hero = try #require(stage as? WelcomeHeroView)
+        #expect(hero.bounds.height >= 196)
         let readings = hero.preview.renderers.flatMap(\.readouts)
+        #expect(readings.compactMap(\.module) == [.cpu, .memory, .network])
         #expect(readings.map(\.value) == ["42%", "68%", "↑ 128 KB/s"])
         #expect(readings[2].secondary == "↓ 2.4 MB/s")
-        #expect(copy.contains { $0.stringValue == "Example menu bar · Illustrative readings" })
+        #expect(stage.accessibilityLabel()?.contains("Example readings") == true)
         for child in welcomeViews(hero).dropFirst() {
           #expect(hero.bounds.contains(hero.convert(child.bounds, from: child)))
+          #expect(!child.isAccessibilityElement())
         }
-        let nodes = try #require(hero.subviews.compactMap { $0 as? NSStackView }.first)
-        let centers = nodes.arrangedSubviews.map { hero.convert($0.bounds, from: $0).midX }
-        #expect(centers.count == 3)
-        #expect(abs(centers[1] - hero.bounds.midX) < 1)
-        #expect(abs((centers[1] - centers[0]) - (centers[2] - centers[1])) < 1)
-        #expect(
-          visible.compactMap { $0 as? NSImageView }.filter {
-            $0.contentTintColor != .secondaryLabelColor
-          }.count >= 3)
       case 1:
-        #expect(visible.compactMap { $0 as? WelcomeReadoutButton }.count == 7)
+        let chips = visible.compactMap { $0 as? WelcomeReadoutButton }
+        #expect(chips.count == 7)
+        #expect(visible.compactMap { $0 as? WelcomeMoreReadoutsButton }.count == 1)
+        #expect(chips.allSatisfy { abs($0.bounds.width - 159) < 1 && $0.bounds.height == 38 })
         #expect(visible.contains { $0 is MenuBarPreviewView })
       case 2:
-        #expect(visible.compactMap { $0 as? WelcomeTileView }.count >= 5)
+        #expect(visible.compactMap { $0 as? WelcomeTileView }.count == 2)
+        #expect(visible.contains { $0.identifier?.rawValue == "welcome-history" })
+        #expect(visible.contains { $0.identifier?.rawValue == "welcome-notifications" })
       case 3:
         #expect(visible.contains { $0.identifier?.rawValue == "welcome-weather" })
         #expect(visible.contains { $0.identifier?.rawValue == "welcome-internet" })
-      case 4:
-        #expect(visible.compactMap { $0 as? WelcomeTileView }.count == 2)
       default:
-        #expect(visible.compactMap { $0 as? WelcomeTileView }.count == 3)
+        #expect(stage is WelcomeReadyStageView)
+        #expect(visible.compactMap { $0 as? WelcomeTileView }.count == 1)
       }
     }
   }
@@ -702,7 +714,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
 
 @Test @MainActor func welcomeLoginUsesSharedPreferencePathWithOwnedFixture() throws {
   _ = NSApplication.shared
-  let controller = WelcomeController(settings: { Settings() }, initialStep: 5)
+  let controller = WelcomeController(settings: { Settings() }, initialStep: 4)
   defer { controller.close() }
   var enabled = false
   var changes: [Bool] = []
@@ -715,7 +727,9 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
   let root = try #require(controller.window?.contentView)
   let login = try #require(
-    welcomeViews(root).compactMap { $0 as? NSButton }.first { $0.title == "Launch at login" })
+    welcomeViews(root).compactMap { $0 as? SystemSettingSwitch }.first {
+      $0.accessibilityLabel() == "Launch at login"
+    })
   #expect(login.state == .off)
   login.state = .on
   try welcomeActivate(login)
@@ -778,8 +792,8 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   #expect(!toggle.isAccessibilityEnabled())
 }
 
-@Test @MainActor func welcomeCardsExposeGuidanceAndOnlineActionsAlign() throws {
-  for step in [3, 5] {
+@Test @MainActor func welcomeCardsExposeGuidanceAndActionsTrailTheirCards() throws {
+  for step in [2, 3, 4] {
     let controller = WelcomeController(settings: { Settings() }, initialStep: step)
     defer { controller.close() }
     let root = try #require(controller.window?.contentView)
@@ -790,23 +804,22 @@ private func welcomeStore() throws -> (String, UserDefaults) {
       cards.allSatisfy {
         $0.accessibilityLabel()?.isEmpty == false && $0.accessibilityHelp()?.isEmpty == false
       })
+    for card in cards {
+      if let button = card.actionButton {
+        #expect(abs(button.frame.maxX - (card.bounds.width - 16)) < 1)
+        #expect(abs(button.frame.minY - 14) < 1)
+      }
+    }
     if step == 3 {
       let internet = try #require(cards.first { $0.identifier?.rawValue == "welcome-internet" })
       #expect(internet.accessibilityHelp()?.contains("source IP") == true)
+      #expect(internet.lines.contains("Each destination sees your IP"))
+      #expect(cards[0].frame.height == cards[1].frame.height)
+      #expect(cards[0].actionButton?.frame.minY == cards[1].actionButton?.frame.minY)
+    } else if step == 4 {
       #expect(
-        welcomeViews(internet).compactMap { $0 as? NSTextField }.contains {
-          $0.stringValue.contains("source IP")
-        })
-      let buttons = cards.flatMap { welcomeViews($0).compactMap { $0 as? NSButton } }
-      #expect(buttons.count == 2)
-      let frames = buttons.map { root.convert($0.bounds, from: $0) }
-      #expect(abs(frames[0].minY - frames[1].minY) < 1)
-      #expect(abs(cards[0].frame.height - cards[1].frame.height) < 1)
-    } else {
-      #expect(cards.first?.accessibilityHelp()?.contains("Show welcome tour") == true)
-      #expect(
-        welcomeViews(try #require(cards.first)).compactMap { $0 as? NSButton }.contains {
-          $0.title == "Launch at login"
+        welcomeViews(root).contains {
+          ($0 as? SystemSettingSwitch)?.accessibilityLabel() == "Launch at login"
         })
     }
   }
@@ -825,5 +838,128 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     #expect(controller.window?.isOpaque == (treatment != .glass))
     #expect(
       controller.window?.backgroundColor == (treatment == .glass ? .clear : .windowBackgroundColor))
+  }
+}
+
+@Test @MainActor func welcomeEnablingAChipRetargetsStyleWithoutChangingOnlineState() throws {
+  var settings = Settings()
+  let controller = WelcomeController(settings: { settings }, initialStep: 1)
+  defer { controller.close() }
+  controller.onMenuBarChange = { settings = $0 }
+  let root = try #require(controller.window?.contentView)
+  let chip = try #require(
+    welcomeViews(root).compactMap { $0 as? WelcomeReadoutButton }.first { $0.module == .weather })
+  let popup = try #require(welcomeViews(root).compactMap { $0 as? NSPopUpButton }.first)
+  chip.state = .on
+  try welcomeActivate(chip)
+  #expect(popup.titleOfSelectedItem == Module.weather.title)
+  chip.state = .off
+  try welcomeActivate(chip)
+  #expect(popup.titleOfSelectedItem == Module.weather.title)
+  #expect(!settings.weather.enabled)
+}
+
+@Test @MainActor func welcomeOnlineReplayReflectsSavedStateWithoutWritingIt() throws {
+  for online in [false, true] {
+    var settings = Settings()
+    if online {
+      settings.weather = .currentLocationDefault
+      settings.publicIPChecks = true
+    }
+    let original = settings
+    let controller = WelcomeController(settings: { settings }, initialStep: 3)
+    defer { controller.close() }
+    let root = try #require(controller.window?.contentView)
+    let stage = try #require(welcomeViews(root).compactMap { $0 as? WelcomeOnlineStageView }.first)
+    #expect(stage.weatherPill.text == (online ? "On" : "Off"))
+    #expect(stage.internetPill.text == (online ? "On" : "Off"))
+    #expect(stage.weatherOn == online && stage.internetOn == online)
+    var changes = 0
+    controller.onMenuBarChange = { _ in changes += 1 }
+    controller.onHistoryPersistence = { _ in changes += 1 }
+    controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+    #expect(settings == original && changes == 0)
+    settings.weather.enabled.toggle()
+    settings.publicIPChecks.toggle()
+    controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+    #expect(stage.weatherOn != online && stage.internetOn != online)
+  }
+}
+
+@Test @MainActor func welcomeEscapeOnReadyClosesAndKeepsChoices() throws {
+  let settings = Settings()
+  let controller = WelcomeController(settings: { settings }, initialStep: 4)
+  var changes = 0
+  controller.onMenuBarChange = { _ in changes += 1 }
+  controller.onHistoryPersistence = { _ in changes += 1 }
+  controller.setLoginEnabled = { _ in
+    changes += 1
+    return "Unexpected"
+  }
+  var closed = false
+  controller.onClose = { closed = true }
+  controller.window?.cancelOperation(nil)
+  #expect(closed && changes == 0)
+}
+
+@Test func welcomeHistoryFixturesAreBoundedAndDerivedFromStorageConstants() {
+  #expect(WelcomeFixture.historyCPU.count == 56 && WelcomeFixture.historyMemory.count == 56)
+  #expect(
+    (WelcomeFixture.historyCPU + WelcomeFixture.historyMemory).allSatisfy { (0...100).contains($0) }
+  )
+  #expect(
+    WelcomeFixture.historySize
+      == String(format: "%.1f MiB", Double(SessionHistory.maximumCheckpointBytes) / 1_048_576))
+}
+
+@Test @MainActor func welcomeHistoryCardsRefreshSavedAlertsAndExposeTheExampleRule() throws {
+  var settings = Settings()
+  let controller = WelcomeController(settings: { settings }, initialStep: 2)
+  defer { controller.close() }
+  let root = try #require(controller.window?.contentView)
+  let card = try #require(
+    welcomeViews(root).compactMap { $0 as? WelcomeTileView }.first { $0.rule })
+  let badge = try #require(card.accessory as? WelcomeBadge)
+  #expect(badge.text == "Off")
+  #expect(card.captionLabel.stringValue == "Off until you turn them on and allow them")
+  root.layoutSubtreeIfNeeded()
+  let archive = try #require(
+    welcomeViews(root).compactMap { $0 as? WelcomeTileView }.first {
+      $0.identifier?.rawValue == "welcome-history"
+    })
+  let action = try #require(archive.actionButton)
+  #expect(archive.bounds.height == 112)
+  #expect(archive.captionLabel.frame.minY - action.frame.maxY <= 24)
+  settings.alerts = true
+  controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+  #expect(badge.text == "On")
+  #expect(card.captionLabel.stringValue == "On · Review rules and notification access")
+  #expect(card.accessibilityHelp() == card.captionLabel.stringValue)
+  settings.alerts = false
+  controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+  #expect(badge.text == "Off")
+  #expect(card.captionLabel.stringValue == "Off until you turn them on and allow them")
+  #expect(
+    card.accessibilityChildren()?.compactMap {
+      ($0 as? NSAccessibilityElement)?.accessibilityLabel()
+    }.contains("Example rule: CPU above 90% for 5 minutes") == true)
+}
+
+@Test @MainActor func welcomeEachInternetOptInIndependentlyLightsTheSavedStatePill() throws {
+  for kind in 0..<3 {
+    var settings = Settings()
+    switch kind {
+    case 0: settings.connectivityChecks = true
+    case 1: settings.publicIPChecks = true
+    default: settings.pingCheck.enabled = true
+    }
+    let original = settings
+    let controller = WelcomeController(settings: { settings }, initialStep: 3)
+    defer { controller.close() }
+    let root = try #require(controller.window?.contentView)
+    let stage = try #require(welcomeViews(root).compactMap { $0 as? WelcomeOnlineStageView }.first)
+    #expect(stage.internetOn && stage.internetPill.text == "On")
+    #expect(!stage.weatherOn && stage.weatherPill.text == "Off")
+    #expect(settings == original)
   }
 }

@@ -80,7 +80,7 @@ import Testing
       let preview = try #require(layoutViews(root).compactMap { $0 as? MenuBarPreviewView }.first)
       #expect(preview.renderers.count == (separate ? 3 : 1))
       #expect(preview.renderers.allSatisfy { $0.sidePadding == 0 && $0.itemSpacing == 1 })
-      for step in 0..<6 {
+      for step in 0..<5 {
         let welcome = WelcomeController(settings: { settings }, initialStep: step)
         defer { welcome.close() }
         let welcomeRoot = try #require(welcome.window?.contentView)
