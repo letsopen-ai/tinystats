@@ -224,6 +224,62 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   }
 }
 
+@Test @MainActor func welcomeSloganHasProminentTypographyAndTightGreetSpacing() throws {
+  _ = NSApplication.shared
+  for theme in [AppTheme.light, .dark] {
+    for treatment in [GlassSurface.Treatment.glass, .solid, .legacy] {
+      var settings = Settings()
+      settings.theme = theme
+      let controller = WelcomeController(
+        settings: { settings },
+        glassEnvironment: {
+          .init(
+            supportsGlass: treatment != .legacy, reduceTransparency: treatment == .solid,
+            increaseContrast: false)
+        })
+      defer { controller.close() }
+      let root = try #require(controller.window?.contentView)
+      // Returning to Greet restores its tighter spacing without changing later pages.
+      for step in [0, 1, 0] {
+        root.layoutSubtreeIfNeeded()
+        let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
+        let heading = try #require(
+          root.subviews.compactMap { $0 as? NSTextField }.first { $0.font?.pointSize == 24 })
+        let headingFrame = root.convert(heading.bounds, from: heading)
+        let bodyFrame = root.convert(body.bounds, from: body)
+        #expect(abs(headingFrame.minY - bodyFrame.maxY - (step == 0 ? 8 : 18)) < 1)
+        if step == 0 {
+          #expect(heading.stringValue == "Welcome to TinyStats")
+          let slogan = try #require(
+            welcomeViews(body).compactMap { $0 as? NSTextField }.first {
+              $0.stringValue == "Your Mac, at a glance."
+            })
+          let font = try #require(slogan.font)
+          #expect(font.pointSize >= 17 && font.pointSize < 24)
+          #expect(
+            NSFontManager.shared.weight(of: font)
+              >= NSFontManager.shared.weight(
+                of: .systemFont(ofSize: font.pointSize, weight: .medium)))
+          #expect(slogan.textColor == .labelColor)
+          #expect(!slogan.isHiddenOrHasHiddenAncestor)
+          #expect(slogan.bounds.height >= slogan.intrinsicContentSize.height - 1)
+          let hero = try #require(welcomeViews(body).compactMap { $0 as? WelcomeHeroView }.first)
+          let sloganFrame = root.convert(slogan.bounds, from: slogan)
+          let heroFrame = root.convert(hero.bounds, from: hero)
+          #expect(abs(sloganFrame.minY - heroFrame.maxY - 12) < 1)
+          #expect(hero.bounds.height >= 240)
+          #expect(
+            welcomeViews(body).compactMap { $0 as? NSTextField }.filter { $0 !== slogan }
+              .allSatisfy { ($0.font?.pointSize ?? 0) <= 13 })
+          controller.nextStep()
+        } else {
+          controller.previousStep()
+        }
+      }
+    }
+  }
+}
+
 @Test @MainActor func welcomeStarterListPresetsAndPreviewPreserveAdvancedChoices() throws {
   _ = NSApplication.shared
   var settings = Settings()
@@ -572,7 +628,11 @@ private func welcomeStore() throws -> (String, UserDefaults) {
       let body = try #require(root.subviews.compactMap { $0 as? NSStackView }.first)
       let visible = welcomeViews(body).filter { !$0.isHiddenOrHasHiddenAncestor }
       let copy = visible.compactMap { $0 as? NSTextField }
-      #expect(copy.allSatisfy { $0.bounds.height <= 20 && $0.stringValue.count <= 100 })
+      #expect(
+        copy.allSatisfy {
+          $0.bounds.height <= ($0.stringValue == "Your Mac, at a glance." ? 24 : 20)
+            && $0.stringValue.count <= 100
+        })
       // At most one multi-sentence wrapping caption; formerly up to four long paragraphs.
       #expect(
         copy.filter {
