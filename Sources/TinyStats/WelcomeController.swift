@@ -58,6 +58,7 @@ enum WelcomePresentation {
   private let heading = NSTextField(labelWithString: "")
   private let progress = NSTextField(labelWithString: "")
   private let body = NSStackView()
+  private var bodyTopConstraint: NSLayoutConstraint?
   private let back = NSButton(title: "Back", target: nil, action: nil)
   private let next = NSButton(title: "Next", target: nil, action: nil)
   private let skip = NSButton(title: "Skip", target: nil, action: nil)
@@ -117,10 +118,12 @@ enum WelcomePresentation {
     body.spacing = 14
     body.translatesAutoresizingMaskIntoConstraints = false
     root.addSubview(body)
+    let bodyTop = body.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: 18)
+    bodyTopConstraint = bodyTop
     NSLayoutConstraint.activate([
       body.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 30),
       body.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -30),
-      body.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: 18),
+      bodyTop,
       body.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor, constant: -100),
     ])
     for (button, x, action) in [
@@ -220,6 +223,7 @@ enum WelcomePresentation {
     }
     body.detachesHiddenViews = false
     body.spacing = 12
+    bodyTopConstraint?.constant = step == 0 ? 8 : 18
     readouts.removeAll()
     styles.removeAll()
     history = nil
@@ -239,7 +243,9 @@ enum WelcomePresentation {
     switch step {
     case 0:
       heading.stringValue = "Welcome to TinyStats"
-      text("Your Mac, at a glance.")
+      let slogan = WelcomeGraphic.label("Your Mac, at a glance.", size: 18)
+      slogan.font = .systemFont(ofSize: 18, weight: .semibold)
+      fullWidth(slogan)
       fullWidth(WelcomeHeroView(environment: glassEnvironment))
       chips([
         ("Local-only by default", "internaldrive"),

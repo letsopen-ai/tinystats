@@ -4,6 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Strengthened the greet slogan with larger semibold primary text and tighter heading spacing. Version 0.36.7 (70).
+
 - Redesigned all six welcome steps with a menu bar hero, candy module glyphs and visual choice cards; preserved immediate choices, opt-ins and replay. Version 0.36.6 (69).
 
 - Prepare version 0.36.5 (68): run signed, notarized GitHub Releases on the dedicated organization M4 release runner using job-scoped credentials.
