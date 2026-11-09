@@ -4,6 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Aligned the greet slogan with the welcome heading beside the app icon and lightened it to 18pt medium primary text. Version 0.36.8 (71).
+
 - Strengthened the greet slogan with larger semibold primary text and tighter heading spacing. Version 0.36.7 (70).
 
 - Redesigned all six welcome steps with a menu bar hero, candy module glyphs and visual choice cards; preserved immediate choices, opt-ins and replay. Version 0.36.6 (69).

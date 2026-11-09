@@ -244,8 +244,18 @@ enum WelcomePresentation {
     case 0:
       heading.stringValue = "Welcome to TinyStats"
       let slogan = WelcomeGraphic.label("Your Mac, at a glance.", size: 18)
-      slogan.font = .systemFont(ofSize: 18, weight: .semibold)
-      fullWidth(slogan)
+      slogan.font = .systemFont(ofSize: 18, weight: .medium)
+      // Align the greeting copy beside the icon while keeping the hero at body width.
+      let sloganRow = NSView()
+      slogan.translatesAutoresizingMaskIntoConstraints = false
+      sloganRow.addSubview(slogan)
+      fullWidth(sloganRow)
+      NSLayoutConstraint.activate([
+        slogan.leadingAnchor.constraint(equalTo: heading.leadingAnchor),
+        slogan.trailingAnchor.constraint(equalTo: sloganRow.trailingAnchor),
+        slogan.topAnchor.constraint(equalTo: sloganRow.topAnchor),
+        slogan.bottomAnchor.constraint(equalTo: sloganRow.bottomAnchor),
+      ])
       fullWidth(WelcomeHeroView(environment: glassEnvironment))
       chips([
         ("Local-only by default", "internaldrive"),

@@ -224,7 +224,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   }
 }
 
-@Test @MainActor func welcomeSloganHasProminentTypographyAndTightGreetSpacing() throws {
+@Test @MainActor func welcomeSloganAlignsWithHeadingAndUsesLighterProminentTypography() throws {
   _ = NSApplication.shared
   for theme in [AppTheme.light, .dark] {
     for treatment in [GlassSurface.Treatment.glass, .solid, .legacy] {
@@ -255,18 +255,31 @@ private func welcomeStore() throws -> (String, UserDefaults) {
               $0.stringValue == "Your Mac, at a glance."
             })
           let font = try #require(slogan.font)
-          #expect(font.pointSize >= 17 && font.pointSize < 24)
+          #expect((17...18).contains(font.pointSize))
+          let weight = NSFontManager.shared.weight(of: font)
           #expect(
-            NSFontManager.shared.weight(of: font)
+            weight
               >= NSFontManager.shared.weight(
+                of: .systemFont(ofSize: font.pointSize, weight: .regular)))
+          #expect(
+            weight
+              <= NSFontManager.shared.weight(
                 of: .systemFont(ofSize: font.pointSize, weight: .medium)))
+          #expect(
+            weight
+              < NSFontManager.shared.weight(
+                of: .systemFont(ofSize: font.pointSize, weight: .semibold)))
           #expect(slogan.textColor == .labelColor)
           #expect(!slogan.isHiddenOrHasHiddenAncestor)
           #expect(slogan.bounds.height >= slogan.intrinsicContentSize.height - 1)
           let hero = try #require(welcomeViews(body).compactMap { $0 as? WelcomeHeroView }.first)
           let sloganFrame = root.convert(slogan.bounds, from: slogan)
           let heroFrame = root.convert(hero.bounds, from: hero)
+          #expect(abs(sloganFrame.minX - headingFrame.minX) < 1)
+          #expect(abs(headingFrame.minY - sloganFrame.maxY - 8) < 1)
           #expect(abs(sloganFrame.minY - heroFrame.maxY - 12) < 1)
+          #expect(abs(heroFrame.minX - bodyFrame.minX) < 1)
+          #expect(abs(heroFrame.width - bodyFrame.width) < 1)
           #expect(hero.bounds.height >= 240)
           #expect(
             welcomeViews(body).compactMap { $0 as? NSTextField }.filter { $0 !== slogan }
