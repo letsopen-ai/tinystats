@@ -4,6 +4,14 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Rebuilt the welcome tour as five graphic-first steps: Greet, Menu Bar, History, Online and Ready. Magnified example readouts, local history charts, explicit online destinations and click/right-click sketches taught the story; immediate choices, opt-ins, replay and isolated previews were preserved. Added trailing history/login switches, accessible progress announcements and a default Get Started/Next/Finish action. Version 0.37.0 (72).
+
+- Aligned the greet slogan with the welcome heading beside the app icon and lightened it to 18pt medium primary text. Version 0.36.8 (71).
+
+- Strengthened the greet slogan with larger semibold primary text and tighter heading spacing. Version 0.36.7 (70).
+
+- Redesigned all six welcome steps with a menu bar hero, candy module glyphs and visual choice cards; preserved immediate choices, opt-ins and replay. Version 0.36.6 (69).
+
 - Prepare version 0.36.5 (68): run signed, notarized GitHub Releases on the dedicated organization M4 release runner using job-scoped credentials.
 - Preserve the footer logo optical weight and paper margin across the M4 rendering checks.
 

@@ -86,3 +86,7 @@ its build directory. Keep any retained files private and monitor disk capacity.
 Actions → Production release reports the result. A skipped version is not a new
 release. The physical-device, minimum-OS/Intel runtime and UX checks above
 remain separate from this automation.
+
+## Welcome redesign candidate — 0.37.0 (72)
+
+The five-step magnified-menu-bar tour was developed with owned, bounded example fixtures on an Apple M4 / macOS 27.2 host. Light/dark and solid fallback galleries supplement the layout and preference-path tests. This work deliberately does not refresh the historical release validation receipt: the coordinator must run the final-tree complete local gate before release. Native macOS 14/15, Intel, login approval and notification/location permission flows remain separate runtime checks. No app was installed and no permission was requested by the tour fixtures.
