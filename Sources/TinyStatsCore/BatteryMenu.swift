@@ -57,9 +57,11 @@ public struct BatteryMenuSettings: Codable, Equatable, Sendable {
   public var charging = BatteryMenuPreset(format: .percentAndTime)
   public var charged = BatteryMenuPreset(format: .status, style: .battery)
   public var externalPower = BatteryMenuPreset(format: .status, style: .battery)
+  /// Show the Power item on each power source. Absent in older profiles → both shown.
+  public var visibility = PowerItemVisibility()
   public init() {}
   private enum CodingKeys: String, CodingKey {
-    case format, customizeStates, draining, charging, charged, externalPower
+    case format, customizeStates, draining, charging, charged, externalPower, visibility
   }
   public init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -70,6 +72,7 @@ public struct BatteryMenuSettings: Codable, Equatable, Sendable {
     charged = (try? values.decode(BatteryMenuPreset.self, forKey: .charged)) ?? charged
     externalPower =
       (try? values.decode(BatteryMenuPreset.self, forKey: .externalPower)) ?? externalPower
+    visibility = (try? values.decode(PowerItemVisibility.self, forKey: .visibility)) ?? .init()
   }
   public subscript(state: BatteryMenuState) -> BatteryMenuPreset {
     get {

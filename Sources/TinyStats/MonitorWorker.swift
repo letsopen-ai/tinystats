@@ -108,6 +108,14 @@ final class MonitorWorker: @unchecked Sendable {
       }
     }
   }
+  /// Bounded on-demand reads (the dropdown's `pmset -g` energy-mode read) share this serial
+  /// queue with collection instead of adding another worker. Never scheduled periodically.
+  func perform(_ work: @escaping @Sendable () -> Void) {
+    queue.async {
+      guard !self.terminating else { return }
+      work()
+    }
+  }
   func setDetails(_ visible: Bool, module: Module = .overview) {
     queue.async {
       guard !self.terminating else { return }

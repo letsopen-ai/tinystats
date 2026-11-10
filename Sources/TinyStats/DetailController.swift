@@ -80,6 +80,16 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     didSet { if isViewLoaded && selected == .weather { refresh() } }
   }
   var onProcessGrouping: ((TrafficGrouping) -> Void)?
+  /// Power dropdown Energy Mode rows. Selection is an explicit click forwarded to the owner.
+  var energyMode = EnergyModePresentation.hidden {
+    didSet {
+      guard energyMode != oldValue, isViewLoaded, selected == .battery else { return }
+      refresh()
+    }
+  }
+  var onEnergyMode: ((PowerSourceKind, EnergyMode) -> Void)?
+  var onEnergySettings: (() -> Void)?
+  private(set) var energyModeControl: EnergyModeControl?
   private var processGroupingControl: ProcessGroupingControl?
   private let processGroupingHeader = NSView()
   private let sensorCountLabel = NSTextField(labelWithString: "")
@@ -130,7 +140,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   }
   private var weatherDashboard: WeatherDashboardView?
   private lazy var solarCalculator = SolarDayCalculator()
-  private var summary: SummaryDashboardView?
+  private(set) var summary: SummaryDashboardView?
   private var detailScroll: NSScrollView?
   private let historyButton = MenuActionRow()
   private let readingsButton = MenuActionRow()
@@ -965,6 +975,15 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       }
       summary?.paused = paused
       summary?.groupingControl = groupsProcesses ? processGroupingControl : nil
+      let showsEnergy = isPopoverPresentation && selected == .battery && energyMode.isVisible
+      if showsEnergy, energyModeControl == nil {
+        let control = EnergyModeControl(frame: .zero)
+        control.onSelect = { [weak self] source, mode in self?.onEnergyMode?(source, mode) }
+        control.onOpenSettings = { [weak self] in self?.onEnergySettings?() }
+        energyModeControl = control
+      }
+      summary?.energyMode = showsEnergy ? energyMode : .hidden
+      summary?.energyModeControl = energyModeControl
       summary?.update(s, history: history, settings: settings, module: selected)
       if !rows.isEmpty {
         rows = []

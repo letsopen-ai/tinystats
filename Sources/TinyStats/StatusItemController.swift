@@ -8,6 +8,20 @@ import TinyStatsCore
   private var orderObservation = MenuBarOrderObservation()
   private var rebuilding = false
   private var separateItems = true
+  /// Enabled modules currently hidden by the power-source choice (never "disabled").
+  private(set) var hiddenModules: Set<Module> = []
+  /// One's drawn modules after power-source hiding (`[.overview]` when none remain); rendering
+  /// and keyboard activation both derive from this list.
+  private(set) var presentedCombined: [Module] = []
+  /// The last source an internal battery reading confirmed this session (nil: never seen).
+  private(set) var lastConfirmedSource: PowerSourceKind?
+  /// The power source the menu bar is currently presented for.
+  private(set) var powerSource: PowerSourceKind = .adapter
+  private var itemTarget: AnyObject?
+  private var itemAction: Selector?
+  private var appearanceChange: (() -> Void)?
+  private weak var appearanceObserver: MenuBarReadoutView?
+  private var suppliedReadouts: [ObjectIdentifier: [MenuBarReadout]] = [:]
 
   struct Target {
     var module: Module
@@ -25,15 +39,27 @@ import TinyStatsCore
     suppliedTargets = targets
     separateItems = !combined
     self.mouseLocation = mouseLocation
+    for target in targets ?? [] {
+      suppliedReadouts[ObjectIdentifier(target.readout)] = target.readout.readouts
+    }
   }
 
   var isCombined: Bool { !separateItems }
 
   var targets: [Target] {
-    suppliedTargets
+    let base =
+      suppliedTargets
       ?? items.compactMap { entry in
         entry.item.button.map { Target(module: entry.module, button: $0, readout: entry.readout) }
       }
+    // One's keyboard/VoiceOver fallback is the first module actually drawn, including the
+    // TinyStats overview that replaces an all-hidden list, never a hidden module.
+    guard !separateItems, let first = presentedCombined.first else { return base }
+    return base.map { target in
+      var target = target
+      target.module = first
+      return target
+    }
   }
 
   /// Shared layout plan, testable without creating real menu bar items.
@@ -167,25 +193,71 @@ import TinyStatsCore
     }
     // macOS inserts newly created items to the left; saved native positions still take precedence.
     // One preview refresh per bar appearance flip; every view still redraws itself.
-    var previewAppearanceObserverAttached = false
-    for group in Self.groups(for: settings).reversed() {
+    itemTarget = target
+    itemAction = action
+    appearanceChange = onAppearanceChange
+    appearanceObserver = nil
+    // A Power item hidden by the current power source is not created; update() restores it.
+    let groups =
+      separateItems ? separateModules(settings).map { [$0] } : Self.groups(for: settings)
+    for group in groups.reversed() {
       guard let module = group.first else { continue }
-      let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-      item.autosaveName = autosaveName(for: separateItems ? module : .overview)
-      item.button?.target = target
-      item.button?.action = action
-      item.button?.sendAction(on: [.leftMouseDown, .rightMouseUp])
-      item.button?.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-      item.button?.setAccessibilityIdentifier(
-        "\(Bundle.main.bundleIdentifier ?? "tinystats").readout.\(module.rawValue)")
-      let readout = MenuBarReadoutView(frame: .zero)
-      if !previewAppearanceObserverAttached {
-        readout.onAppearanceChange = onAppearanceChange
-        previewAppearanceObserverAttached = true
+      makeItem(module)
+    }
+  }
+
+  /// Separate items to present. If every enabled module is hidden by the power source, the
+  /// TinyStats item keeps the app reachable (the same fallback as an empty readout list).
+  private func separateModules(_ settings: Settings) -> [Module] {
+    let modules = settings.readouts.filter { !hiddenModules.contains($0) }
+    return modules.isEmpty ? [.overview] : modules
+  }
+
+  private func makeItem(_ module: Module) {
+    guard let target = itemTarget, let action = itemAction else { return }
+    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    item.autosaveName = autosaveName(for: separateItems ? module : .overview)
+    item.button?.target = target
+    item.button?.action = action
+    item.button?.sendAction(on: [.leftMouseDown, .rightMouseUp])
+    item.button?.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+    item.button?.setAccessibilityIdentifier(
+      "\(Bundle.main.bundleIdentifier ?? "tinystats").readout.\(module.rawValue)")
+    let readout = MenuBarReadoutView(frame: .zero)
+    if appearanceObserver == nil {
+      readout.onAppearanceChange = appearanceChange
+      appearanceObserver = readout
+    }
+    readout.autoresizingMask = [.width, .height]
+    item.button?.addSubview(readout)
+    items.append((module, item, readout))
+  }
+
+  /// Separate: remove/re-create only the affected native item, reusing its autosave slot
+  /// (no persisted hidden state). One: the shared item drops the segment in update().
+  private func applyPowerSourceVisibility(settings: Settings) {
+    if let suppliedTargets {
+      for target in suppliedTargets {
+        if separateItems {
+          target.button.isHidden = hiddenModules.contains(target.module)
+        } else if let base = suppliedReadouts[ObjectIdentifier(target.readout)] {
+          let shown = base.filter { $0.module.map(hiddenModules.contains) != true }
+          if shown.map(\.module) != target.readout.readouts.map(\.module) {
+            target.readout.readouts = shown
+          }
+        }
       }
-      readout.autoresizingMask = [.width, .height]
-      item.button?.addSubview(readout)
-      items.append((module, item, readout))
+      return
+    }
+    guard separateItems else { return }
+    let desired = separateModules(settings)
+    for entry in items where !desired.contains(entry.module) {
+      NSStatusBar.system.removeStatusItem(entry.item)
+      if appearanceObserver === entry.readout { appearanceObserver = nil }
+    }
+    items.removeAll { !desired.contains($0.module) }
+    for module in desired where !items.contains(where: { $0.module == module }) {
+      makeItem(module)
     }
   }
 
@@ -230,9 +302,23 @@ import TinyStatsCore
     snapshot: Snapshot, history: [HistoryPoint], settings: Settings, clockDate: Date,
     paused: Bool, clockOnly: Bool = false
   ) {
+    // An empty battery list is also what a failed read returns: keep the last confirmed source.
+    if let confirmed = PowerSourceKind.confirmed(snapshot.batteries) {
+      lastConfirmedSource = confirmed
+    }
+    powerSource = PowerSourceKind.current(snapshot.batteries, lastKnown: lastConfirmedSource)
+    let hidden = settings.powerHiddenModules(
+      batteries: snapshot.batteries, lastKnown: lastConfirmedSource)
+    let presented = settings.presentedReadouts(
+      batteries: snapshot.batteries, lastKnown: lastConfirmedSource)
+    presentedCombined = presented.isEmpty ? [.overview] : presented
+    if hidden != hiddenModules {
+      hiddenModules = hidden
+      applyPowerSourceVisibility(settings: settings)
+    }
     for (module, item, view) in items {
-      let modules =
-        separateItems ? [module] : (settings.readouts.isEmpty ? [.overview] : settings.readouts)
+      // An all-hidden One item keeps the TinyStats item so the app stays reachable.
+      let modules = separateItems ? [module] : presentedCombined
       if clockOnly && !modules.contains(.clock) { continue }
       view.readouts = modules.flatMap {
         MenuBarReadout.makeAll(
