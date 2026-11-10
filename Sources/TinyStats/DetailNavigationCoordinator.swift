@@ -10,7 +10,9 @@ final class DetailNavigationCoordinator: NSObject {
   static let advancedModules: [Module] = [.sensors]
   static let rowLeading: CGFloat = 10
   static var sectionLeading: CGFloat { rowLeading + NavigationButton.iconLeading }
+  static let sidebarWidth: CGFloat = 132
   let sidebar = NSView()
+  let divider = SidebarDividerView()
   let sidebarMaterial: GlassSurface
   private let advancedLabel = NSTextField(labelWithString: "Advanced")
   private let brand = NSTextField(labelWithString: "TinyStats")
@@ -26,6 +28,7 @@ final class DetailNavigationCoordinator: NSObject {
   init(environment: @escaping () -> GlassSurface.Environment = { .current }) {
     sidebarMaterial = GlassSurface(role: .sidebar, environment: environment)
     super.init()
+    sidebar.identifier = .init("main-window-sidebar")
     sidebar.addSubview(sidebarMaterial)
     sidebarMaterial.autoresizingMask = [.width, .height]
     sidebar.frame = .init(x: 0, y: 0, width: 132, height: 560)
@@ -82,6 +85,7 @@ final class DetailNavigationCoordinator: NSObject {
       settingsButtons[page] = button
     }
     controls = sidebar.subviews.filter { $0 !== sidebarMaterial }
+    sidebar.addSubview(divider)
     sidebarMaterial.onTreatmentChange = { [weak self] in self?.updateControlHost() }
     updateControlHost()
   }
@@ -153,8 +157,8 @@ final class DetailNavigationCoordinator: NSObject {
   }
 
   func layout(in bounds: NSRect) {
-    let inset: CGFloat = sidebarMaterial.treatment == .legacy ? 0 : 8
-    sidebar.frame = .init(x: inset, y: inset, width: 132, height: max(0, bounds.height - inset * 2))
+    sidebar.frame = .init(x: 0, y: 0, width: Self.sidebarWidth, height: max(0, bounds.height))
+    divider.frame = .init(x: Self.sidebarWidth - 1, y: 0, width: 1, height: sidebar.bounds.height)
     let height = sidebar.bounds.height
     // Measure the light bottoms, not the taller empty toolbar's layout band.
     let topPadding = MainWindow.titlebarGeometry(in: sidebar).brandTop
@@ -170,6 +174,20 @@ final class DetailNavigationCoordinator: NSObject {
       moduleButtons[module]?.frame.origin.y =
         advancedLabel.frame.minY - 6 - 31 - CGFloat(index * 35)
     }
+  }
+}
+
+/// One semantic separator spans the window, including the transparent titlebar band.
+@MainActor final class SidebarDividerView: SystemStyledView {
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    setAccessibilityElement(false)
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+  override func draw(_ dirtyRect: NSRect) {
+    NSColor.separatorColor.setFill()
+    dirtyRect.intersection(bounds).fill()
   }
 }
 

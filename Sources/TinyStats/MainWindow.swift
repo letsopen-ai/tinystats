@@ -15,8 +15,8 @@ import AppKit
     titleVisibility = .hidden
     titlebarAppearsTransparent = true
     titlebarSeparatorStyle = .none
-    // The empty unified native toolbar places traffic lights inside the floating
-    // sidebar's rounded top inset and keeps that band draggable. No toolbar items.
+    // The empty unified native toolbar places traffic lights over the full-height
+    // sidebar and keeps that band draggable. No toolbar items.
     toolbarStyle = .unified
     let titlebar = NSToolbar(identifier: "TinyStatsMainTitlebar")
     titlebar.showsBaselineSeparator = false
