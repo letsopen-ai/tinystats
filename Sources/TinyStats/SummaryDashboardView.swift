@@ -93,6 +93,24 @@ import TinyStatsCore
       x: card.frame.maxX - ProcessGroupingControl.width - 12, y: card.frame.minY + 9,
       width: ProcessGroupingControl.width, height: 22)
   }
+  /// Power dropdown only: the native per-source Energy Mode rows over the ENERGY MODE card.
+  var energyMode = EnergyModePresentation.hidden
+  weak var energyModeControl: EnergyModeControl?
+  static let energyModeTitle = "ENERGY MODE"
+  func layoutEnergyModeControl() {
+    guard let control = energyModeControl else { return }
+    guard let card = cards.first(where: { $0.title == Self.energyModeTitle }) else {
+      control.isHidden = true
+      return
+    }
+    if control.superview !== self { addSubview(control) }
+    control.isHidden = false
+    control.update(energyMode)
+    control.frame = .init(
+      x: card.frame.minX + 12 - EnergyModeControl.inset, y: card.frame.minY + card.headerHeight,
+      width: card.frame.width - 2 * (12 - EnergyModeControl.inset),
+      height: EnergyModeControl.contentHeight(energyMode))
+  }
   private(set) var cards: [Card] = []
   var usesPopoverLayout = false
   var paused = false
@@ -177,7 +195,10 @@ import TinyStatsCore
     }
   }
   private func layoutSummaryCards() {
-    defer { layoutGroupingControl() }
+    defer {
+      layoutGroupingControl()
+      layoutEnergyModeControl()
+    }
     guard canonicalFrames.count == cards.count else { return }
     if usesOverviewLayout {
       for (index, frame) in Self.overviewFrames(in: bounds).enumerated()
@@ -242,6 +263,7 @@ import TinyStatsCore
         window.map { $0.convertToScreen(convert(card.frame, to: nil)) } ?? card.frame)
     }
     return accessibleCards + (groupingControl.map { [$0] } ?? [])
+      + (energyModeControl.flatMap { $0.isHidden || $0.superview !== self ? nil : [$0] } ?? [])
       + (hoverAccessibilityElement.map { [$0] } ?? [])
   }
   func update(_ s: Snapshot, history: [HistoryPoint], settings: Settings, module: Module) {
@@ -658,6 +680,14 @@ import TinyStatsCore
               : trafficMessage))
     case .sensors: break
     case .battery:
+      // The dropdown's only control sits directly under the Battery / Power source header.
+      func energyCard() {
+        guard usesPopoverLayout, energyMode.isVisible else { return }
+        // Header plus native rows; a canonical frame only sizes the stacked popover card.
+        card(
+          Self.energyModeTitle, s.batteries.isEmpty ? 62 : 210,
+          36 + EnergyModeControl.contentHeight(energyMode) + 8, .none)
+      }
       if let battery = s.batteries.first {
         card(
           "BATTERY", 0, 104,
@@ -670,6 +700,7 @@ import TinyStatsCore
               color: SystemStyle.moduleSecondary(module)),
           ]),
           trailing: BatteryMenuState.state(for: battery).title)
+        energyCard()
         card(
           "BATTERY DETAILS", 112, 90,
           .tiles(
@@ -692,6 +723,7 @@ import TinyStatsCore
       } else {
         card(
           "POWER SOURCE", 0, 54, .none, trailing: "AC · No internal battery")
+        energyCard()
       }
       let priority = [
         "PSTR", "ioreport:cpu", "ioreport:gpu", "ioreport:dram", "ioreport:ane", "PCPC", "PGTR",

@@ -15,7 +15,10 @@ import TinyStatsCore
   private(set) var items: StatusItemController!
   private(set) var app: AppDelegate!
 
-  init(combined: Bool) throws {
+  init(
+    combined: Bool, modules: [Module] = [.cpu, .memory], settings: Settings = Settings(),
+    energyModes: EnergyModeController? = nil
+  ) throws {
     _ = NSApplication.shared
     let screen = try #require(NSScreen.main).frame
     func owned(_ x: CGFloat) -> NSWindow {
@@ -27,7 +30,6 @@ import TinyStatsCore
       return window
     }
     unrelated = owned(700)
-    let modules: [Module] = [.cpu, .memory]
     var targets: [StatusItemController.Target] = []
     for (index, group) in (combined ? [modules] : modules.map { [$0] }).enumerated() {
       let window = owned(CGFloat(100 + index * 300))
@@ -47,9 +49,9 @@ import TinyStatsCore
     app = AppDelegate(
       statusItems: items,
       popoverInteraction: PopoverInteraction(mouseLocation: { [unowned self] in self.cursor }),
-      settings: Settings(), clickTrace: MenuBarClickTrace(environment: [:]),
+      settings: settings, clickTrace: MenuBarClickTrace(environment: [:]),
       presentationReporter: { [unowned self] in self.presentations.append($0) },
-      cycleReporter: { [unowned self] in self.cycles.append($0) })
+      cycleReporter: { [unowned self] in self.cycles.append($0) }, energyModes: energyModes)
   }
 
   func target(_ module: Module) throws -> StatusItemController.Target {
