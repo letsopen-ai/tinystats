@@ -82,12 +82,29 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   private var individualOrder: [Module] = []
   private var previewPaused = false
   private var menuBarHeight = NSStatusBar.system.thickness
-  private var latest = Snapshot()
+  private var latest = Snapshot() {
+    didSet { if !latest.batteries.isEmpty { sawBattery = true } }
+  }
+  /// A battery reported once this session; a later failed read is not "no battery".
+  private var sawBattery = false
+  private var hasBattery: Bool { sawBattery || !latest.batteries.isEmpty }
+  /// The chosen Power style, as drawn in the visibility tiles' tiny menu bars. Without a
+  /// battery the adapter tile shows the same "AC" readout as the live preview above it.
+  private var powerPreviewReadouts: [PowerSourceKind: MenuBarReadout] {
+    let example = MenuBarStyleExample.readout(
+      module: .battery, style: settings.style(for: .battery), settings: settings)
+    guard !hasBattery else { return [.adapter: example, .battery: example] }
+    let adapter = MenuBarReadout.make(
+      module: .battery, snapshot: Snapshot(), settings: settings, history: [])
+    return [.adapter: adapter, .battery: example]
+  }
   private var history: [HistoryPoint] = []
   private var sizeMenus: [Module: NSPopUpButton] = [:]
   private lazy var previewScroll = NSScrollView()
   private var styleMenus: [Module: MenuBarStylePicker] = [:]
   private var moduleEditors: [Module: NSView] = [:]
+  /// Power only: show on Power Adapter / on Battery picture toggles.
+  private(set) var powerVisibility: PowerVisibilityPicker?
   private(set) var selectedStyleModule: Module = .cpu
   static let menuBarToolsHeightBudget: CGFloat = 28
   static let menuBarHeaderHeightBudget: CGFloat = 74
@@ -108,6 +125,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   ) {
     self.interfaces = interfaces
     self.latest = snapshot
+    // `didSet` does not run during init; retain a battery seen in the first snapshot.
+    sawBattery = !snapshot.batteries.isEmpty
     self.history = history
     self.settings = settings
     selectedStyleModule = settings.readouts.first ?? .cpu
@@ -364,11 +383,24 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       }
       tool?.identifier = NSUserInterfaceItemIdentifier("menu-bar-\(module.rawValue)-tools")
       let header = MenuBarStyleHeader(identity: identity, size: size, tool: tool)
-      let contents: [NSView] = [header, popup]
+      var contents: [NSView] = [header, popup]
+      if module == .battery {
+        let visibility = PowerVisibilityPicker(
+          visibility: settings.batteryMenu.visibility, hasBattery: hasBattery,
+          previews: powerPreviewReadouts)
+        visibility.target = self
+        visibility.action = #selector(powerVisibilityChanged)
+        visibility.identifier = NSUserInterfaceItemIdentifier("menu-bar-battery-visibility")
+        powerVisibility = visibility
+        contents.insert(visibility, at: 1)
+      }
       let editor = NSStackView(views: contents)
       editor.orientation = .vertical
       editor.alignment = .leading
       editor.spacing = 8
+      // The visibility group is its own block: extra air above it (its bottom padding adds
+      // the space below), so it never reads as part of the style grid.
+      if module == .battery { editor.setCustomSpacing(14, after: header) }
       for child in editor.arrangedSubviews {
         child.translatesAutoresizingMaskIntoConstraints = false
         child.widthAnchor.constraint(equalTo: editor.widthAnchor).isActive = true
@@ -639,6 +671,9 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   }
   private func updatePreview() {
     for picker in styleMenus.values { picker.update(settings: settings) }
+    powerVisibility?.update(
+      visibility: settings.batteryMenu.visibility, hasBattery: hasBattery,
+      previews: powerPreviewReadouts)
     // Selected NSTabView item remains Menu Bar when the entire embedded host is hidden.
     // Clock/context updates must not rebuild an invisible preview after returning to monitoring.
     if let host = hostedRoot,
@@ -740,6 +775,14 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     updateLayoutSelection()
     updatePreview()
     if builtPages.contains(.general) { message.stringValue = "" }
+    onChange?(settings)
+  }
+  @objc private func powerVisibilityChanged() {
+    guard let picker = powerVisibility else { return }
+    settings.batteryMenu.visibility = picker.visibility
+    settings.validate()
+    batteryMenuController?.updateSettings(settings)
+    updatePreview()
     onChange?(settings)
   }
   @objc private func showBatteryFormats() {
