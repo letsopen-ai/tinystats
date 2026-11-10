@@ -28,19 +28,19 @@ import TinyStatsCore
   #expect(input.stringValue == "Build server=UTC")
   var saved: [Settings] = []
   preferences.onChange = { saved.append($0) }
-  input.stringValue = "London office=Europe/London, Shanghai team=Asia/Shanghai"
+  input.stringValue = "London office=Europe/London, Team=Asia/Shanghai"
   preferences.selectMenuBarTab()
   let tabs = try #require(controls.compactMap { $0 as? NSTabView }.first)
   tabs.selectTabViewItem(withIdentifier: "general")
   #expect(
-    input.stringValue == "London office=Europe/London, Shanghai team=Asia/Shanghai" && saved.isEmpty
+    input.stringValue == "London office=Europe/London, Team=Asia/Shanghai" && saved.isEmpty
   )
   let action = try #require(save.action)
   #expect(NSApplication.shared.sendAction(action, to: save.target, from: save))
   #expect(saved.last?.worldClocks == ["Europe/London", "Asia/Shanghai"])
   #expect(
     saved.last?.worldClockNames == [
-      "Europe/London": "London office", "Asia/Shanghai": "Shanghai team",
+      "Europe/London": "London office", "Asia/Shanghai": "Team",
     ])
   input.stringValue = "New=UTC, broken/zone"
   #expect(NSApplication.shared.sendAction(action, to: save.target, from: save))
@@ -52,7 +52,7 @@ import TinyStatsCore
   #expect(NSApplication.shared.sendAction(unitAction, to: fahrenheit.target, from: fahrenheit))
   #expect(
     saved.last?.worldClockNames == [
-      "Europe/London": "London office", "Asia/Shanghai": "Shanghai team",
+      "Europe/London": "London office", "Asia/Shanghai": "Team",
     ])
   #expect(input.stringValue == "New=UTC, broken/zone")
 }
