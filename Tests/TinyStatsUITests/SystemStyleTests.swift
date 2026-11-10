@@ -1919,7 +1919,7 @@ import Testing
       )
       let captured = try await SCScreenshotManager.captureImage(
         contentFilter: filter, configuration: config)
-      let stem = "main-window-full-\(page)-\(theme.rawValue)"
+      let stem = "main-window-\(page)-\(theme.rawValue)"
       try #require(NSBitmapImageRep(cgImage: captured).representation(using: .png, properties: [:]))
         .write(to: folder.appendingPathComponent(stem + ".png"))
       let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap {
@@ -1941,6 +1941,24 @@ import Testing
       for label in detail.view.subviews.compactMap({ $0 as? NSTextField }) where !label.isHidden {
         metrics.append("Content \(label.stringValue) in root: \(label.frame)")
       }
+      let surface = try #require(
+        systemDescendants(detail.view).compactMap { $0 as? GlassSurface }.first {
+          $0.role == .sidebar
+        })
+      let sidebar = try #require(surface.superview)
+      let dividers = systemDescendants(detail.view).compactMap { $0 as? SidebarDividerView }
+      let divider = try #require(dividers.first)
+      let dividerFrame = divider.convert(divider.bounds, to: detail.view)
+      #expect(dividers.count == 1)
+      #expect(sidebar.frame == NSRect(x: 0, y: 0, width: 132, height: detail.view.bounds.height))
+      #expect(dividerFrame == NSRect(x: 131, y: 0, width: 1, height: detail.view.bounds.height))
+      #expect(!sidebar.clipsToBounds && (sidebar.layer?.cornerRadius ?? 0) == 0)
+      if #available(macOS 26, *), let glass = surface.subviews.first as? NSGlassEffectView {
+        #expect(glass.cornerRadius == 0)
+      }
+      metrics.append(
+        "Sidebar: \(sidebar.frame); divider in root: \(dividerFrame); treatment: \(String(describing: surface.treatment))"
+      )
       let labels = systemDescendants(detail.view).compactMap { $0 as? NSTextField }
       for label in labels where ["TinyStats", "Advanced", "Settings"].contains(label.stringValue) {
         metrics.append(
@@ -1952,6 +1970,7 @@ import Testing
         let header = try #require(labels.first { $0.stringValue == "Advanced" })
         for (name, rect) in [
           ("sidebar-top-zoom", CGRect(x: 0, y: 0, width: 148, height: 190)),
+          ("sidebar-divider-zoom", CGRect(x: 120, y: 0, width: 40, height: window.frame.height)),
           (
             "sidebar-header-zoom",
             CGRect(

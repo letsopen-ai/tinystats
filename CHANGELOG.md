@@ -4,6 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Replaced the floating main-window and Settings sidebar card with a flush 132pt full-height split and one 1pt vertical separator through the transparent titlebar. Removed sidebar margins, rounded glass corners and solid rims while preserving native traffic-light clearance, hidden title text, navigation typography, module glyph accents and the 884×692 minimum window. Added light/dark owned-window before/after captures and split geometry/accessibility fallback regressions. Version 0.37.2 (74).
+
 - Fixed One-layout clicks to open the clicked module using the renderer’s physical segment frames, including nearest-edge gap routing and forwarded/proxy input. Routed open-dropdown status clicks before native tracking so another module switched in one click and the current module toggled closed; preserved right-click options and first-module keyboard/VoiceOver activation. Added pure routing, owned-window interaction and light/dark dropdown evidence fixtures. Version 0.37.1 (73).
 
 - Rebuilt the welcome tour as five graphic-first steps: Greet, Menu Bar, History, Online and Ready. Magnified example readouts, local history charts, explicit online destinations and click/right-click sketches taught the story; immediate choices, opt-ins, replay and isolated previews were preserved. Added trailing history/login switches, accessible progress announcements and a default Get Started/Next/Finish action. Version 0.37.0 (72).
