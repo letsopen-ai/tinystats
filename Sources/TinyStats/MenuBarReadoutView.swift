@@ -278,14 +278,18 @@ struct MenuBarReadout {
     if readouts.count > 1 { total += CGFloat(readouts.count - 1) * itemSpacing }
     return total
   }
-  /// Native clicks can select a segment in One; accessibility activation uses the first module.
-  func module(at x: CGFloat) -> Module? {
-    var edge = sidePadding + (paused ? 12 : 0)
-    for readout in readouts {
-      edge += width(readout) + itemSpacing
-      if x < edge { return readout.module }
+  /// The exact frames drawn below, including compact spacing and the pause marker.
+  var segments: [MenuBarClickRouter.Segment] {
+    var x = sidePadding + (paused ? 12 : 0)
+    return readouts.map { item in
+      let w = width(item)
+      defer { x += w + itemSpacing }
+      return .init(module: item.module, frame: .init(x: x, y: 0, width: w, height: bounds.height))
     }
-    return readouts.last?.module
+  }
+
+  func module(at x: CGFloat) -> Module? {
+    MenuBarClickRouter.module(at: x, segments: segments)
   }
   var onAppearanceChange: (() -> Void)?
 
@@ -297,15 +301,15 @@ struct MenuBarReadout {
 
   override func draw(_ dirtyRect: NSRect) {
     let palette = MenuBarPalette.resolve(effectiveAppearance)
-    var x = sidePadding
+    let x = sidePadding
     if paused {
       text(
         palette: palette,
         "Ⅱ", in: .init(x: x, y: 0, width: 12, height: bounds.height), font: Self.fonts[.standard]!)
-      x += 12
     }
-    for item in readouts {
-      let w = width(item)
+    for (item, segment) in zip(readouts, segments) {
+      let x = segment.frame.minX
+      let w = segment.frame.width
       let tint = palette.graphic(item.module)
       let whole = NSRect(x: x, y: 0, width: w, height: bounds.height)
       let rect = NSRect(x: x, y: floor((bounds.height - 16) / 2), width: w, height: 16)
@@ -474,7 +478,6 @@ struct MenuBarReadout {
           }
         }
       }
-      x += w + itemSpacing
     }
   }
   private func stack(

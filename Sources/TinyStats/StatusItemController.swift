@@ -9,6 +9,33 @@ import TinyStatsCore
   private var rebuilding = false
   private var separateItems = true
 
+  struct Target {
+    var module: Module
+    var button: NSView
+    var readout: MenuBarReadoutView
+  }
+  private let suppliedTargets: [Target]?
+  let mouseLocation: () -> NSPoint
+
+  /// Owned-view injection exercises the same adapter without creating real status items.
+  init(
+    targets: [Target]? = nil, combined: Bool = false,
+    mouseLocation: @escaping () -> NSPoint = { NSEvent.mouseLocation }
+  ) {
+    suppliedTargets = targets
+    separateItems = !combined
+    self.mouseLocation = mouseLocation
+  }
+
+  var isCombined: Bool { !separateItems }
+
+  var targets: [Target] {
+    suppliedTargets
+      ?? items.compactMap { entry in
+        entry.item.button.map { Target(module: entry.module, button: $0, readout: entry.readout) }
+      }
+  }
+
   /// Shared layout plan, testable without creating real menu bar items.
   static func groups(for settings: Settings) -> [[Module]] {
     let modules = settings.readouts.isEmpty ? [.overview] : settings.readouts
@@ -19,23 +46,52 @@ import TinyStatsCore
 
   func entry(for sender: NSStatusBarButton) -> (module: Module, item: NSStatusItem)? {
     guard let entry = items.first(where: { $0.item.button === sender }) else { return nil }
-    let event = NSApp.currentEvent
-    let module: Module
-    if !separateItems, let event, event.type == .leftMouseUp, event.window === sender.window {
-      module =
-        entry.readout.module(at: sender.convert(event.locationInWindow, from: nil).x)
-        ?? entry.module
-    } else {
-      module = entry.module
-    }
-    return (module, entry.item)
+    return (entry.module, entry.item)
   }
 
-  func hits(_ event: NSEvent) -> Bool {
-    items.contains { entry in
-      guard let button = entry.item.button else { return false }
-      return PopoverInteraction.hits(event, view: button)
+  /// Shared native/proxy input adapter; a keyboard/VoiceOver press uses the first module.
+  static func module(
+    for event: NSEvent?, button: NSView, readout: MenuBarReadoutView,
+    fallback: Module, combined: Bool, mouseLocation: NSPoint = NSEvent.mouseLocation
+  ) -> Module {
+    guard combined, let event,
+      event.type == .leftMouseDown || event.type == .leftMouseUp,
+      PopoverInteraction.screenRect(of: button)?.contains(mouseLocation) == true,
+      PopoverInteraction.hits(event, view: button, mouseLocation: mouseLocation),
+      let point = PopoverInteraction.screenPoint(
+        event, statusButtons: [button], mouseLocation: mouseLocation
+      )
+      .flatMap({ PopoverInteraction.point(screen: $0, in: readout) })
+    else { return fallback }
+    return readout.module(at: point.x) ?? fallback
+  }
+
+  /// Source identity is independent of coordinate recovery: arbitrary app windows must
+  /// never have their click swallowed just because their pixels overlap a status button.
+  func entry(for event: NSEvent, dropdownWindow: NSWindow? = nil) -> (
+    module: Module, button: NSView
+  )? {
+    let targets = targets
+    guard
+      event.window == nil || event.window === dropdownWindow
+        || targets.contains(where: { $0.button.window === event.window }),
+      let screen = PopoverInteraction.screenPoint(
+        event, statusButtons: targets.map(\.button), mouseLocation: mouseLocation())
+    else { return nil }
+    for entry in targets {
+      guard let rect = PopoverInteraction.screenRect(of: entry.button), rect.contains(screen),
+        let point = PopoverInteraction.point(screen: screen, in: entry.readout)
+      else { continue }
+      return (
+        separateItems ? entry.module : (entry.readout.module(at: point.x) ?? entry.module),
+        entry.button
+      )
     }
+    return nil
+  }
+
+  func hits(_ event: NSEvent, dropdownWindow: NSWindow? = nil) -> Bool {
+    entry(for: event, dropdownWindow: dropdownWindow) != nil
   }
 
   /// Complete, distinct native frames only; hidden/overflow/transitional readings cannot erase a layout.
@@ -118,7 +174,7 @@ import TinyStatsCore
       item.autosaveName = autosaveName(for: separateItems ? module : .overview)
       item.button?.target = target
       item.button?.action = action
-      item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+      item.button?.sendAction(on: [.leftMouseDown, .rightMouseUp])
       item.button?.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
       item.button?.setAccessibilityIdentifier(
         "\(Bundle.main.bundleIdentifier ?? "tinystats").readout.\(module.rawValue)")

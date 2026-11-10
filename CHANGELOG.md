@@ -4,6 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Fixed One-layout clicks to open the clicked module using the renderer’s physical segment frames, including nearest-edge gap routing and forwarded/proxy input. Routed open-dropdown status clicks before native tracking so another module switched in one click and the current module toggled closed; preserved right-click options and first-module keyboard/VoiceOver activation. Added pure routing, owned-window interaction and light/dark dropdown evidence fixtures. Version 0.37.1 (73).
+
 - Rebuilt the welcome tour as five graphic-first steps: Greet, Menu Bar, History, Online and Ready. Magnified example readouts, local history charts, explicit online destinations and click/right-click sketches taught the story; immediate choices, opt-ins, replay and isolated previews were preserved. Added trailing history/login switches, accessible progress announcements and a default Get Started/Next/Finish action. Version 0.37.0 (72).
 
 - Aligned the greet slogan with the welcome heading beside the app icon and lightened it to 18pt medium primary text. Version 0.36.8 (71).

@@ -32,10 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   private var weatherCitiesStatus = "Open Weather to load saved cities"
   private var weatherSourceStatus = "Waiting for location"
   private var worker: MonitorWorker?
-  private let statusItems = StatusItemController()
-  private var popover: NSPopover?
-  private let popoverInteraction = PopoverInteraction()
-  private var detail: DetailController?
+  private let statusItems: StatusItemController
+  private(set) var popover: NSPopover?
+  let popoverInteraction: PopoverInteraction
+  private(set) var detail: DetailController?
   private var welcome: WelcomeController?
   private var preferences: PreferencesController?
   private var weatherPreferences: WeatherSettingsController?
@@ -64,13 +64,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   private let reportsHistoryPresentation = CommandLine.arguments.contains("--preview-history")
   private let reportsPopoverPresentation = CommandLine.arguments.contains("--preview-popover")
   private var pendingPopoverModule: Module?
-  private var previewCycleProbe: PopoverCycleProbe?
+  var previewCycleProbe: PopoverCycleProbe?
   private var previewCycleModule: Module = .network
   private var previewPopoverCloseDelay: TimeInterval?
   private var previewPopoverCloseDeadline: TimeInterval?
   private var previewHistoryCloseDeadline: TimeInterval?
   private var previewQuitDeadline: TimeInterval?
   private var historyPresentationTransitions = PresentationTransitions()
+  private var closingPopover: NSPopover?
+  private var pendingStatusOpen: (module: Module, button: NSView)?
+  private let clickTrace: MenuBarClickTrace
+  private let presentationReporter: ((Bool) -> Void)?
+  private let cycleReporter: ((PopoverCycleProbe.Event) -> Void)?
+
+  init(
+    statusItems: StatusItemController = StatusItemController(),
+    popoverInteraction: PopoverInteraction = PopoverInteraction(),
+    settings: Settings? = nil,
+    snapshot: Snapshot = Snapshot(), history: [HistoryPoint] = [],
+    clickTrace: MenuBarClickTrace = MenuBarClickTrace(),
+    presentationReporter: ((Bool) -> Void)? = nil,
+    cycleReporter: ((PopoverCycleProbe.Event) -> Void)? = nil
+  ) {
+    self.statusItems = statusItems
+    self.snapshot = snapshot
+    self.history = history
+    self.popoverInteraction = popoverInteraction
+    self.clickTrace = clickTrace
+    self.presentationReporter = presentationReporter
+    self.cycleReporter = cycleReporter
+    super.init()
+    if let settings { self.settings = settings }
+    popoverInteraction.onEvent = { [weak self] event, result in
+      self?.traceClick(event, result: result)
+    }
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     // A second launch activates the existing instance rather than leaving duplicate samplers.
     if let identifier = Bundle.main.bundleIdentifier,
@@ -514,6 +543,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   @objc private func statusClicked(_ sender: NSStatusBarButton) {
     guard let entry = statusItems.entry(for: sender) else { return }
     if NSApp.currentEvent?.type == .rightMouseUp {
+      if let event = NSApp.currentEvent { traceClick(event, result: "native-options-menu") }
       popover?.performClose(nil)
       let menu = Self.makeStatusMenu(paused: paused, target: self)
       entry.item.menu = menu
@@ -521,21 +551,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       entry.item.menu = nil
       return
     }
-    // Separate items own their destination; One resolves native segment clicks in its renderer.
-    let module = entry.module
-    if popover?.isShown == true {
-      if detail?.selected == module {
-        popover?.performClose(nil)
-      } else if let detail {
-        // Keep the presented controller alive; a delayed close callback must not stop the new page.
+    // Command-drag belongs to native status-item placement, including during a popover.
+    activateStatusButton(sender, event: NSApp.currentEvent)
+  }
+
+  /// Native action entry shared with keyboard/VoiceOver and owned-window regressions.
+  func activateStatusButton(_ sender: NSView, event: NSEvent?) {
+    guard let target = statusItems.targets.first(where: { $0.button === sender }) else { return }
+    if let event, event.modifierFlags.contains(.command) {
+      traceClick(event, result: "native-command-pass-through")
+      return
+    }
+    let module = StatusItemController.module(
+      for: event, button: sender, readout: target.readout, fallback: target.module,
+      combined: statusItems.isCombined, mouseLocation: statusItems.mouseLocation())
+    let transition = routeStatusClick(module: module, sender: sender)
+    if let event { traceClick(event, result: "native \(transition)") }
+  }
+
+  /// The local monitor and tests enter here; there is no duplicate test-side transition logic.
+  @discardableResult func routeStatusEvent(_ event: NSEvent) -> Bool {
+    let dropdown = detail?.view.window
+    guard event.type == .leftMouseDown, !event.modifierFlags.contains(.command),
+      dropdown?.attachedSheet == nil,
+      !(dropdown?.isVisible == true
+        && dropdown?.frame.contains(statusItems.mouseLocation()) == true),
+      let entry = statusItems.entry(for: event, dropdownWindow: dropdown)
+    else { return false }
+    let transition = routeStatusClick(module: entry.module, sender: entry.button)
+    traceClick(event, result: "routed \(transition)")
+    return true
+  }
+
+  private func traceClick(_ event: NSEvent, result: String) {
+    guard clickTrace.isEnabled else { return }
+    clickTrace.record(event, buttons: statusItems.targets, result: result)
+  }
+
+  @discardableResult private func routeStatusClick(
+    module: Module, sender: NSView
+  ) -> MenuBarClickRouter.Transition {
+    let transition = MenuBarClickRouter.transition(
+      open: popover?.isShown == true && closingPopover == nil ? detail?.selected : nil,
+      clicked: module)
+    switch transition {
+    case .close:
+      popover?.performClose(nil)
+    case .switchModule(_, let module):
+      // Replace the page without closing the presentation: no didClose can release the new page.
+      if let detail {
         detail.selected = module
         detail.update(snapshot, history: history)
         worker?.setDetails(true, module: module)
         refreshCalendarDemand()
       }
-    } else {
-      showDetails(relativeTo: sender, module: module)
+    case .open(let module):
+      if closingPopover != nil {
+        // Last click wins during native close animation. didClose opens it immediately;
+        // no timer and no page switch into a presentation that is already disappearing.
+        pendingStatusOpen = (module, sender)
+      } else {
+        showDetails(relativeTo: sender, module: module)
+      }
+    case .none: break
     }
+    return transition
   }
   static func makeStatusMenu(paused: Bool, target: AppDelegate?) -> NSMenu {
     let menu = NSMenu()
@@ -563,7 +643,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       keyEquivalent: "q")
     return menu
   }
-  private func showDetails(relativeTo sender: NSStatusBarButton, module: Module) {
+  private func showDetails(relativeTo sender: NSView, module: Module) {
     prepareDetails()
     guard let detail, let popover else { return }
     detail.settings = settings
@@ -602,19 +682,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       popoverInteraction.start(
         window: window,
         statusEvent: { [weak self] event in
-          self?.statusItems.hits(event) ?? false
+          self?.statusItems.hits(event, dropdownWindow: self?.detail?.view.window) ?? false
+        },
+        onStatusClick: { [weak self] event in
+          self?.routeStatusEvent(event)
         },
         onDismiss: { [weak self] in self?.popover?.performClose(nil) })
     } else {
       popover.performClose(nil)
     }
   }
+  func popoverWillClose(_ notification: Notification) {
+    guard let closing = notification.object as? NSPopover, closing === popover else { return }
+    closingPopover = closing
+  }
+
   func popoverDidClose(_ notification: Notification) {
     guard let closed = notification.object as? NSPopover, closed === popover else { return }
-    popoverInteraction.stop()
-    previewPopoverCloseDeadline = nil
+    // Account for the completed close even if AppKit has already re-shown this instance.
+    // Only teardown is conditional on isShown; diagnostic accounting must not be skipped.
     reportPopoverPresentation(false)
     reportCycleEvent(previewCycleProbe?.didClose(at: ProcessInfo.processInfo.systemUptime))
+    closingPopover = nil
+    guard !closed.isShown else { return }
+    popoverInteraction.stop()
+    previewPopoverCloseDeadline = nil
+    if let pending = pendingStatusOpen {
+      pendingStatusOpen = nil
+      if PopoverInteraction.screenRect(of: pending.button) != nil {
+        showDetails(relativeTo: pending.button, module: pending.module)
+        return
+      }
+    }
     if previewWindow?.isVisible != true {
       worker?.setDetails(false)
       Task { @MainActor [weak self] in self?.discardClosedDetails() }
@@ -625,10 +724,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   }
   private func reportCycleEvent(_ event: PopoverCycleProbe.Event?) {
     guard let event else { return }
+    cycleReporter?(event)
     FileHandle.standardOutput.write(Data(event.line.utf8))
     if event.kind == .failed { pendingPopoverModule = nil }
   }
   private func reportPopoverPresentation(_ shown: Bool) {
+    presentationReporter?(shown)
     guard reportsPopoverPresentation else { return }
     // Diagnostic launch only: the harness must reject a closed popover being
     // mislabeled as an open-window measurement. No user data or file writes.

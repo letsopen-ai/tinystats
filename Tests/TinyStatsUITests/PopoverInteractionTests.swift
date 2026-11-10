@@ -36,7 +36,7 @@ import Testing
     let child = window()
     defer { for view in [popover, firstItem, secondItem, child] { view.close() } }
     popover.addChildWindow(child, ordered: .above)
-    let interaction = PopoverInteraction()
+    let interaction = PopoverInteraction(mouseLocation: { .init(x: -10_000, y: -10_000) })
     defer { interaction.stop() }
     var dismissed = 0
     interaction.start(
@@ -58,7 +58,7 @@ import Testing
       popover.close()
       outside.close()
     }
-    let interaction = PopoverInteraction()
+    let interaction = PopoverInteraction(mouseLocation: { .init(x: -10_000, y: -10_000) })
     var dismissed = 0
     interaction.start(window: popover, statusEvent: { _ in false }, onDismiss: { dismissed += 1 })
     let event = try mouse(outside)
@@ -74,25 +74,84 @@ import Testing
     let status = window()
     let other = window()
     defer { for view in [popover, status, other] { view.close() } }
+    other.setFrameOrigin(.init(x: 900, y: 500))
     let button = NSButton(frame: .init(x: 20, y: 20, width: 40, height: 24))
     status.contentView?.addSubview(button)
+    status.orderFrontRegardless()
     let point = status.convertPoint(toScreen: .init(x: 30, y: 30))
     let proxy = try #require(
       NSEvent.mouseEvent(
         with: .leftMouseDown, location: point, modifierFlags: [], timestamp: 0,
         windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
-    #expect(proxy.window == nil && PopoverInteraction.hits(proxy, view: button))
-    #expect(!PopoverInteraction.hits(try mouse(other), view: button))
-    let interaction = PopoverInteraction()
+    #expect(
+      proxy.window == nil && PopoverInteraction.hits(proxy, view: button, mouseLocation: point))
+    let outside = other.convertPoint(toScreen: .init(x: 10, y: 10))
+    #expect(!PopoverInteraction.hits(try mouse(other), view: button, mouseLocation: outside))
+    let interaction = PopoverInteraction(mouseLocation: { .init(x: -10_000, y: -10_000) })
     defer { interaction.stop() }
     var dismissed = 0
+    var cursor = point
     interaction.start(
-      window: popover, statusEvent: { PopoverInteraction.hits($0, view: button) },
+      window: popover,
+      statusEvent: { PopoverInteraction.hits($0, view: button, mouseLocation: cursor) },
       onDismiss: { dismissed += 1 })
     interaction.handleGlobal(proxy)
     #expect(dismissed == 0 && interaction.isMonitoring)
+    cursor = outside
     interaction.handleGlobal(try mouse(other))
     #expect(dismissed == 1 && !interaction.isMonitoring)
+  }
+
+  @Test func forwardedMouseCoordinatesReachOwnedStatusButton() throws {
+    let status = window()
+    let proxy = window()
+    defer {
+      status.close()
+      proxy.close()
+    }
+    status.setFrameOrigin(.init(x: 400, y: 300))
+    proxy.setFrameOrigin(.init(x: 360, y: 280))
+    let button = NSButton(frame: .init(x: 20, y: 20, width: 80, height: 24))
+    status.contentView?.addSubview(button)
+    status.orderFrontRegardless()
+    let screenPoint = status.convertPoint(toScreen: button.convert(.init(x: 60, y: 12), to: nil))
+    let event = try #require(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown, location: proxy.convertPoint(fromScreen: screenPoint),
+        modifierFlags: [], timestamp: 1, windowNumber: proxy.windowNumber,
+        context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+    #expect(event.window === proxy)
+    #expect(PopoverInteraction.hits(event, view: button, mouseLocation: screenPoint))
+  }
+
+  @Test func statusMouseDownRoutesOnceBeforeTrackingAndRightClickPassesThrough() throws {
+    let popover = window()
+    let status = window()
+    defer {
+      popover.close()
+      status.close()
+    }
+    let interaction = PopoverInteraction(mouseLocation: { .init(x: -10_000, y: -10_000) })
+    defer { interaction.stop() }
+    var clicks = 0
+    var dismissed = 0
+    interaction.start(
+      window: popover, statusEvent: { $0.window === status },
+      onStatusClick: { _ in clicks += 1 }, onDismiss: { dismissed += 1 })
+    let down = try mouse(status)
+    #expect(interaction.handle(down) == nil)
+    #expect(clicks == 1 && dismissed == 0 && interaction.isMonitoring)
+    let right = try mouse(status, type: .rightMouseDown)
+    #expect(interaction.handle(right) === right)
+    #expect(clicks == 1 && dismissed == 0)
+    let drag = try #require(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown,
+        location: .init(x: 10, y: 10), modifierFlags: [.command], timestamp: 1,
+        windowNumber: status.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)
+    )
+    #expect(interaction.handle(drag) === drag)
+    #expect(clicks == 1 && dismissed == 0)
   }
 
   @Test func escapeOnlyDismissesThePopoverAndOtherKeysPassThrough() throws {
@@ -102,7 +161,7 @@ import Testing
       popover.close()
       other.close()
     }
-    let interaction = PopoverInteraction()
+    let interaction = PopoverInteraction(mouseLocation: { .init(x: -10_000, y: -10_000) })
     defer { interaction.stop() }
     var dismissed = 0
     interaction.start(window: popover, statusEvent: { _ in false }, onDismiss: { dismissed += 1 })
@@ -117,7 +176,7 @@ import Testing
   @Test func restartAndPromotionRemoveOldObserversAndCapturedContent() throws {
     let popover = window()
     defer { popover.close() }
-    let interaction = PopoverInteraction()
+    let interaction = PopoverInteraction(mouseLocation: { .init(x: -10_000, y: -10_000) })
     var first = 0
     var second = 0
     interaction.start(window: popover, statusEvent: { _ in false }, onDismiss: { first += 1 })
@@ -150,7 +209,7 @@ import Testing
     editor.isFieldEditor = true
     popover.contentView?.addSubview(editor)
     #expect(popover.makeFirstResponder(editor))
-    let interaction = PopoverInteraction()
+    let interaction = PopoverInteraction(mouseLocation: { .init(x: -10_000, y: -10_000) })
     defer { interaction.stop() }
     var dismissed = 0
     interaction.start(window: popover, statusEvent: { _ in false }, onDismiss: { dismissed += 1 })

@@ -22,11 +22,12 @@ TinyStats is an early-stage project working toward a lean, native alternative to
 
 See the [distribution checklist](DISTRIBUTION.md). The main open items are:
 
-- Review the five-step magnified-menu-bar welcome on native macOS 14/15 and Intel, including VoiceOver, keyboard traversal and existing online choices; complete the coordinator’s final-tree release validation for 0.37.0 (72).
+- Review the five-step magnified-menu-bar welcome on native macOS 14/15 and Intel, including VoiceOver, keyboard traversal and existing online choices; complete the coordinator’s final-tree release validation for 0.37.1 (73).
 
 - Measure and reduce native UI memory overhead; record real costs on current and minimum supported macOS ([Performance](PERFORMANCE.md)).
 - Re-run the current source natively on macOS 14/15 (Apple Silicon) and an Intel Mac, then extend coverage to physical Intel sensors/GPU, more chip generations, laptops with batteries, external storage and multiple GPU drivers ([Compatibility](COMPATIBILITY.md)).
 - Validate raw sensor descriptions per hardware family. Unknown keys must remain identifiable rather than given misleading labels.
+- Validate physical single-click switching/toggle in Separate and One on supported OS versions/displays; owned-window AppDelegate/PopoverInteraction routing/evidence does not establish native status-proxy delivery. Use the environment-only [click trace](MENU-BAR.md#maintainer-real-click-trace) to inspect real events without automated menu-bar input.
 - Improve recovery when menu bar space is constrained; validate readout order and compact graph sizing.
 - Add fixture-driven system adapters for driver failure and hot-plug tests.
 - Exercise IPv6-only primary routing, VPN/service changes and network hot-plug on representative hardware.
