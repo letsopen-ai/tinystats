@@ -1341,17 +1341,13 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   override func draw(_ dirtyRect: NSRect) {
     guard !usesPopoverMaterial else { return }
     NSColor.windowBackgroundColor.setFill()
-    let background = NSBezierPath(rect: bounds)
-    if glassEnvironment().treatment == .glass {
-      // Continue the neutral content around the floating sidebar, leaving only its
-      // rounded interior available to the compositor's backdrop sampling.
-      background.append(
-        NSBezierPath(
-          roundedRect: sidebarFrame(),
-          xRadius: GlassSurface.sidebarCornerRadius, yRadius: GlassSurface.sidebarCornerRadius))
-      background.windingRule = .evenOdd
-    }
-    background.fill()
+    // Paint the right pane to the window edges. The full-height navigation
+    // material owns the left pane; no rounded cutout or surrounding card margin.
+    let contentX = glassEnvironment().treatment == .glass ? sidebarFrame().maxX : bounds.minX
+    NSRect(
+      x: contentX, y: bounds.minY, width: max(0, bounds.maxX - contentX), height: bounds.height
+    )
+    .intersection(dirtyRect).fill()
   }
 }
 

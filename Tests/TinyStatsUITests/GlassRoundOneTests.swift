@@ -24,7 +24,7 @@ import Testing
   #expect(!detail.view.clipsToBounds && detail.view.isOpaque)
 }
 
-@Test @MainActor func floatingSidebarUsesInjectedPolicyAndLiveGeometryAcrossAccessibilityChanges()
+@Test @MainActor func fullHeightSidebarUsesInjectedPolicyAndLiveGeometryAcrossAccessibilityChanges()
   throws
 {
   guard #available(macOS 26, *) else { return }
@@ -32,13 +32,13 @@ import Testing
     supportsGlass: true, reduceTransparency: false, increaseContrast: false)
   let navigation = DetailNavigationCoordinator(environment: { environment })
   navigation.layout(in: .init(x: 0, y: 0, width: 884, height: 660))
-  #expect(navigation.sidebar.frame == NSRect(x: 8, y: 8, width: 132, height: 644))
+  #expect(navigation.sidebar.frame == NSRect(x: 0, y: 0, width: 132, height: 660))
   let glass = try #require(navigation.sidebarMaterial.subviews.first as? NSGlassEffectView)
-  #expect(glass.cornerRadius == 18)
+  #expect(glass.cornerRadius == 0)
   let root = MainContentView(frame: .init(x: 0, y: 0, width: 884, height: 660))
   root.glassEnvironment = { environment }
-  // A deliberately different width catches accidentally restoring the old 132pt hole.
-  root.sidebarFrame = { NSRect(x: 8, y: 8, width: 180, height: 644) }
+  // A deliberately different width verifies that the content starts at the live split edge.
+  root.sidebarFrame = { NSRect(x: 0, y: 0, width: 180, height: 660) }
   #expect(!root.isOpaque)
   for appearance in [NSAppearance.Name.aqua, .darkAqua] {
     root.appearance = NSAppearance(named: appearance)
@@ -52,7 +52,13 @@ import Testing
     #expect(
       try #require(bitmap.colorAt(x: Int(200 * scale), y: Int(330 * scale))).alphaComponent == 1)
     #expect(
-      try #require(bitmap.colorAt(x: Int(2 * scale), y: Int(330 * scale))).alphaComponent == 1)
+      try #require(bitmap.colorAt(x: Int(2 * scale), y: Int(330 * scale))).alphaComponent == 0)
+    for y in [0, 659] {
+      #expect(try #require(bitmap.colorAt(x: 0, y: Int(CGFloat(y) * scale))).alphaComponent == 0)
+      #expect(
+        try #require(bitmap.colorAt(x: Int(200 * scale), y: Int(CGFloat(y) * scale)))
+          .alphaComponent == 1)
+    }
   }
   environment.increaseContrast = true
   NSWorkspace.shared.notificationCenter.post(

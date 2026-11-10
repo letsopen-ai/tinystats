@@ -8,6 +8,52 @@ import Testing
   view.subviews.flatMap { [$0] + sidebarDescendants($0) }
 }
 
+@MainActor private func expectNativeSplit(in root: NSView) throws {
+  let materials = sidebarDescendants(root).compactMap { $0 as? GlassSurface }
+    .filter { $0.role == .sidebar }
+  let material = try #require(materials.first)
+  #expect(materials.count == 1)
+  let sidebar = try #require(material.superview)
+  #expect(abs(sidebar.frame.minX) <= 0.5 && abs(sidebar.frame.minY) <= 0.5)
+  #expect(abs(sidebar.frame.height - root.bounds.height) <= 0.5)
+  #expect(sidebar.frame.width == 132 && material.frame == sidebar.bounds)
+  #expect(!sidebar.clipsToBounds && (sidebar.layer?.cornerRadius ?? 0) == 0)
+  #expect(sidebar.layer?.mask == nil)
+  if #available(macOS 26, *), let glass = material.subviews.first as? NSGlassEffectView {
+    #expect(glass.cornerRadius == 0)
+  }
+  let dividers = sidebarDescendants(root).compactMap { $0 as? SidebarDividerView }
+  let divider = try #require(dividers.first)
+  #expect(dividers.count == 1 && !divider.isHiddenOrHasHiddenAncestor)
+  let frame = divider.convert(divider.bounds, to: root)
+  #expect(abs(frame.minY - root.bounds.minY) <= 0.5)
+  #expect(abs(frame.maxY - root.bounds.maxY) <= 0.5)
+  #expect(frame.minX == 131 && frame.width == 1 && frame.maxX == sidebar.frame.maxX)
+  #expect(divider.hitTest(.zero) == nil)
+}
+
+// The coordinator consumes the full root bounds in windowed and full-screen layouts;
+// native toolbar reveal/foreign-button geometry is covered separately below.
+@Test @MainActor func nativeSplitSpansWindowedAndFullScreenLayoutSizesInEveryTreatment() throws {
+  for policy in ["glass", "solid", "contrast", "legacy"] {
+    let navigation = DetailNavigationCoordinator(environment: {
+      .init(
+        supportsGlass: policy != "legacy", reduceTransparency: policy == "solid",
+        increaseContrast: policy == "contrast")
+    })
+    let root = NSView()
+    root.addSubview(navigation.sidebar)
+    for size in [
+      MainWindow.minimumSize, NSSize(width: 1200, height: 850),
+      NSSize(width: 1920, height: 1080),
+    ] {
+      root.setFrameSize(size)
+      navigation.layout(in: root.bounds)
+      try expectNativeSplit(in: root)
+    }
+  }
+}
+
 @Test @MainActor func mainWindowSidebarClearsNativeTitlebarAndAlignsSubsections() throws {
   _ = NSApplication.shared
   let window = MainWindow()
@@ -35,6 +81,7 @@ import Testing
       window.contentView?.layoutSubtreeIfNeeded()
       detail.view.layoutSubtreeIfNeeded()
       let root = detail.view
+      try expectNativeSplit(in: root)
       let labels = sidebarDescendants(root).compactMap { $0 as? NSTextField }
       let brand = try #require(labels.first { $0.stringValue == "TinyStats" })
       let sidebar = try #require(brand.superview)
@@ -67,6 +114,7 @@ import Testing
         let hit = try #require(frameView.hitTest(point))
         #expect(hit === button || hit.isDescendant(of: button))
         #expect(!brandFrame.intersects(frame))
+        #expect(!navigation.convert(navigation.bounds, to: root).intersects(frame))
         #expect(brandFrame.maxY + 12 <= frame.minY)
         let sidebarFrame = sidebar.convert(sidebar.bounds, to: root)
         #expect(sidebarFrame.minX <= frame.minX && sidebarFrame.maxX >= frame.maxX)
@@ -120,6 +168,7 @@ import Testing
         let content = try #require(preferences.embeddedView(page: page))
         detail.showSettingsView(content, page: page)
         root.layoutSubtreeIfNeeded()
+        try expectNativeSplit(in: root)
         #expect(content.frame.maxY <= root.bounds.maxY - clearance + 0.5)
         #expect(root.bounds.contains(content.frame))
         let form = try #require(
