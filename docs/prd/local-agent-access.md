@@ -446,7 +446,7 @@ CLI 参数（权威语法，统一为 flag 式；不接受位置参数）：
 
 - **窗口与槽位**（R2·C9）：`window.end` = `SessionHistory` 的最后一次观测（`lastDate`），`window.start = end − length_s`。只要 `bucket.last > window.start`，桶就会被包含，所以**最老的桶可能含有早于 `start` 的观测**。槽位 `slot = floor(t_unix / resolution_s)`，按 UTC epoch 对齐，槽区间为 `[slot·res, (slot+1)·res)`；同一个桶的 `first` 和 `last` 落在同一个槽内。3h/12h/3d/14d 借用更长环的分辨率（例如 3h → 72 s）。不重新分桶。
 - 桶是**稀疏**的：没有观测的槽没有桶。
-- 数值保持 Swift 最短往返表示，不做四舍五入（与 CSV 的 `String(value)` 一致）；缺失时为 `null`，对应的 `valid` 为 0。
+- 数值保持 Swift 最短往返表示，不做四舍五入（与 CSV 的 `String(value)` 一致）；从未收到该指标有效观测时为 `null`，此时 `valid` 为 0。`valid` 报告实际存储的有效观测计数（桶的 `validSamples(_:statistic:)`，历史按原样保留，不合成、不回填）。**peak 下的 CPU 分量（`cpu_user`/`cpu_system`，series 和 summary 同样适用）是例外**：桶保存的是总 CPU 达峰那次观测的分量，该次观测的分量可能缺失，此时分量值为 `null` 而 `valid > 0`（计数照常累计了其他观测中的有效分量）——`null` 不蕴含 `valid == 0`，回归见 `SessionHistoryTests.sessionHistoryWithholdsInvalidValuesAndDistinguishesIdleFromMissing`（`cpuUser == nil` 且 `validSamples(.cpuUser) == 1`）。
 - `*_at_peak_cpu_percent` 的语义：总 CPU 达峰那次观测的分量，不是各自的最大值。工具描述中写明这一点。
 - **`summary` 规则**（R2·C8）：
   - 一般指标：使用 `HistoryProjection.value(metric, statistic:)`，与 History 窗口的摘要一致。average 是有效观测的样本加权平均，不按时间加权。`valid` = `validSamples(metric, statistic:)`。
@@ -659,7 +659,7 @@ TinyStats.app/Contents/
   - `TinyStatsAgentProtocol`（library，只依赖 Foundation）：DTO、schema、Sanitizer、帧、错误码、转义函数。
   - `TinyStatsAgent`（executableTarget，产物名 `tinystats`）：**只有 JSON CLI**，依赖 Protocol + Security。无 MCP 子命令、无第三方依赖。
   - App 侧：`AgentBridgeServer.swift`、`AgentAccessController.swift`、`AgentSettingsPage.swift`，以及 `MonitorWorker` 的增量修改（latestSnapshot、过滤参数镜像、epoch；PR 3 加 demand/waiter）。
-  - 测试：Protocol 单测（schema、净化、帧、shell 转义）、CLI 集成测试（socketpair/pipe 驱动的假 App，覆盖三种 Top 结果形态、撤销、截断帧）、worker 测试（注入 `TimerFactory`，覆盖 demand 并集、baseline 清理的两个入口时机（C11）、waiter 主动完成、Low Power 下不加速）、bridge 测试（generation 撤销、限流、admission、背压）。
+  - 测试：Protocol 单测（schema、净化、帧、shell 转义）、CLI 集成测试（socketpair/pipe 驱动的假 App，覆盖 §5.4 定义的四种 Top 结果形态——完整（含 memory 排序命中热缓存的立即返回路径，k2·N1）、完整（memory 排序冷路径首帧）、部分、未就绪；memory 冷路径与热缓存路径都有覆盖——以及撤销、截断帧）、worker 测试（注入 `TimerFactory`，覆盖 demand 并集、baseline 清理的两个入口时机（C11）、waiter 主动完成、Low Power 下不加速）、bridge 测试（generation 撤销、限流、admission、背压）。
 - `scripts/build-app.sh`：分别构建 arm64/x86_64 的 `tinystats` 并 `lipo`，复制到 `Contents/Helpers/`，**由内到外签名**（不使用 `--deep`）。
 - 检查：`check-release-chrome.py` 扩展到 helper；`verify-local.sh` 增加 helper 的切片、部署目标、签名、identifier 和 hardened runtime 检查；release 检查的签名身份允许集合加入 `com.niechen.tinystats.agent`。
 
@@ -1023,6 +1023,8 @@ CLI-only 下每次调用都是一个新进程，因此基准针对**进程级成
 | N1 · memory Top 热缓存形态 | MINOR（新增）：§4.4b 允许已有 UI rate baseline 时立即返回最终帧，§5.4 却把 memory 完整成功限定为 `cpu_ready:false`、CPU/IO 为 null，两者不兼容 | 接受（选 “限制仅适用于首次扫描”）：热缓存路径上基线已存在，隐藏已知速率会让已付费数据变哑且与 cpu/disk 热缓存行为不一致；`cpu_ready:false` 的本意是如实标注 “尚无基线” | §5.4 形态 1 改为通用完整形态（含 memory 命中热缓存的立即返回，CPU/IO 有效）；原形态 2 收窄标注为 “memory 排序冷路径首帧”；§4.4b 热缓存句补注同一结论；四种形态覆盖全部可达路径 |
 
 **Round 7 之后**：Kimi 与 Codex 无遗留分歧（本轮 4 项全部接受并修正；cli-k2 的 1 项 MAJOR 与 3 项 MINOR 均已补齐）。待 Chen 决定：D1–D3、D5–D11、D13–D16（D4、D12 已由 Owner 决定关闭）。签名原型、客户端沙盒、编码大小仍为待验证（附录清单），接受记录不等于验证通过。
+
+**PR #27 Codex review（2026-11-10）：fixed history null/valid contract and Top test shapes** —— §5.5：peak CPU 分量可为 `null` 而 `valid > 0`，`valid` 报告实际存储的有效观测计数；§7.1：Top 测试覆盖 §5.4 的四种结果形态，memory 冷路径与热缓存路径均覆盖。
 
 ---
 
