@@ -23,6 +23,10 @@ Weather and Calendar retain their specialized interactive formatting in `DetailC
 
 Regression coverage lives in `Tests/TinyStatsUITests/DetailPresentationTests.swift`: unavailable headlines/history gaps, idle meters and process bounds, native sidebar actions/shortcuts/Settings demand, deferred view loading, and controller/coordinator release with a retained native sidebar. Existing native suites cover table/component values, window resizing, Settings page release, editor Save/Cancel, Weather/Calendar permission boundaries and worker demand transitions.
 
+## Native main-window split
+
+`DetailNavigationCoordinator` owns a flush 132pt sidebar at (0,0), including its material and one trailing 1pt `SidebarDividerView` at x=131. Both views span the full root height through the transparent titlebar band in monitoring and embedded Settings. Glass has zero corner radius; legacy vibrancy and solid accessibility fills use the same rectangular geometry, without an inset card or perimeter rim. `MainContentView` paints the right pane from x=132 to the window edges on glass, with no rounded backdrop cutout. Existing content/form gutters and `MainWindow.pageContentInset` keep controls below the titlebar, while real local standard-button frames keep the brand 12pt below the traffic lights. Settings hosting still holds the content weakly and keeps its 740pt width cap. `SidebarPolishTests` and `GlassRoundOneTests` cover the split, navigation typography, Settings and toolbar/full-screen geometry; the owned `systemMainWindowFullOnscreenGallery` captures actual titlebar buttons in light/dark over a synthetic gradient, with separate solid fixtures.
+
 ## System dropdown presentation
 
 `DetailController.isPopoverPresentation` selects the narrow material/platters layout. The default is the monitoring-window layout, including the System Overview grid, for window hosts and fixtures. `AppDelegate` sets the flag before loading a status-item detail, and clears it when promoting that same controller to a persistent window. The Open [module] in TinyStats action uses `onOpenInWindow`; it shares the existing window promotion/lifetime path without opening a Settings page.

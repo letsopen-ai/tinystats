@@ -117,7 +117,7 @@ import Testing
   return try #require(resolved)
 }
 
-@Test @MainActor func solidAndIncreaseContrastSidebarDrawDistinctFillAndRimInBothAppearances()
+@Test @MainActor func solidAndIncreaseContrastSidebarFillEveryEdgeWithoutACardRimInBothAppearances()
   throws
 {
   for contrast in [false, true] {
@@ -134,23 +134,18 @@ import Testing
       func pixel(_ x: CGFloat, _ y: CGFloat) throws -> NSColor {
         try #require(bitmap.colorAt(x: Int(x * scale), y: Int(y * scale))?.usingColorSpace(.sRGB))
       }
-      let fill = try pixel(66, 322)
-      let rim = try pixel(0.5, 322)
       let expected = try roundTwoColor(.controlBackgroundColor, in: surface.effectiveAppearance)
       #expect(surface.treatment == .solid && surface.subviews.isEmpty)
-      #expect(try pixel(0, 0).alphaComponent == 0)
-      #expect(fill.alphaComponent == 1 && rim.alphaComponent == 1)
-      for component in [0, 1, 2] {
-        #expect(abs(fill.component(component) - expected.component(component)) < 0.02)
+      for point in [
+        NSPoint(x: 0, y: 0), .init(x: 131, y: 0), .init(x: 0, y: 643),
+        .init(x: 131, y: 643), .init(x: 66, y: 322),
+      ] {
+        let fill = try pixel(point.x, point.y)
+        #expect(fill.alphaComponent == 1)
+        for component in [0, 1, 2] {
+          #expect(abs(fill.component(component) - expected.component(component)) < 0.02)
+        }
       }
-      let separator = try roundTwoColor(.separatorColor, in: surface.effectiveAppearance)
-      for component in [0, 1, 2] {
-        let composite =
-          separator.component(component) * separator.alphaComponent
-          + fill.component(component) * (1 - separator.alphaComponent)
-        #expect(abs(rim.component(component) - composite) < 0.04)
-      }
-      #expect((0..<3).contains { abs(rim.component($0) - fill.component($0)) > 0.02 })
     }
   }
 }

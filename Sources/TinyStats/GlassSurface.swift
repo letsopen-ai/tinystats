@@ -32,7 +32,6 @@ import TinyStatsCore
   var onTreatmentChange: (() -> Void)?
   /// Legacy sidebar controls must remain descendants of the effect for vibrancy.
   var legacyContentView: NSView? { treatment == .legacy ? material : nil }
-  static let sidebarCornerRadius: CGFloat = 18
 
   init(role: Role = .panel, environment: @escaping () -> Environment = { .current }) {
     self.role = role
@@ -74,7 +73,7 @@ import TinyStatsCore
           let glass = NSGlassEffectView()
           glass.style = .regular
           glass.cornerRadius =
-            role == .panel ? SystemStyle.Radius.platter : Self.sidebarCornerRadius
+            role == .panel ? SystemStyle.Radius.platter : 0
           glass.contentView = LegibilityBacking(role: role)
           material = glass
         }
@@ -138,20 +137,7 @@ import TinyStatsCore
   override func draw(_ dirtyRect: NSRect) {
     guard treatment == .solid, role != .chips else { return }
     (role == .sidebar ? NSColor.controlBackgroundColor : .windowBackgroundColor).setFill()
-    if role == .sidebar {
-      NSBezierPath(
-        roundedRect: bounds, xRadius: Self.sidebarCornerRadius,
-        yRadius: Self.sidebarCornerRadius
-      ).fill()
-      NSColor.separatorColor.setStroke()
-      let rim = NSBezierPath(
-        roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
-        xRadius: Self.sidebarCornerRadius, yRadius: Self.sidebarCornerRadius)
-      rim.lineWidth = 1
-      rim.stroke()
-    } else {
-      dirtyRect.intersection(bounds).fill()
-    }
+    dirtyRect.intersection(bounds).fill()
   }
   nonisolated static func washOpacity(role: Role, dark: Bool) -> CGFloat {
     switch role {
