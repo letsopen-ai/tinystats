@@ -351,7 +351,7 @@ def main():
             settings["calendarFirstWeekday"] = args.calendar_first_weekday
         if args.world_clock_labels or args.world_clock_seconds:
             zones = ["UTC", "Europe/London", "America/Los_Angeles", "America/New_York", "Asia/Shanghai", "Australia/Sydney"]
-            settings.update(worldClocks=zones, worldClockNames=dict(zip(zones, ["Build server", "London office", "LA team", "New York team", "Shanghai team", "Sydney lab"])))
+            settings.update(worldClocks=zones, worldClockNames=dict(zip(zones, ["Build server", "London office", "LA team", "New York team", "Team", "Sydney lab"])))
         if args.world_clock_seconds:
             settings["worldClockFormat"] = "{hour24}:{minute}:{second} · {localOffset}"
         if args.clock_formats or args.clock_graphics:
@@ -360,7 +360,7 @@ def main():
                 clockMenu=dict(custom=True, entries=[dict(name=name, zone=zone,
                     firstLine="{calendar} {name} {weekday}" if args.clock_graphics else "{name} {weekday}",
                     secondLine="{analogSeconds} {hour24}:{minute}:{second} {fuzzy} {localOffset}" if args.clock_graphics else "{hour24}:{minute}:{second} {offset}")
-                    for name, zone in zip(["Build", "London", "LA", "NY", "Shanghai", "Nepal"], zones)]))
+                    for name, zone in zip(["Build", "London", "LA", "NY", "Team", "Nepal"], zones)]))
         if args.network_bundles:
             settings.update(networkTrafficGrouping="bundles", networkTrafficRevision=uuid.uuid4().hex)
         if args.internet_checks:

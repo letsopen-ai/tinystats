@@ -69,13 +69,13 @@ import Testing
   #expect(legacy.worldClockNames.isEmpty)
   #expect(legacy.worldClockEntries.map(\.title) == ["UTC", "America/Los Angeles"])
   let damaged = Data(
-    #"{"worldClocks":["bad/zone","UTC","Europe/London","Asia/Shanghai"],"worldClockNames":{"UTC":"Build server","Europe/London":7,"Asia/Shanghai":"Shanghai team","Europe/Paris":"Unused"}}"#
+    #"{"worldClocks":["bad/zone","UTC","Europe/London","Asia/Shanghai"],"worldClockNames":{"UTC":"Build server","Europe/London":7,"Asia/Shanghai":"Team","Europe/Paris":"Unused"}}"#
       .utf8)
   var value = try JSONDecoder().decode(Settings.self, from: damaged)
   #expect(value.worldClocks == ["UTC", "Europe/London", "Asia/Shanghai"])
-  #expect(value.worldClockNames == ["UTC": "Build server", "Asia/Shanghai": "Shanghai team"])
+  #expect(value.worldClockNames == ["UTC": "Build server", "Asia/Shanghai": "Team"])
   #expect(
-    value.worldClockEntries.map(\.title) == ["Build server", "Europe/London", "Shanghai team"])
+    value.worldClockEntries.map(\.title) == ["Build server", "Europe/London", "Team"])
   #expect(
     !value.calendarEvents && !value.weather.enabled && !value.connectivityChecks
       && !value.publicIPChecks)
