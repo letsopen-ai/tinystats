@@ -104,6 +104,8 @@ import TinyStatsCore
   }
   private var previewKey: PreviewKey?
   private let batteryState: BatteryMenuState?
+  private let tileHeight: CGFloat
+  private let welcomeEnvironment: (() -> GlassSurface.Environment)?
   var selectedStyle: MenuBarStyle? {
     styles.indices.contains(indexOfSelectedItem) ? styles[indexOfSelectedItem] : nil
   }
@@ -119,9 +121,14 @@ import TinyStatsCore
       }
     }
   }
-  init(module: Module, settings: Settings, batteryState: BatteryMenuState? = nil) {
+  init(
+    module: Module, settings: Settings, batteryState: BatteryMenuState? = nil,
+    tileHeight: CGFloat = 40, welcomeEnvironment: (() -> GlassSurface.Environment)? = nil
+  ) {
     self.module = module
     self.batteryState = batteryState
+    self.tileHeight = tileHeight
+    self.welcomeEnvironment = welcomeEnvironment
     super.init(frame: .zero)
     heightConstraint = heightAnchor.constraint(equalToConstant: 44)
     heightConstraint.isActive = true
@@ -139,6 +146,7 @@ import TinyStatsCore
       styles = available
       tiles = styles.map { style in
         let tile = MenuBarStyleTile(style: style)
+        tile.welcomeEnvironment = welcomeEnvironment
         tile.target = self
         tile.action = #selector(selected(_:))
         tile.isEnabled = isEnabled
@@ -194,10 +202,10 @@ import TinyStatsCore
     let width = max(0, (bounds.width - CGFloat(columns - 1) * 8) / CGFloat(columns))
     for (index, tile) in tiles.enumerated() {
       tile.frame = .init(
-        x: CGFloat(index % columns) * (width + 8), y: CGFloat(index / columns) * 48,
-        width: width, height: 40)
+        x: CGFloat(index % columns) * (width + 8), y: CGFloat(index / columns) * (tileHeight + 8),
+        width: width, height: tileHeight)
     }
-    let height = CGFloat(rows) * 48 - 8
+    let height = CGFloat(rows) * (tileHeight + 8) - 8
     if heightConstraint.constant != height { heightConstraint.constant = height }
   }
   @objc private func selected(_ sender: MenuBarStyleTile) {
@@ -230,6 +238,7 @@ import TinyStatsCore
 @MainActor final class MenuBarStyleTile: NSButton {
   let style: MenuBarStyle
   let renderer = MenuBarReadoutView()
+  var welcomeEnvironment: (() -> GlassSurface.Environment)?
   // NSButton is flipped; keep the production renderer's bitmap upright.
   override var isFlipped: Bool { false }
   var increaseContrast: () -> Bool = {
@@ -315,7 +324,8 @@ import TinyStatsCore
   }
   override func draw(_ dirtyRect: NSRect) {
     let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
-    NSColor.controlBackgroundColor.setFill()
+    (welcomeEnvironment.map { SystemStyle.cardFill(onGlass: true, environment: $0()) }
+      ?? NSColor.controlBackgroundColor).setFill()
     path.fill()
     if state == .on {
       SystemStyle.accent.withAlphaComponent(0.12).setFill()

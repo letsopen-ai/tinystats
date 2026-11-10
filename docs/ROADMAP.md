@@ -22,6 +22,8 @@ TinyStats is an early-stage project working toward a lean, native alternative to
 
 See the [distribution checklist](DISTRIBUTION.md). The main open items are:
 
+- Review the five-step magnified-menu-bar welcome on native macOS 14/15 and Intel, including VoiceOver, keyboard traversal and existing online choices; complete the coordinator’s final-tree release validation for 0.37.0 (72).
+
 - Measure and reduce native UI memory overhead; record real costs on current and minimum supported macOS ([Performance](PERFORMANCE.md)).
 - Re-run the current source natively on macOS 14/15 (Apple Silicon) and an Intel Mac, then extend coverage to physical Intel sensors/GPU, more chip generations, laptops with batteries, external storage and multiple GPU drivers ([Compatibility](COMPATIBILITY.md)).
 - Validate raw sensor descriptions per hardware family. Unknown keys must remain identifiable rather than given misleading labels.
