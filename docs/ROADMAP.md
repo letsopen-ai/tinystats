@@ -17,13 +17,14 @@ TinyStats is an early-stage project working toward a lean, native alternative to
 - Step 3 is implemented: inset grouped forms across General/Menu Bar and all existing feature editors, native switches, picture styles, an icon-only Separate/One layout control beside an appearance-aware preview strip, and fixed compact menu-bar geometry. History and Welcome reuse the shared neutral tokens. Settings render fixtures cover light/dark; no fan-control pane is introduced.
 - Process grouping has light/dark dropdown/window/readings fixtures and native keyboard regressions. Real process-churn Release cost and native macOS 14/15/Intel validation remain open; [Performance](PERFORMANCE.md#process-app-grouping-cost-and-bounds) gives operation-count estimates only.
 - The main window and embedded Settings now share a flush full-height sidebar and divider. Owned light/dark glass/solid captures and layout regressions cover the 0.37.2 (74) candidate; physical full-screen transitions and native macOS 14/15/Intel appearance checks remain open.
+- Power visibility per power source and dropdown Energy Mode profiles (0.37.3 (75)) have parser/state tests and owned renders; decide the shipping privilege path (see [Battery › Energy mode](BATTERY.md#energy-mode-profiles-0373)) and validate on a laptop with a battery, a High Power Mac and macOS 14/15.
 - Before release, complete the full final-tree local gate and native light/dark, non-blue accent, resize and physical input checks; offscreen fixture renders do not replace those checks.
 
 ## Before a signed public release
 
 See the [distribution checklist](DISTRIBUTION.md). The main open items are:
 
-- Review the five-step magnified-menu-bar welcome on native macOS 14/15 and Intel, including VoiceOver, keyboard traversal and existing online choices; complete the coordinator’s final-tree release validation for 0.37.2 (74).
+- Review the five-step magnified-menu-bar welcome on native macOS 14/15 and Intel, including VoiceOver, keyboard traversal and existing online choices; complete the coordinator’s final-tree release validation for 0.37.3 (75).
 
 - Measure and reduce native UI memory overhead; record real costs on current and minimum supported macOS ([Performance](PERFORMANCE.md)).
 - Re-run the current source natively on macOS 14/15 (Apple Silicon) and an Intel Mac, then extend coverage to physical Intel sensors/GPU, more chip generations, laptops with batteries, external storage and multiple GPU drivers ([Compatibility](COMPATIBILITY.md)).

@@ -76,6 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   private let clickTrace: MenuBarClickTrace
   private let presentationReporter: ((Bool) -> Void)?
   private let cycleReporter: ((PopoverCycleProbe.Event) -> Void)?
+  /// Reads only when the Power dropdown is shown; changes only on an explicit click.
+  let energyModes: EnergyModeController
 
   init(
     statusItems: StatusItemController = StatusItemController(),
@@ -84,9 +86,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     snapshot: Snapshot = Snapshot(), history: [HistoryPoint] = [],
     clickTrace: MenuBarClickTrace = MenuBarClickTrace(),
     presentationReporter: ((Bool) -> Void)? = nil,
-    cycleReporter: ((PopoverCycleProbe.Event) -> Void)? = nil
+    cycleReporter: ((PopoverCycleProbe.Event) -> Void)? = nil,
+    energyModes: EnergyModeController? = nil
   ) {
     self.statusItems = statusItems
+    self.energyModes = energyModes ?? EnergyModeController()
     self.snapshot = snapshot
     self.history = history
     self.popoverInteraction = popoverInteraction
@@ -98,6 +102,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     popoverInteraction.onEvent = { [weak self] event, result in
       self?.traceClick(event, result: result)
     }
+    self.energyModes.onChange = { [weak self] in self?.updateEnergyModePresentation() }
+  }
+
+  private func updateEnergyModePresentation() {
+    detail?.energyMode = energyModes.presentation(
+      currentSource: PowerSourceKind.current(
+        snapshot.batteries, lastKnown: statusItems.lastConfirmedSource))
+  }
+
+  /// One unprivileged read each time the Power page is presented in the dropdown.
+  private func refreshEnergyModesIfShowing(_ module: Module) {
+    guard module == .battery else { return }
+    updateEnergyModePresentation()
+    energyModes.refresh()
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -134,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         self?.receive(snapshot, history: history, alerts: alerts)
       })
     self.worker = worker
+    energyModes.schedule = { [weak worker] work in worker?.perform(work) }
     worker.start(settings)
     refreshWeatherSource()
     refreshWeatherCities()
@@ -311,6 +330,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       self.refreshWeatherSource()
       self.weatherLocationReader?.requestAuthorization()
     }
+    detail.onEnergyMode = { [weak self] source, mode in
+      self?.energyModes.select(mode, for: source)
+    }
+    detail.onEnergySettings = { [weak self] in self?.energyModes.openEnergySettings() }
     detail.onProcessGrouping = { [weak self] mode in
       guard let self, self.settings.processGrouping != mode else { return }
       self.interruptCycleProbe()
@@ -427,7 +450,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
     return edit
   }
-  private func receive(_ snapshot: Snapshot, history: [HistoryPoint], alerts: [AlertEvent]) {
+  /// The worker's main-actor delivery. Internal so owned-window regressions can drive the
+  /// same power-source transition path without starting a collector.
+  func receive(_ snapshot: Snapshot, history: [HistoryPoint], alerts: [AlertEvent]) {
     var snapshot = snapshot
     snapshot.internetChecks = snapshot.internetChecks.filtered(
       connectivity: settings.connectivityChecks, publicIP: settings.publicIPChecks,
@@ -481,6 +506,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     updateMenuBarPreviewContext()
     if let detail, popover?.isShown == true || mainWindowVisible {
       detail.settings = settings
+      if detail.selected == .battery { updateEnergyModePresentation() }
       detail.update(snapshot, history: self.history)
     }
     for event in alerts where event.canDeliver(with: settings, suspended: paused || sleeping) {
@@ -518,6 +544,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     statusItems.update(
       snapshot: snapshot, history: history, settings: settings, clockDate: clockDate,
       paused: paused, clockOnly: clockOnly)
+    // A power-source change can hide the Power item; its dropdown must not outlive it,
+    // and a click queued during a close animation must not reopen it later.
+    if let pending = pendingStatusOpen, statusItems.hiddenModules.contains(pending.module) {
+      pendingStatusOpen = nil
+    }
+    if popover?.isShown == true, closingPopover == nil, let selected = detail?.selected,
+      statusItems.hiddenModules.contains(selected)
+    {
+      popover?.performClose(nil)
+    }
   }
   private func updateMenuBarPreviewContext() {
     // Adopt legacy/native ⌘-drag order on the existing shared refresh, without a new observer/timer.
@@ -600,6 +636,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     case .switchModule(_, let module):
       // Replace the page without closing the presentation: no didClose can release the new page.
       if let detail {
+        refreshEnergyModesIfShowing(module)
         detail.selected = module
         detail.update(snapshot, history: history)
         worker?.setDetails(true, module: module)
@@ -648,6 +685,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     guard let detail, let popover else { return }
     detail.settings = settings
     detail.paused = paused
+    if previewWindow == nil { refreshEnergyModesIfShowing(module) }
     detail.selected = module
     detail.update(snapshot, history: history)
     if let window = previewWindow {
@@ -709,7 +747,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     previewPopoverCloseDeadline = nil
     if let pending = pendingStatusOpen {
       pendingStatusOpen = nil
-      if PopoverInteraction.screenRect(of: pending.button) != nil {
+      // Revalidate at replay: the module may have hidden while the close animated.
+      if !statusItems.hiddenModules.contains(pending.module),
+        PopoverInteraction.screenRect(of: pending.button) != nil
+      {
         showDetails(relativeTo: pending.button, module: pending.module)
         return
       }
