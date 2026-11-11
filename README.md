@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/macOS-14%2B-6E7781?logo=apple&logoColor=white" alt="macOS 14+">
   <img src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white" alt="Swift 6">
   <img src="https://img.shields.io/badge/AppKit-native-1F6FEB" alt="Native AppKit">
+  <a href="https://github.com/letsopen-ai/tinystats/releases"><img src="https://img.shields.io/github/v/release/letsopen-ai/tinystats?label=latest%20signed%20release" alt="Latest signed release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA043" alt="MIT license"></a>
 </p>
 
@@ -26,7 +27,15 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/overview.jpg" width="760" alt="tinyStats Overview window showing CPU, GPU, memory, startup disk, network and system readings">
+  <img src="docs/images/menubar-separate-light.png" width="420" alt="Compact Separate-layout menu bar readouts for CPU, memory and network">
+</p>
+
+<p align="center">
+  <img src="docs/images/demo-dropdown.gif" width="400" alt="tinyStats One-layout menu bar: opening the CPU dropdown, switching to Memory, Network and Power, then closing">
+</p>
+
+<p align="center">
+  <img src="docs/images/dropdown-cpu-light.png" width="400" alt="tinyStats menu bar in the One layout with the CPU dropdown open">
 </p>
 
 ## What is tinyStats?
@@ -45,45 +54,63 @@ It is an early-stage, MIT-licensed project working toward a lean, open alternati
 | 💽 **Disks** | Volume capacity, read/write rates, per-process I/O and read-only NVMe/ATA SMART health |
 | 🌐 **Network** | Interface traffic, addresses, routes, DNS, Wi-Fi radio details and partial per-process traffic from kernel TCP/UDP statistics |
 | 🌡️ **Sensors** | Temperatures, fan speeds, watts, volts and amps, with a searchable sensor browser and live chart (read-only) |
-| 🔋 **Power** | Internal battery, connected accessories, energy mode and available power readings |
+| 🔋 **Power** | Internal battery, connected accessories, and per-source visibility (show the Power item on adapter, on battery, or both). The Power dropdown can also show Energy Mode (Low Power / Automatic / High Performance where `pmset` reports it); changing a mode requires an explicit click and a macOS administrator prompt |
 | 🕑 **Time** | Month calendar, named world clocks, custom menu bar clocks and an optional calendar agenda |
 | ⛅ **Weather** | Opt-in forecasts from MET Norway: temperature, conditions, precipitation, wind, sunrise and sunset |
 | 📈 **History** | Up to 28 days of local numeric history with peak/average/minimum views, a per-core heatmap and CSV export |
 | 🔔 **Alerts** | Opt-in notification rules for usage, pressure, throughput, sensors, battery, thermal state, SMART and more |
-| 🎛️ **Menu bar** | Pick any readouts and give each one of 14 styles — text, value or icon only, history graphs, gauges, pie, ring, per-core bars or a battery icon |
+| 🎛️ **Menu bar** | Compact readouts in **Separate** (one item per module) or **One** (a single combined item) layout. Click a readout to open its dropdown; in One layout, click another module to switch in the same open dropdown. Give each module one of 14 styles — text, value or icon only, history graphs, gauges, pie, ring, per-core bars or a battery icon |
 
-A five-step welcome tour on first launch helps you choose your menu bar readouts. Readings that your hardware does not expose are shown as unavailable rather than guessed.
+A five-step welcome tour on first launch helps you choose your menu bar readouts. The main window uses a native split for Overview, each module and Settings. Readings that your hardware does not expose are shown as unavailable rather than guessed.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/cpu.jpg" alt="CPU page with per-core usage, E/P cores, top processes and cooling"></td>
-    <td width="50%"><img src="docs/images/sensors.jpg" alt="Sensors page with a searchable list of temperature sensors and a live chart"></td>
+    <td width="50%"><img src="docs/images/overview-light.png" alt="Overview window showing CPU, memory, network, temperature and power on an M4 Mac mini"></td>
+    <td width="50%"><img src="docs/images/menu-bar-settings-light.png" alt="Menu Bar settings with picture-tile styles and Separate or One layout"></td>
   </tr>
   <tr>
-    <td align="center"><sub><b>CPU</b> — per-core load, E/P cores and top processes</sub></td>
+    <td align="center"><sub><b>Overview</b> — native split, live cards and history</sub></td>
+    <td align="center"><sub><b>Menu bar</b> — choose modules, layout and styles</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/welcome-greet-light.png" alt="Welcome tour greet step: Your Mac, at a glance"></td>
+    <td><img src="docs/images/sensors-light.png" alt="Sensors page with a searchable list and a live temperature chart"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Welcome</b> — a five-step graphic tour on first launch</sub></td>
     <td align="center"><sub><b>Sensors</b> — searchable, read-only sensor browser</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/history.jpg" alt="History window showing recorded CPU peaks and a per-core heatmap"></td>
-    <td><img src="docs/images/menu-bar-settings.jpg" alt="Menu Bar settings choosing which metrics appear and in which style"></td>
+    <td><img src="docs/images/overview-dark.png" alt="Overview window in Dark Mode"></td>
+    <td><img src="docs/images/dropdown-cpu-dark.png" alt="Dark Mode CPU dropdown under the One-layout menu bar"></td>
   </tr>
   <tr>
-    <td align="center"><sub><b>History</b> — up to 28 days, with CSV export</sub></td>
-    <td align="center"><sub><b>Menu bar</b> — choose readouts and styles</sub></td>
+    <td align="center"><sub><b>Dark Mode</b> — Overview</sub></td>
+    <td align="center"><sub><b>Dark Mode</b> — menu bar dropdown</sub></td>
   </tr>
 </table>
 
-<sub>The CPU capture uses synthetic fixture data; the others are native captures on an Apple Silicon (M4) Mac.</sub>
+<sub>Dropdown and menu-bar stills (and the demo GIF) are owned-window / gallery-mirror captures on a color backdrop, not a screenshot of the real menu bar, so they do not show a popover arrow. The Overview and Settings windows are the current native split. Some preview readings can be incomplete or fixture data — for example an empty process list or a Sensors chart from a gallery capture. A slightly sharper MP4 of the same dropdown sequence is at [docs/images/demo-dropdown.mp4](docs/images/demo-dropdown.mp4). Extra stills: the welcome tour's [menu bar step](docs/images/welcome-menubar-light.png) and [Menu Bar settings in Dark Mode](docs/images/menu-bar-settings-dark.png).</sub>
 
 ## Requirements
 
 - macOS 14 Sonoma or newer
 - Apple Silicon is the primary target; the universal build also runs on Intel, which has had less testing
-- To build: Xcode 16 or newer (Swift 6 toolchain); Python 3 for `scripts/verify-local.sh` and benchmarks
+- To build: a Swift 6 toolchain whose macOS SDK declares the macOS 26 Liquid Glass types used behind availability checks (Xcode 26 or newer is what we build with). The app’s deployment target remains macOS 14; earlier systems use fallback materials. Python 3 is required by `scripts/build-app.sh` as well as `scripts/verify-local.sh` and the benchmarks.
 
 ## Install
 
-> **Signed builds are coming soon.** For now, tinyStats is built from source.
+### Download a signed build
+
+The latest **signed, notarized** download is [tinyStats 0.36.5](https://github.com/letsopen-ai/tinystats/releases/tag/v0.36.5). Current source on `main` is **0.37.4**, which is ahead of that release (compact menu bar, Separate/One layouts, per-module dropdowns, power visibility and Energy Mode, the redesigned welcome tour, the native main-window split, and immediate dropdown show/hide). Use the signed release if you want a notarized app today; build from source for the latest features until a newer signed build is published.
+
+1. Open the [Releases](https://github.com/letsopen-ai/tinystats/releases) page and download `TinyStats-0.36.5-macOS-universal.zip`.
+2. Unzip it and drag `TinyStats.app` into `/Applications`.
+3. Open the app. The 0.36.5 build is notarized, so Gatekeeper should allow it.
+
+SHA-256 checksums ship alongside the ZIP as `SHA256SUMS.txt`. There is no Homebrew cask yet.
+
+### Build from source
 
 ```sh
 git clone https://github.com/letsopen-ai/tinystats.git
@@ -96,7 +123,7 @@ The build produces `build/TinyStats.app` (and a `build/TinyStats.zip`). Drag `Ti
 
 ### First launch
 
-- tinyStats lives in the menu bar and has no Dock icon. **Click** a readout to open its page; **right-click** for options such as Pause, Settings and the welcome tour.
+- tinyStats lives in the menu bar and has no Dock icon. **Click** a readout to open its dropdown or page; **right-click** for options such as Pause, Settings and the welcome tour.
 - Local builds are ad-hoc signed, not notarized. A build you made on the same Mac normally opens directly. If you copy it to another Mac and Gatekeeper blocks it, **Control-click the app → Open**, or use **System Settings → Privacy & Security → Open Anyway**. Please don't disable Gatekeeper system-wide.
 - To start at login, enable **Launch at login** in **Settings → General**.
 
@@ -149,7 +176,7 @@ The automatic push/PR [release source checks](docs/SELF_HOSTED_CI.md) checks sou
 
 ## Contributing
 
-Bug reports, hardware diagnostics from different Macs, documentation and focused code changes are all welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md), check the [roadmap](docs/ROADMAP.md) for open work, and report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). Changes are recorded in the [changelog](CHANGELOG.md).
+Bug reports, hardware diagnostics from different Macs, documentation and focused code changes are all welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md), check the [roadmap](docs/ROADMAP.md) for open work, and report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). Use the [bug](https://github.com/letsopen-ai/tinystats/issues/new?template=bug_report.yml), [feature](https://github.com/letsopen-ai/tinystats/issues/new?template=feature_request.yml) or [hardware report](https://github.com/letsopen-ai/tinystats/issues/new?template=hardware_report.yml) forms; please don’t file a public issue for a security problem. Changes are recorded in the [changelog](CHANGELOG.md).
 
 ## Acknowledgements
 
