@@ -133,6 +133,32 @@ struct MenuBarClickRouterTests {
           fallback: .cpu, combined: true) == .cpu)
     }
   }
+  @Test(arguments: [false, true])
+  func productionPopoverOpensSwitchesAndDismissesImmediately(combined: Bool) throws {
+    let fixture = try MenuBarRoutingFixture(combined: combined)
+    defer { fixture.close() }
+    let app = try #require(fixture.app)
+    for _ in 0..<2 {
+      app.activateStatusButton(try fixture.target(.cpu).button, event: nil)
+      let popover = try #require(app.popover)
+      let detail = try #require(app.detail)
+      #expect(!popover.animates && popover.isShown)
+      #expect(detail.selected == .cpu && app.popoverInteraction.isMonitoring)
+      #expect(app.popoverInteraction.handle(try fixture.event(.memory, source: 0)) == nil)
+      #expect(app.popover === popover && app.detail === detail)
+      #expect(popover.isShown && detail.selected == .memory)
+      let window = try #require(detail.view.window)
+      let escape = try #require(
+        NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: [], timestamp: 1,
+          windowNumber: window.windowNumber, context: nil, characters: "\u{1b}",
+          charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+      #expect(app.popoverInteraction.handle(escape) == nil)
+      #expect(!popover.isShown && !app.popoverInteraction.isMonitoring)
+    }
+    #expect(fixture.presentations == [true, false, true, false])
+  }
+
   @Test(arguments: [false, true], [0, 1, 2, 3])
   func appDelegateRoutesRealEntries(combined: Bool, source: Int) throws {
     let fixture = try MenuBarRoutingFixture(combined: combined)
@@ -142,7 +168,7 @@ struct MenuBarClickRouterTests {
     let first = try fixture.event(.cpu, source: source)
     app.activateStatusButton(try fixture.target(.cpu).button, event: first)
     #expect(app.detail?.selected == .cpu && app.popover?.isShown == true)
-    app.popover?.animates = false
+    #expect(app.popover?.animates == false)
     let originalDetail = app.detail
     let originalPopover = app.popover
     if source == 2 {
@@ -163,7 +189,6 @@ struct MenuBarClickRouterTests {
       #expect(app.popoverInteraction.handle(second) === second)
       #expect(app.detail?.selected == .cpu)
       app.activateStatusButton(try fixture.target(.cpu).button, event: nil)
-      app.popover?.animates = false
     } else {
       #expect(app.popoverInteraction.handle(second) == nil)
       #expect(app.detail?.selected == .memory && app.popover?.isShown == true)
@@ -174,7 +199,6 @@ struct MenuBarClickRouterTests {
       #expect(app.popover?.isShown == false && !app.popoverInteraction.isMonitoring)
       #expect(fixture.presentations == [true, false])
       app.activateStatusButton(try fixture.target(.cpu).button, event: nil)
-      app.popover?.animates = false
     }
     let dropdown = try #require(app.detail?.view.window)
     // Deliberate overlap: dropdown controls take precedence over a button behind them.
@@ -185,14 +209,15 @@ struct MenuBarClickRouterTests {
     #expect(app.detail?.selected == .cpu && app.popover?.isShown == true)
   }
 
-  @Test func closingPopoverRetainsClickAndAccountsBeforeReopening() throws {
-    let fixture = try MenuBarRoutingFixture(combined: true)
+  @Test(arguments: [false, true])
+  func closingPopoverRetainsClickAndAccountsBeforeReopening(combined: Bool) throws {
+    let fixture = try MenuBarRoutingFixture(combined: combined, modules: [.cpu, .memory, .network])
     defer { fixture.close() }
     let app = try #require(fixture.app)
     let now = ProcessInfo.processInfo.systemUptime
     app.activateStatusButton(try fixture.target(.cpu).button, event: nil)
     let closing = try #require(app.popover)
-    closing.animates = false
+    #expect(!closing.animates)
     // Set up the probe at the close boundary; initial CPU selection would intentionally
     // interrupt a diagnostic probe configured for Network. No timer or real-time wait.
     var probe = PopoverCycleProbe(
@@ -202,14 +227,19 @@ struct MenuBarClickRouterTests {
     _ = probe.didShow(true, at: now - 10)
     #expect(probe.tick(at: now - 5)?.command == .close)
     app.previewCycleProbe = probe
+    // Hold the notification boundary explicitly, independent of native animation/timing.
     app.popoverWillClose(.init(name: NSPopover.willCloseNotification, object: closing))
     let click = try fixture.event(.memory, source: 1)
     #expect(app.popoverInteraction.handle(click) == nil)
     #expect(app.detail?.selected == .cpu)  // Do not switch into a closing presentation.
+    let lastClick = try fixture.event(.network, source: 0)
+    #expect(app.popoverInteraction.handle(lastClick) == nil)
+    #expect(app.detail?.selected == .cpu && fixture.presentations == [true])
     closing.close()
     #expect(fixture.presentations == [true, false, true])
     #expect(fixture.cycles.contains { $0.kind == .closed })
-    #expect(app.popover?.isShown == true && app.detail?.selected == .memory)
+    #expect(app.popover === closing && !closing.animates)
+    #expect(app.popover?.isShown == true && app.detail?.selected == .network)
     #expect(app.popoverInteraction.isMonitoring)
   }
 
@@ -253,7 +283,6 @@ struct MenuBarClickRouterTests {
       fixture.cursor = try fixture.screenPoint(.memory)
       app.activateStatusButton(button, event: event)
       #expect(app.detail?.selected == .cpu && app.popover?.isShown == true)
-      app.popover?.animates = false
       app.popover?.close()
     }
     let stale = try fixture.event(.memory, source: 1)
@@ -285,7 +314,6 @@ struct MenuBarClickRouterTests {
     defer { fixture.close() }
     let app = try #require(fixture.app)
     app.activateStatusButton(try fixture.target(.cpu).button, event: nil)
-    app.popover?.animates = false
     fixture.cursor = try fixture.screenPoint(.memory)
     // A nil/foreign process window can carry unusable local coordinates. The injected
     // handling-time mouse position is the sole coordinate source for this shape.
