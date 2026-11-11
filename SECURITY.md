@@ -2,11 +2,11 @@
 
 ## Report a vulnerability privately
 
-Please use [GitHub private vulnerability reporting](https://github.com/niechen/tinystats/security/advisories/new) to send a report to the repository's security advisory workflow. Do not open a public issue with exploit details, personal data or credentials. The maintainer is [@niechen](https://github.com/niechen).
+Please use [GitHub private vulnerability reporting](https://github.com/letsopen-ai/tinystats/security/advisories/new) to send a report to the repository's security advisory workflow. If that form is not available, email the maintainer at [git@cnie.xyz](mailto:git@cnie.xyz). Do not open a public issue with exploit details, personal data or credentials. The maintainer is [@niechen](https://github.com/niechen).
 
 Include the affected version/commit, macOS version and architecture, reproduction steps, expected impact and a minimal sanitized example. Share only the information needed to reproduce the problem. Maintainers will coordinate investigation and disclosure through the advisory; there is no guaranteed response time or supported-version backport schedule yet. This is a preview project; please reproduce on the latest source when practical.
 
-If GitHub does not offer the private reporting form, the maintainer needs to enable private vulnerability reporting before it can accept reports there. Do not substitute a public vulnerability issue; contact the maintainer to request a private reporting channel without posting the details.
+If GitHub does not offer the private reporting form, email [git@cnie.xyz](mailto:git@cnie.xyz) and ask for a private channel rather than filing a public vulnerability issue. The maintainer should also enable GitHub private vulnerability reporting on this repository so the advisory form works for everyone.
 
 ## Current boundaries
 

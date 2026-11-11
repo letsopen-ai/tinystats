@@ -4,7 +4,7 @@ Welcome! Reports from different Macs, clear reproductions, documentation fixes a
 
 ## Development setup
 
-Use macOS 14+ with a Swift 6 toolchain (Xcode 16 or newer). Apple Silicon is the first validation target; the universal package also compiles Intel. Native Intel and macOS 14/15 execution must be recorded separately from cross-compilation.
+Use macOS 14+ with a Swift 6 toolchain whose macOS SDK declares the macOS 26 Liquid Glass types used behind availability checks (Xcode 26 or newer is what we build with). The app still deploys to macOS 14, with fallback materials on earlier systems. Apple Silicon is the first validation target; the universal package also compiles Intel. Native Intel and macOS 14/15 execution must be recorded separately from cross-compilation. Python 3 is required by `scripts/build-app.sh` as well as the local validation and benchmark tools.
 
 Fork the repository if you do not have write access, then clone your fork. Contributors with write access can clone this repository directly. Create a feature branch from an up-to-date `main`, for example `docs/history-guide` or `fix/counter-reset`. Submit changes through a pull request targeting `main`; do not commit directly to `main` or force-push shared branches.
 
@@ -14,7 +14,7 @@ scripts/build-app.sh --universal
 open build/TinyStats.app
 ```
 
-The build writes `build/TinyStats.app` and `build/TinyStats.zip`, using ad-hoc signing by default. Developer ID signing/notarization is a maintainer distribution step, not a prerequisite for a contribution. Python 3 is needed for the local validation/benchmark tools. See [Distribution](docs/DISTRIBUTION.md).
+The build writes `build/TinyStats.app` and `build/TinyStats.zip`, using ad-hoc signing by default. Developer ID signing/notarization is a maintainer distribution step, not a prerequisite for a contribution. See [Distribution](docs/DISTRIBUTION.md).
 
 ## Architecture and code style
 
@@ -61,7 +61,7 @@ Documentation-only changes need `git diff --check` and a factual/link review, wi
 
 ## Hardware diagnostics
 
-Use the [hardware report form](https://github.com/niechen/tinystats/issues/new?template=hardware_report.yml). Include your Mac model/model identifier, chip (or Intel CPU/GPU), macOS version/build and TinyStats version or commit. Do not include a serial number or hardware UUID.
+Use the [hardware report form](https://github.com/letsopen-ai/tinystats/issues/new?template=hardware_report.yml). Include your Mac model/model identifier, chip (or Intel CPU/GPU), macOS version/build and TinyStats version or commit. Do not include a serial number or hardware UUID.
 
 ```sh
 build/TinyStats.app/Contents/MacOS/TinyStats --diagnose --hardware

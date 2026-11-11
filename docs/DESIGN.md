@@ -1,6 +1,6 @@
 # TinyStats design
 
-2026-10-22 · main · niechen/tinystats · Builder mode
+2026-10-22 · main · letsopen-ai/tinystats
 
 ## Problem
 Keep a Mac's core system information within one click without the monitor itself becoming a meaningful source of CPU work, memory use, disk writes, or network traffic. Target: developers and power users who want iStat Menus-style local visibility and an inspectable, small native app.
