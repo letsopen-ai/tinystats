@@ -274,6 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     detail.onOpenInWindow = { [weak self] in self?.openDetailsInWindow() }
     detail.view.appearance = settings.theme.nativeAppearance
     let popover = NSPopover()
+    popover.animates = false
     self.detail = detail
     self.popover = popover
     // Native transient dismissal can consume the click on another status item
@@ -545,7 +546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       snapshot: snapshot, history: history, settings: settings, clockDate: clockDate,
       paused: paused, clockOnly: clockOnly)
     // A power-source change can hide the Power item; its dropdown must not outlive it,
-    // and a click queued during a close animation must not reopen it later.
+    // and a click queued while a close is in flight must not reopen it later.
     if let pending = pendingStatusOpen, statusItems.hiddenModules.contains(pending.module) {
       pendingStatusOpen = nil
     }
@@ -644,8 +645,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       }
     case .open(let module):
       if closingPopover != nil {
-        // Last click wins during native close animation. didClose opens it immediately;
-        // no timer and no page switch into a presentation that is already disappearing.
+        // Last click wins between close notifications, even without animation.
+        // didClose replays it without a timer or switching into a closing presentation.
         pendingStatusOpen = (module, sender)
       } else {
         showDetails(relativeTo: sender, module: module)
@@ -747,7 +748,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     previewPopoverCloseDeadline = nil
     if let pending = pendingStatusOpen {
       pendingStatusOpen = nil
-      // Revalidate at replay: the module may have hidden while the close animated.
+      // Revalidate at replay: the module may have hidden before the close completed.
       if !statusItems.hiddenModules.contains(pending.module),
         PopoverInteraction.screenRect(of: pending.button) != nil
       {
