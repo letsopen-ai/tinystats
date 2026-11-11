@@ -151,6 +151,7 @@ tinyStats is local-first. Monitoring needs no account, and the app contains no a
 | Weather | Opt-in, **off by default** | Sends rounded coordinates to **MET Norway** (`api.met.no`), which also sees your public IP. Current location requires macOS location permission; a manual city works without it. [More](docs/WEATHER.md) |
 | Internet checks | Opt-in, **off by default** | HTTPS checks (Apple preset or your URL), public-IP lookup via ipify and ICMP ping to an address you choose (no default). Each destination sees your IP. [More](docs/INTERNET.md) |
 | Calendar agenda | Opt-in, **off by default** | Read on-device with your permission, only while the Time page is open; never saved or uploaded. [More](docs/CALENDAR.md) |
+| Energy Mode | **No** | Applying Low Power, Automatic or High Performance from the Power dropdown can present a macOS administrator authorization prompt. The change runs only after an explicit click; tinyStats does not keep administrator privileges. [More](docs/BATTERY.md#energy-mode-profiles-0373) |
 
 tinyStats installs no helper tools or system services; the only thing it registers is itself as a login item, and only if you turn on **Launch at login**. Fan readings are strictly read-only — the app never writes fan speeds. An experimental privileged traffic service and fan-control policy exist in the source tree but are unbundled and not enabled; see [Privileged traffic](docs/PRIVILEGED-TRAFFIC.md) and [Fan control](docs/FAN-CONTROL.md).
 

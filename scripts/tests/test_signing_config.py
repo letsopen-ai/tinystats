@@ -14,7 +14,7 @@ class ScopedSigningTests(unittest.TestCase):
         self.assertEqual(codesign_keychain_arguments({}), [])
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'signing keychain-db'; path.write_bytes(b'fixture'); path.chmod(0o600)
-            env = {'TELEFRAME_SIGNING_KEYCHAIN': str(path)}
+            env = {'TINYSTATS_SIGNING_KEYCHAIN': str(path)}
             self.assertEqual(identity_keychain_arguments(env), [str(path)])
             self.assertEqual(codesign_keychain_arguments(env), ['--keychain', str(path)])
             with patch('signing_config.os.getuid', return_value=os.getuid() + 1):
@@ -24,7 +24,7 @@ class ScopedSigningTests(unittest.TestCase):
             path.chmod(0o600)
             link = Path(directory) / 'link'; link.symlink_to(path)
             with self.assertRaises(ValueError):
-                identity_keychain_arguments({'TELEFRAME_SIGNING_KEYCHAIN': str(link)})
+                identity_keychain_arguments({'TINYSTATS_SIGNING_KEYCHAIN': str(link)})
             path.unlink()
             with self.assertRaises(ValueError): identity_keychain_arguments(env)
 

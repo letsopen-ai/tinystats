@@ -128,7 +128,7 @@ def main():
         if not re.fullmatch(r'[A-Z0-9]{10}', team) or not re.fullmatch(r'[A-Fa-f0-9]{40}', wanted):
             raise RuntimeError('Invalid Apple team or signing fingerprint')
     else:
-        config = json.loads((Path.home() / 'Library/Application Support/Teleframe/Signing/apple-signing.json').read_text())
+        config = json.loads((Path.home() / 'Library/Application Support/TinyStats/Signing/apple-signing.json').read_text())
         wanted, team = config['developerIDIdentity'], config['team']
     listing = run(['security', 'find-identity', '-v', '-p', 'codesigning', *identity_keychain_arguments(os.environ)], True).stdout
     matches = [(key, name) for key, name in re.findall(r'([0-9A-Fa-f]{40}) \"(Developer ID Application:[^\"]+)\"', listing)
@@ -145,7 +145,7 @@ def main():
     os.environ['TINYSTATS_SIGN_IDENTITY'] = identity
     run(['scripts/build-app.sh', '--universal'])
     submission = run(['xcrun', 'notarytool', 'submit', 'build/TinyStats.zip',
-                      '--keychain-profile', os.environ.get('TELEFRAME_NOTARY_PROFILE', 'teleframe-notary'),
+                      '--keychain-profile', os.environ.get('TINYSTATS_NOTARY_PROFILE', 'tinystats-notary'),
                       *keychain_arguments(os.environ), '--wait', '--output-format', 'json'], True)
     submission_id = check_notary(submission.stdout)
     app = ROOT / 'build/TinyStats.app'
