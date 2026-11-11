@@ -76,13 +76,13 @@ import TinyStatsCore
   #expect(!save.isEnabled && controller.numberOfRows(in: table) == 0)
   try worldAction(save)
   #expect(saved.isEmpty && demands.last! == nil)
-  field.stringValue = "时钟 {hour24}:{minute} {{ok}}"
+  field.stringValue = "Clock {hour24}:{minute} {{ok}}"
   controller.controlTextDidChange(
     Notification(name: NSControl.textDidChangeNotification, object: field))
   #expect(save.isEnabled && demands.last == false)
   settings.theme = .dark
   controller.updateSettings(settings)
-  #expect(field.stringValue == "时钟 {hour24}:{minute} {{ok}}")
+  #expect(field.stringValue == "Clock {hour24}:{minute} {{ok}}")
   try worldAction(save)
   #expect(saved == [field.stringValue])
   let window = try #require(controller.window)
