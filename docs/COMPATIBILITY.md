@@ -20,12 +20,13 @@ Hardware APIs vary by model and macOS version. TinyStats never assumes that an S
 
 ## Running the checks on another host
 
-Run on the actual host you want to test, for example:
+Building current source requires a Swift 6 toolchain whose macOS SDK declares the macOS 26 Liquid Glass types (Xcode 26 or newer is what we build with). Older toolchains such as Xcode 16 cannot compile this tree, even though the app's deployment target remains macOS 14.
+
+Run the checks on the actual host you want to test, for example:
 
 ```sh
 scripts/verify-local.sh                       # host architecture and OS, universal package
 scripts/ci-macos.sh x86_64 15 native          # Intel Mac on macOS 15
-DEVELOPER_DIR=/Applications/Xcode_16.2.app/Contents/Developer scripts/ci-macos.sh arm64 14 native
 ```
 
 `scripts/ci-macos.sh` fails if the actual architecture or macOS major version differs from the arguments, or if it is running under Rosetta. Logs go to `build/ci`. Use a clean checkout and note the commit when sharing results.

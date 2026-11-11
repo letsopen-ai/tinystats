@@ -51,8 +51,8 @@ def run(environment):
             with signing_keychain(root, root / 'certificate.p12', environment['MACOS_CERTIFICATE_PASSWORD']) as keychain:
                 child = {key: value for key, value in environment.items() if key not in SECRET_NAMES}
                 child.update({'TINYSTATS_DEVELOPER_ID': fingerprint, 'APPLE_TEAM_ID': team,
-                    'TELEFRAME_NOTARY_PROFILE': 'tinystats-ci', 'TELEFRAME_SIGNING_KEYCHAIN': str(keychain),
-                    'TELEFRAME_NOTARY_KEYCHAIN': str(keychain)})
+                    'TINYSTATS_NOTARY_PROFILE': 'tinystats-ci', 'TINYSTATS_SIGNING_KEYCHAIN': str(keychain),
+                    'TINYSTATS_NOTARY_KEYCHAIN': str(keychain)})
                 command(['xcrun', 'notarytool', 'store-credentials', 'tinystats-ci',
                          '--key', root / 'AuthKey.p8', '--key-id', environment['APPLE_NOTARY_KEY_ID'],
                          '--issuer', environment['APPLE_NOTARY_ISSUER_ID'], '--keychain', keychain],

@@ -12,7 +12,6 @@ from pathlib import Path
 import platform
 import re
 import subprocess
-import sys
 from datetime import datetime, timezone
 
 APP = 'tinystats'
@@ -81,14 +80,7 @@ def record(root=ROOT):
         raise RuntimeError('Record native validation locally on a Mac, outside GitHub Actions')
     clean_inputs(root)
     before = fingerprint(root)
-    if APP == 'tinystats':
-        commands = [('complete-local-gate', ['bash', 'scripts/verify-local.sh'])]
-    else:
-        commands = [
-            ('release-regressions', [sys.executable, '-m', 'unittest', 'discover', '-s', 'scripts/tests', '-p', 'test*release*py']),
-            ('native-executable', ['swift', 'build', '--product', 'TeleframeMac', '--jobs', '4']),
-            ('native-core-tests', ['swift', 'test', '--jobs', '4', '--no-parallel', '--filter', 'TeleframeCoreTests']),
-        ]
+    commands = [('complete-local-gate', ['bash', 'scripts/verify-local.sh'])]
     logs = root / 'build/local-release-validation'
     logs.mkdir(parents=True, mode=0o700, exist_ok=True)
     for label, command in commands:
@@ -99,11 +91,6 @@ def record(root=ROOT):
             result = subprocess.run(command, cwd=root, stdout=output, stderr=subprocess.STDOUT)
         if result.returncode:
             raise RuntimeError(label + ' failed; inspect build/local-release-validation locally')
-        text = path.read_text(errors='replace')
-        if label == 'native-core-tests' and not re.search(r'Test run with [1-9][0-9]* tests?(?: in [0-9]+ suites?)? passed', text):
-            raise RuntimeError('Native tests did not report a completed nonempty pass')
-        if label == 'release-regressions' and not re.search(r'Ran [1-9][0-9]* tests?', text):
-            raise RuntimeError('Release regression discovery was empty')
     clean_inputs(root)
     if fingerprint(root) != before:
         raise RuntimeError('Native release inputs changed during local validation')

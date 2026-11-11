@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def identity_keychain_arguments(environment):
-    value = environment.get('TELEFRAME_SIGNING_KEYCHAIN')
+    value = environment.get('TINYSTATS_SIGNING_KEYCHAIN')
     if value is None:
         return []
     path = Path(value)
