@@ -18,13 +18,14 @@ TinyStats is an early-stage project working toward a lean, native alternative to
 - Process grouping has light/dark dropdown/window/readings fixtures and native keyboard regressions. Real process-churn Release cost and native macOS 14/15/Intel validation remain open; [Performance](PERFORMANCE.md#process-app-grouping-cost-and-bounds) gives operation-count estimates only.
 - The main window and embedded Settings now share a flush full-height sidebar and divider. Owned light/dark glass/solid captures and layout regressions cover the 0.37.2 (74) candidate; physical full-screen transitions and native macOS 14/15/Intel appearance checks remain open.
 - Power visibility per power source and dropdown Energy Mode profiles (0.37.3 (75)) have parser/state tests and owned renders; decide the shipping privilege path (see [Battery › Energy mode](BATTERY.md#energy-mode-profiles-0373)) and validate on a laptop with a battery, a High Power Mac and macOS 14/15.
+- Dropdown show/hide is immediate in 0.37.4 (76), with native animation disabled and one-click Separate/One module switching preserved. Owned-window fixtures cover configuration, routing and close-in-flight replay; physical status-item transitions remain a native check.
 - Before release, complete the full final-tree local gate and native light/dark, non-blue accent, resize and physical input checks; offscreen fixture renders do not replace those checks.
 
 ## Before a signed public release
 
 See the [distribution checklist](DISTRIBUTION.md). The main open items are:
 
-- Review the five-step magnified-menu-bar welcome on native macOS 14/15 and Intel, including VoiceOver, keyboard traversal and existing online choices; complete the coordinator’s final-tree release validation for 0.37.3 (75).
+- Review the five-step magnified-menu-bar welcome on native macOS 14/15 and Intel, including VoiceOver, keyboard traversal and existing online choices; complete the coordinator’s final-tree release validation for 0.37.4 (76).
 
 - Measure and reduce native UI memory overhead; record real costs on current and minimum supported macOS ([Performance](PERFORMANCE.md)).
 - Re-run the current source natively on macOS 14/15 (Apple Silicon) and an Intel Mac, then extend coverage to physical Intel sensors/GPU, more chip generations, laptops with batteries, external storage and multiple GPU drivers ([Compatibility](COMPATIBILITY.md)).

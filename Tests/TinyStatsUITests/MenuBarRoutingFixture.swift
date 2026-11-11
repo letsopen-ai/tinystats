@@ -86,7 +86,6 @@ import TinyStatsCore
 
   func close() {
     app.popoverInteraction.stop()
-    app.popover?.animates = false
     app.popover?.close()
     for window in statusWindows + [unrelated] { window.close() }
   }

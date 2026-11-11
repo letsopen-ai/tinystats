@@ -131,7 +131,6 @@ import Testing
     clickTrace: MenuBarClickTrace(environment: [:]))
   defer {
     app.popoverInteraction.stop()
-    app.popover?.animates = false
     app.popover?.close()
   }
   // The gallery's compositor surface mirrors the page selected by the real delegate.
@@ -147,17 +146,46 @@ import Testing
   let interaction = app.popoverInteraction
   func record(_ label: String) {
     sequence.append(
-      "\(label) selected=\(app.detail?.selected.rawValue ?? "unavailable") shown=\(app.popover?.isShown == true)"
+      "\(label) selected=\(app.detail?.selected.rawValue ?? "unavailable") shown=\(app.popover?.isShown == true) animates=\(app.popover?.animates == true)"
     )
   }
   window.orderFrontRegardless()
   let glassRequested = ProcessInfo.processInfo.environment["TINYSTATS_SYSTEM_GLASS_CAPTURE"] == "1"
   var capturedGlass = false
+  func capture(_ stem: String) async throws {
+    root.needsDisplay = true
+    root.layoutSubtreeIfNeeded()
+    try menuBarClickBitmap(root, to: folder.appendingPathComponent(stem + "-bitmap.png"))
+    if glassRequested, #available(macOS 26, *), CGPreflightScreenCaptureAccess() {
+      let glass = folder.appendingPathComponent("glass", isDirectory: true)
+      try FileManager.default.createDirectory(at: glass, withIntermediateDirectories: true)
+      window.orderFrontRegardless()
+      window.displayIfNeeded()
+      let content = try await SCShareableContent.excludingDesktopWindows(
+        true, onScreenWindowsOnly: false)
+      let owned = try #require(
+        content.windows.first { $0.windowID == CGWindowID(window.windowNumber) })
+      let config = SCStreamConfiguration()
+      config.width = Int(window.frame.width * window.backingScaleFactor)
+      config.height = Int(window.frame.height * window.backingScaleFactor)
+      config.scalesToFit = true
+      config.showsCursor = false
+      config.ignoreShadowsSingleWindow = true
+      let captured = try await SCScreenshotManager.captureImage(
+        contentFilter: SCContentFilter(desktopIndependentWindow: owned), configuration: config)
+      try #require(
+        NSBitmapImageRep(cgImage: captured).representation(using: .png, properties: [:])
+      )
+      .write(to: glass.appendingPathComponent(stem + "-glass.png"))
+      capturedGlass = true
+    }
+  }
   for theme in [AppTheme.light, .dark] {
     root.appearance = theme.nativeAppearance
     window.appearance = theme.nativeAppearance
     controller.settings.theme = theme
     app.popover?.close()
+    controller.view.isHidden = false
     for module in modules {
       let segment = try #require(renderer.segments.first { $0.module == module })
       let point = routingReadout.convert(.init(x: segment.frame.midX, y: 12), to: nil)
@@ -169,45 +197,23 @@ import Testing
           eventNumber: 1, clickCount: 1, pressure: 1))
       if app.popover?.isShown != true {
         app.activateStatusButton(routingButton, event: event)
-        app.popover?.animates = false
       } else {
         let presented = app.popover
         #expect(interaction.handle(event) == nil)
         #expect(app.popover === presented)
       }
+      #expect(app.popover?.animates == false)
       #expect(app.popover?.isShown == true && app.detail?.selected == module)
       record("click=\(module.rawValue)")
       controller.selected = try #require(app.detail).selected
       controller.update(snapshot, history: history)
       root.clickX = renderer.convert(.init(x: segment.frame.midX, y: 12), to: root).x
-      caption.stringValue = "One layout · simulated click: \(module.title)"
-      root.needsDisplay = true
-      root.layoutSubtreeIfNeeded()
-      let filename = "combined-item-\(module.rawValue)-\(theme.rawValue).png"
-      try menuBarClickBitmap(root, to: folder.appendingPathComponent(filename))
-      if glassRequested, #available(macOS 26, *), CGPreflightScreenCaptureAccess() {
-        let glass = folder.appendingPathComponent("glass", isDirectory: true)
-        try FileManager.default.createDirectory(at: glass, withIntermediateDirectories: true)
-        window.orderFrontRegardless()
-        window.displayIfNeeded()
-        let content = try await SCShareableContent.excludingDesktopWindows(
-          true, onScreenWindowsOnly: false)
-        let owned = try #require(
-          content.windows.first { $0.windowID == CGWindowID(window.windowNumber) })
-        let config = SCStreamConfiguration()
-        config.width = Int(window.frame.width * window.backingScaleFactor)
-        config.height = Int(window.frame.height * window.backingScaleFactor)
-        config.scalesToFit = true
-        config.showsCursor = false
-        config.ignoreShadowsSingleWindow = true
-        let captured = try await SCScreenshotManager.captureImage(
-          contentFilter: SCContentFilter(desktopIndependentWindow: owned), configuration: config)
-        try #require(
-          NSBitmapImageRep(cgImage: captured).representation(using: .png, properties: [:])
-        )
-        .write(to: glass.appendingPathComponent(filename))
-        capturedGlass = true
-      }
+      caption.stringValue =
+        module == modules[0]
+        ? "One layout · \(module.title) open"
+        : "One layout · one-click switch to \(module.title)"
+      let transition = module == modules[0] ? "open" : "switch"
+      try await capture("combined-item-\(module.rawValue)-\(transition)-\(theme.rawValue)")
     }
     let batterySegment = try #require(renderer.segments.last)
     let toggle = try #require(
@@ -221,8 +227,10 @@ import Testing
     #expect(interaction.handle(toggle) == nil)
     #expect(app.popover?.isShown == false && !interaction.isMonitoring)
     record("battery-toggle")
+    controller.view.isHidden = true
+    caption.stringValue = "One layout · Power toggled closed"
+    try await capture("combined-item-battery-closed-\(theme.rawValue)")
     app.activateStatusButton(routingButton, event: nil)
-    app.popover?.animates = false
     record("reopen-default")
     let outside = NSWindow(
       contentRect: .init(x: 900, y: 100, width: 100, height: 100),

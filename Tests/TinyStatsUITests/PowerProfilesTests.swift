@@ -451,7 +451,7 @@ private let macMiniFixture = "AC Power:\n lowpowermode         0\n sleep 0\n"
   app.activateStatusButton(
     try fixture.target(.battery).button, event: try fixture.event(.battery, source: 0))
   #expect(app.detail?.selected == .battery && app.popover?.isShown == true)
-  app.popover?.animates = false
+  #expect(app.popover?.animates == false)
   await settle { reader.count == 1 && energy.reading != nil }
   #expect(reader.count == 1 && applier.calls.isEmpty)
   #expect(app.detail?.energyMode.rows.first?.isCurrentSource == true)
@@ -475,7 +475,6 @@ private let macMiniFixture = "AC Power:\n lowpowermode         0\n sleep 0\n"
   let cpu = try fixture.event(.cpu, source: 1)
   #expect(app.routeStatusEvent(cpu))
   #expect(app.detail?.selected == .cpu && app.popover?.isShown == true)
-  app.popover?.animates = false
   app.popover?.close()
   // Plug back in: Power returns without any settings change.
   deliver(app, batteries: [battery(external: true)])
@@ -491,7 +490,7 @@ private let macMiniFixture = "AC Power:\n lowpowermode         0\n sleep 0\n"
 }
 
 @Test @MainActor func closingPopoverDiscardsQueuedPowerClickWhenPowerHidesBeforeReplay() throws {
-  // Sibling of closingPopoverRetainsClickAndAccountsBeforeReopening: same close-animation
+  // Sibling of closingPopoverRetainsClickAndAccountsBeforeReopening: same close-in-flight
   // queue, but a source change hides Power before didClose. The shared One button stays
   // visible, so only module revalidation can stop the replay.
   var settings = Settings()
@@ -507,13 +506,12 @@ private let macMiniFixture = "AC Power:\n lowpowermode         0\n sleep 0\n"
   #expect(fixture.items.hiddenModules.isEmpty)
   app.activateStatusButton(try fixture.target(.cpu).button, event: nil)
   let closing = try #require(app.popover)
-  closing.animates = false
   #expect(closing.isShown && app.detail?.selected == .cpu)
   app.popoverWillClose(.init(name: NSPopover.willCloseNotification, object: closing))
   let power = try fixture.event(.battery, source: 1)
   #expect(app.popoverInteraction.handle(power) == nil, "queued for didClose")
   #expect(app.detail?.selected == .cpu)
-  // Unplug during the close animation: Power hides; the shared button remains on screen.
+  // Unplug between close notifications: Power hides; the shared button remains on screen.
   deliver(app, batteries: [battery(external: false)])
   #expect(fixture.items.hiddenModules == [.battery])
   let shared = try #require(fixture.items.targets.first)
@@ -545,7 +543,6 @@ private let macMiniFixture = "AC Power:\n lowpowermode         0\n sleep 0\n"
   #expect(target.module == .overview, "routing and rendering share one module list")
   // Keyboard/VoiceOver press: no event, production fallback calculation.
   app.activateStatusButton(target.button, event: nil)
-  app.popover?.animates = false
   #expect(app.detail?.selected == .overview && app.popover?.isShown == true)
   // The next sample does not close it: Overview is not a hidden module.
   deliver(app, batteries: [battery(external: false)])
