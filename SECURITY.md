@@ -10,6 +10,8 @@ If GitHub does not offer the private reporting form, email [git@cnie.xyz](mailto
 
 ## Current boundaries
 
+- Signed-release updates require pinned Developer ID team `CVQJTDR4LG`, notarization, Gatekeeper, SHA-256 agreement, HTTPS allowlisted hosts and a strictly newer version/build. See [Updates](docs/UPDATES.md) for trust boundaries and rollback limitations.
+
 - SMC sensor collection is read-only. The app does not write fan settings.
 - The privileged traffic helper is experimental, unbundled and unshipped. It must not install/register itself or run by default; signed-peer/root runtime validation and integration gates remain open. See [Privileged traffic](docs/PRIVILEGED-TRAFFIC.md).
 - Fan control is experimental, unlinked decision logic, with no enabled hardware writer. Actuation, recovery and physical validation remain unshipped. See [Fan control](docs/FAN-CONTROL.md).

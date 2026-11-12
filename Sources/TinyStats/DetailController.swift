@@ -38,6 +38,18 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let weatherScroll = PopoverScrollView()
   private let openWindowRow = MenuActionRow()
   private let footerSeparator = NSBox()
+  private let updateButton = MenuActionRow()
+  var onRestartUpdate: (() -> Void)?
+  var updateReady: String? {
+    didSet {
+      guard isViewLoaded else { return }
+      updateButton.toolTip = updateReady.map { "Update \($0) ready — restart to install" }
+      updateButton.setAccessibilityLabel(
+        updateReady.map { "Restart to install TinyStats \($0)" } ?? "Update")
+      updateButton.isHidden = !isPopoverPresentation || updateReady == nil
+      layoutContent()
+    }
+  }
   private struct PopoverKeyViewLayout: Equatable {
     let window: ObjectIdentifier
     let module: Module
@@ -45,6 +57,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     let paused: Bool
     let weatherEnabled: Bool
     let weatherSource: WeatherLocationSource
+    let updateReady: Bool
     let size: NSSize
   }
   private var popoverKeyViewLayout: PopoverKeyViewLayout?
@@ -164,6 +177,16 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     openWindowRow.target = self
     openWindowRow.action = #selector(openInWindow)
     view.addSubview(openWindowRow)
+    updateButton.title = "Restart to Update"
+    updateButton.setIcon("arrow.down.circle.fill", fallback: "↓")
+    updateButton.usesIconPresentation = true
+    updateButton.target = self
+    updateButton.action = #selector(restartUpdate)
+    updateButton.isHidden = updateReady == nil
+    updateButton.toolTip = updateReady.map { "Update \($0) ready — restart to install" }
+    updateButton.setAccessibilityLabel(
+      updateReady.map { "Restart to install TinyStats \($0)" } ?? "Update")
+    view.addSubview(updateButton)
     footerSeparator.boxType = .separator
     view.addSubview(footerSeparator)
     historyButton.title = "History…"
@@ -263,8 +286,12 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     sensorSearch.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
     chart.usesPanelGlass = isPopoverPresentation
     chart.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
+    updateButton.isHidden = !isPopoverPresentation || updateReady == nil
     openWindowRow.isHidden = !isPopoverPresentation
-    if !isPopoverPresentation { openWindowRow.frame.origin.y = 60 }
+    if !isPopoverPresentation {
+      openWindowRow.frame.origin.y = 60
+      updateButton.frame.origin.y = 60
+    }
     weatherScroll.isHidden = !isPopoverPresentation
     if let weatherDashboard {
       weatherDashboard.usesPopoverLayout = isPopoverPresentation
@@ -291,7 +318,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
         view.addSubview(summary)
       }
     }
-    for button in [historyButton, openWindowRow, readingsButton, pauseButton] {
+    for button in [historyButton, openWindowRow, readingsButton, updateButton, pauseButton] {
       button.glassEnvironment = { [weak self] in self?.glassEnvironment() ?? .current }
       button.usesIconPresentation = isPopoverPresentation
       button.isBordered = !isPopoverPresentation
@@ -299,7 +326,11 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       button.alignment = .center
       button.font = .systemFont(ofSize: 12)
     }
+    if isPopoverPresentation {
+      updateButton.setIcon("arrow.down.circle.fill", fallback: "arrow.down.circle")
+    }
   }
+  @objc private func restartUpdate() { onRestartUpdate?() }
   @objc private func openInWindow() { onOpenInWindow?() }
   private func add(_ child: NSView, x: Int, y: Int, w: Int, h: Int) {
     child.frame = NSRect(x: x, y: y, width: w, height: h)
@@ -434,6 +465,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     }
     pauseButton.frame = .init(
       x: w - inset - 4 - actionSize, y: inset + 3, width: actionSize, height: actionSize)
+    updateButton.frame = .init(
+      x: pauseButton.frame.minX - actionSize - SystemStyle.Space.gap, y: inset + 3,
+      width: actionSize, height: actionSize)
     let bottom = barTop + 4
     footerSeparator.frame = .init(x: inset + 4, y: barTop, width: width - 8, height: 0.5)
     titleLabel.frame = .init(x: x, y: h - 39, width: width - 24, height: 20)
@@ -513,7 +547,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       let keyLayout = PopoverKeyViewLayout(
         window: ObjectIdentifier(window), module: selected, allReadings: showsAllReadings,
         paused: paused, weatherEnabled: settings.weather.enabled,
-        weatherSource: settings.weather.source, size: view.bounds.size)
+        weatherSource: settings.weather.source, updateReady: updateReady != nil,
+        size: view.bounds.size)
       if keyLayout != popoverKeyViewLayout {
         // New/hidden module controls need a fresh native loop after their final frames.
         // Keep content controls reachable; unchanged samples do not rebuild traversal.
@@ -672,7 +707,7 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     titleLabel.textColor = selected == .overview ? .labelColor : ink
     subtitleLabel.textColor = ink
     sensorCountLabel.textColor = ink
-    for button in [historyButton, openWindowRow, readingsButton, pauseButton] {
+    for button in [historyButton, openWindowRow, readingsButton, updateButton, pauseButton] {
       button.accentModule = selected
       button.refreshTint()
     }

@@ -7,6 +7,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     case general, menuBar
     var identifier: String { self == .general ? "general" : "menubar" }
   }
+  let updatesView = UpdateSettingsView(frame: .zero)
   var onHistoryPersistence: ((Bool) -> Void)?
   var onHistory: (() -> Void)?
   private var historyStorageBusy = false
@@ -275,14 +276,15 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
       in: general,
       views: [
         form.text(
-          "No account. No analytics. Local only, unless you enable Weather or advanced internet checks."
+          "No account. No analytics. Signed releases can check GitHub; Weather and internet checks are optional."
         ),
-        form.text("Appearance and updates", heading: true),
+        form.text("Appearance and sampling", heading: true),
         form.group([
           form.row("Appearance", appearance, width: 210),
           form.row(units.title, units),
           form.row("Update interval", interval, width: 240),
         ]), cadence,
+        form.text("Updates", heading: true), updatesView,
         form.text("Local monitoring", heading: true),
         form.group([
           form.row("Network interface", network, width: 300),

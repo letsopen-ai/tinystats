@@ -59,7 +59,9 @@ final class NativeWeatherTransport: NSObject, WeatherTransport, URLSessionDataDe
     request.httpMethod = "GET"
     request.httpShouldHandleCookies = false
     request.setValue(
-      "TinyStats/0.37.4 (https://github.com/letsopen-ai/tinystats)", forHTTPHeaderField: "User-Agent")
+      UpdatePolicy.userAgent(
+        version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+          ?? "unknown"), forHTTPHeaderField: "User-Agent")
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     if let lastModified, lastModified.utf8.count <= 128, Self.httpDate(lastModified) != nil {
       request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")

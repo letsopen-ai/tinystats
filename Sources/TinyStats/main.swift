@@ -1,5 +1,18 @@
 import AppKit
+import OSLog
 import TinyStatsCore
+
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--install-update" {
+  do {
+    try NativeUpdateInstaller.runHelper(planURL: URL(fileURLWithPath: CommandLine.arguments[2]))
+    exit(0)
+  } catch {
+    Logger(subsystem: UpdatePolicy.bundleID, category: "UpdateHelper")
+      .error("Update helper exited: \(error.localizedDescription, privacy: .public)")
+    FileHandle.standardError.write(Data("TinyStats update installation failed.\n".utf8))
+    exit(1)
+  }
+}
 
 if CommandLine.arguments.contains("--diagnose") {
   let sampler = Sampler()
