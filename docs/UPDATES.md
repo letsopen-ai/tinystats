@@ -158,8 +158,12 @@ Equal versions/builds and downgrades are never offered.
    Successful explicit restart uses `/usr/bin/open` on that path. Normal quit does
    not relaunch after either success or failure. Backup removal after both renames is best-effort;
    failure to clean up does not turn a successful installation into a failure.
-   Quarantine and Gatekeeper
-   are never bypassed or disabled.
+   Because TinyStats downloads the archive itself, the staged app carries no
+   quarantine flag. The Gatekeeper gate is the explicit
+   `/usr/sbin/spctl --assess --type execute` assessment, together with the pinned
+   code-signing requirement, Team ID match and `notarized` requirement described
+   above. TinyStats does not rely on a quarantine-triggered first-launch prompt
+   and does not disable system security policy.
 
 ## Failures
 

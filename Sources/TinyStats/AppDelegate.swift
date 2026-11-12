@@ -940,6 +940,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         updater.prepareToQuit { [weak self] shouldQuit in
           HistoryQuitCoordinator.deliver { [weak self] in
             guard let self else { return }
+            // Unreachable from the updater: its prepareToQuit always permits Quit.
             guard shouldQuit else {
               self.updateQuitPending = false
               self.updateQuitReady = false

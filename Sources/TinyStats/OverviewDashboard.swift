@@ -229,7 +229,7 @@ extension SummaryDashboardView {
   func drawDeviceHeader(_ header: DeviceHeader, in rect: NSRect) {
     let compact = rect.width < 650
     let deviceWidth = compact ? rect.width - 76 : max(180, rect.width - 440)
-    NSApp.applicationIconImage?.draw(
+    NSApp?.applicationIconImage?.draw(
       in: .init(x: rect.minX + 14, y: rect.minY + 12, width: 40, height: 40),
       from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     text(

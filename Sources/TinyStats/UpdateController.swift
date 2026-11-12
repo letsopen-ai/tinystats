@@ -52,7 +52,7 @@ struct UpdatePresentation: Equatable {
     alert.messageText = title
     alert.informativeText = message
     alert.alertStyle = .informational
-    alert.icon = NSApp.applicationIconImage
+    alert.icon = NSApp?.applicationIconImage
     for title in buttons {
       let button = alert.addButton(withTitle: title)
       if title == "Later" { button.keyEquivalent = "\u{1b}" }
@@ -60,7 +60,7 @@ struct UpdatePresentation: Equatable {
     return alert
   }
   func alert(title: String, message: String, buttons: [String]) -> Int {
-    NSApp.activate(ignoringOtherApps: true)
+    NSApp?.activate(ignoringOtherApps: true)
     return Self.makeAlert(title: title, message: message, buttons: buttons).runModal().rawValue
       - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
   }
@@ -101,7 +101,7 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
   private let stagingGroup = DispatchGroup()
   private var stagingCancellation: UpdateStagingCancellation?
   var onChange: ((UpdatePresentation) -> Void)?
-  var terminate: () -> Void = { NSApp.terminate(nil) }
+  var terminate: () -> Void = { NSApp?.terminate(nil) }
   private(set) var presentation: UpdatePresentation
   init(
     defaults: UserDefaults, version: String, build: String, eligibility: UpdateEligibility,

@@ -5,6 +5,7 @@ import Testing
 @testable import TinyStatsCore
 
 @Test @MainActor func overviewPlattersKeepValuesSegmentsAndUnavailableStatesDistinct() throws {
+  _ = NSApplication.shared
   let view = SummaryDashboardView(frame: .init(x: 0, y: 0, width: 704, height: 564))
   var snapshot = Snapshot()
   view.update(snapshot, history: [], settings: Settings(), module: .overview)
@@ -61,6 +62,7 @@ import Testing
 }
 
 @Test @MainActor func overviewStateColoursAreSemanticAndUnknownStatesStayNeutral() {
+  _ = NSApplication.shared
   for (state, color) in [
     ("Nominal", SystemStyle.nominal), ("Fair", SystemStyle.warning),
     ("Serious", SystemStyle.warning), ("Critical", SystemStyle.critical),
@@ -79,6 +81,7 @@ import Testing
 
 @Test @MainActor func overviewNetworkUsesFiveMinutesAndPreservesGapsZeroAndBothHoverSeries() throws
 {
+  _ = NSApplication.shared
   let view = SummaryDashboardView(frame: .init(x: 0, y: 0, width: 704, height: 564))
   var snapshot = Snapshot()
   let history = (0..<450).map { index in
@@ -122,6 +125,7 @@ import Testing
 @Test @MainActor func overviewResizingKeepsPlattersSeparateAndNavigationRestoresModuleCharts()
   throws
 {
+  _ = NSApplication.shared
   let view = SummaryDashboardView(frame: .init(x: 0, y: 0, width: 520, height: 454))
   view.update(Snapshot(), history: [], settings: Settings(), module: .overview)
   for size in [

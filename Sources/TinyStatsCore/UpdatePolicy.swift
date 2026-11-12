@@ -241,7 +241,7 @@ public struct UpdatePreferences: Equatable, Sendable {
   }
   public func due(now: Date, launch: Date, delay: TimeInterval, welcomeVisible: Bool) -> Bool {
     automaticallyCheck && !welcomeVisible && now.timeIntervalSince(launch) >= delay
-      && (lastCheck.map { now.timeIntervalSince($0) >= 86_400 } ?? true)
+      && (lastCheck.map { now < $0 || now.timeIntervalSince($0) >= 86_400 } ?? true)
       && (retryAfter.map { now >= $0 } ?? true)
   }
 }
