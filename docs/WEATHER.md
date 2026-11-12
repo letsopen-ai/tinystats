@@ -32,7 +32,7 @@ Coordinates are rounded to three decimals, roughly 110 m in latitude; this is no
 
 Data from MET Norway is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and NLOD 2.0; see its [licensing policy](https://api.met.no/doc/License). TinyStats converts temperatures and derives daily sample ranges. Attribution appears in Weather details, setup and embedded notices. Condition icons are native SF Symbols; provider icons/code are not copied. TinyStats is independent of MET Norway.
 
-The [provider terms](https://api.met.no/doc/TermsOfService) require identification, cache-aware requests, rounded coordinates and traffic restraint. The client identifies TinyStats and the maintainer's GitHub profile URL in its User-Agent. A scaled deployment must reassess the provider's application-wide traffic limit and caching-proxy guidance before exceeding it; the desktop feature supplies no service-level guarantee.
+The [provider terms](https://api.met.no/doc/TermsOfService) require identification, cache-aware requests, rounded coordinates and traffic restraint. The client identifies TinyStats 0.37.4 and the project's GitHub repository URL (`https://github.com/letsopen-ai/tinystats`) in its User-Agent. A scaled deployment must reassess the provider's application-wide traffic limit and caching-proxy guidance before exceeding it; the desktop feature supplies no service-level guarantee.
 
 ## Scheduling and retained state
 

@@ -322,7 +322,7 @@ private final class WeatherURLProtocol: URLProtocol, @unchecked Sendable {
   override func startLoading() {
     guard let url = request.url else { return }
     let identified =
-      request.value(forHTTPHeaderField: "User-Agent")?.contains("https://github.com/niechen")
+      request.value(forHTTPHeaderField: "User-Agent")?.contains("https://github.com/letsopen-ai/tinystats")
       == true
     let conditional = request.value(forHTTPHeaderField: "If-Modified-Since") != nil
     let oversized = url.query?.contains("lat=61.000") == true

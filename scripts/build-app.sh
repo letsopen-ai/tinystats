@@ -33,8 +33,8 @@ xattr -cr "$app"
 if [[ -n "${TINYSTATS_SIGN_IDENTITY:-}" ]]; then
   python3 scripts/signing_config.py
   sign_command=(codesign --force --options runtime --timestamp --sign "$TINYSTATS_SIGN_IDENTITY")
-  if [[ -n "${TELEFRAME_SIGNING_KEYCHAIN:-}" ]]; then
-    sign_command+=(--keychain "$TELEFRAME_SIGNING_KEYCHAIN")
+  if [[ -n "${TINYSTATS_SIGNING_KEYCHAIN:-}" ]]; then
+    sign_command+=(--keychain "$TINYSTATS_SIGNING_KEYCHAIN")
   fi
   "${sign_command[@]}" "$app"
 else

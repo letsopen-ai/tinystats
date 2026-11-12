@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please check the [roadmap](https://github.com/niechen/tinystats/blob/main/docs/ROADMAP.md) and existing issues first.
+        Please check the [roadmap](https://github.com/letsopen-ai/tinystats/blob/main/docs/ROADMAP.md) and existing issues first.
         Specific use cases help us keep TinyStats useful and bounded.
   - type: textarea
     id: problem

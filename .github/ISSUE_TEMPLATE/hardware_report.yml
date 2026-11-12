@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Reports of both working and unavailable readings help. See [diagnostic guidance](https://github.com/niechen/tinystats/blob/main/CONTRIBUTING.md#hardware-diagnostics).
+        Reports of both working and unavailable readings help. See [diagnostic guidance](https://github.com/letsopen-ai/tinystats/blob/main/CONTRIBUTING.md#hardware-diagnostics).
         Review all output before sharing. Redact usernames, personal paths, addresses and precise locations; omit serial numbers and hardware UUIDs.
         No administrator access, helper installation, online-feature enablement or fan changes are needed.
   - type: input

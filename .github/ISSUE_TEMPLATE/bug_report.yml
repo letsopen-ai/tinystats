@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for helping improve TinyStats. Search existing issues first.
-        Report vulnerabilities privately through [Security](https://github.com/niechen/tinystats/security/policy).
+        Report vulnerabilities privately through [Security](https://github.com/letsopen-ai/tinystats/security/policy).
         Review attachments for personal data; omit serial numbers, credentials, locations and account events.
   - type: input
     id: version
