@@ -200,7 +200,7 @@ import Testing
       dropdown.view,
       to: folder.appendingPathComponent(privacyStem + ".png"))
     descriptions.append(
-      "\(privacyStem).png — Owned CPU All readings with Internet requests enabled for eligible default-on GitHub update checks. \(privacyActivity)"
+      "\(privacyStem).png — Owned CPU All readings with GitHub updates as the only online feature; full help says GitHub update checks only. \(privacyActivity)"
     )
     alertWindow.close()
     let welcome = WelcomeController(settings: { settings }, initialStep: 3, updates: { state })
@@ -211,7 +211,7 @@ import Testing
       try #require(welcome.window?.contentView),
       to: folder.appendingPathComponent(welcomeStem + ".png"))
     descriptions.append(
-      "\(welcomeStem).png — Production Welcome Online step with default-on Updates/GitHub and opt-in Weather/Internet. \(welcomeActivity)"
+      "\(welcomeStem).png — Production Welcome Online step with default-on Updates/GitHub, visible Settings opt-out guidance and opt-in Weather/Internet. \(welcomeActivity)"
     )
   }
   try

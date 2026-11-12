@@ -132,12 +132,16 @@ protocol UpdateInstalling: Sendable {
 }
 
 struct NativeUpdateRunningApplications: UpdateRunningApplicationChecking {
+  let parentPID: Int32
   func isRunning(from original: URL) throws -> Bool {
     let path = original.resolvingSymlinksInPath().standardizedFileURL.path
     return NSRunningApplication.runningApplications(withBundleIdentifier: UpdatePolicy.bundleID)
       .contains { app in
-        !app.isTerminated && app.processIdentifier != getpid()
-          && app.bundleURL?.resolvingSymlinksInPath().standardizedFileURL.path == path
+        UpdateInstallQuiescence.isOtherInstance(
+          pid: app.processIdentifier,
+          helperPID: getpid(), parentPID: parentPID,
+          bundlePath: app.bundleURL?.resolvingSymlinksInPath().standardizedFileURL.path,
+          originalPath: path, terminated: app.isTerminated)
       }
   }
 }
@@ -290,7 +294,7 @@ struct NativeUpdateInstaller: UpdateInstalling {
             try verifier.verify(prepared.app, manifest: plan.manifest, runningTeam: team)
             try UpdateInstallQuiescence.requireIdle(
               original: plan.original,
-              checker: NativeUpdateRunningApplications(),
+              checker: NativeUpdateRunningApplications(parentPID: plan.pid),
               retryDelay: { Thread.sleep(forTimeInterval: 1) })
           })
       },

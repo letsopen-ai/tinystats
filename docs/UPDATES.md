@@ -27,6 +27,9 @@ small temporary download icon in the dropdown footer with restart help text.
 **With automatic checking and downloading enabled, a prepared update also installs
 on normal Quit, without reopening the app.** Turning either preference off prevents
 that automatic quit installation. Explicit Restart to Update installs and reopens.
+If you choose Quit while an explicit Restart to Update is already in flight,
+its written plan still requests relaunch: a successful installation reopens
+TinyStats. A helper-start failure still allows that Quit to finish.
 Updates never change system power settings or install a privileged service.
 
 Development, ad-hoc and test builds never start update requests. Eligibility requires
@@ -48,6 +51,12 @@ Accept: application/vnd.github+json
 Accept-Language: en
 User-Agent: TinyStats/<app version> (https://github.com/letsopen-ai/tinystats)
 ```
+
+Release assets (`release.json`, `SHA256SUMS.txt` and ZIPs) and their redirected
+asset-host requests use `Accept: application/octet-stream`; API-host requests
+keep `Accept: application/vnd.github+json`. User-Agent and `Accept-Language: en`
+remain the same across allowed redirects. Confirm these headers during the live
+asset redirect-chain release check.
 
 TinyStats sends no account, machine ID, hardware readings, history, location or other
 personal identifier. Language is fixed to English rather than the user’s locale;
@@ -107,7 +116,7 @@ Equal versions/builds and downgrades are never offered.
    mismatches or unlisted/overlapping records, more than 20,000 entries, and more
    than 512 MiB expanded content. Current release bundles need no archived symlinks.
    After extraction, require exactly one directory `TinyStats.app`; inspect its
-   tree, reject escaping symlinks and unsupported entries, and check bounded size.
+   tree, reject all symbolic links and unsupported entries, and check bounded size.
 3. Security.framework validates all architectures, strict resource sealing and
    nested code against this pinned Developer ID requirement:
 
@@ -126,24 +135,28 @@ Equal versions/builds and downgrades are never offered.
    The helper decodes and validates its plan inside the recovery path, then signals
    ready through that pipe. The app waits on a worker thread for at most 10 seconds.
    An early exit, malformed plan, missing signal or timeout stops and reaps the
-   helper, discards the prepared update and keeps TinyStats running (including
-   cancelling an install-on-quit termination). Explicit restart shows the error.
-   Only a ready helper allows the normal history checkpoint/termination path.
+   helper and discards the prepared update. An explicit restart failure shows the
+   error and keeps TinyStats running unless an ordinary Quit is also pending.
+   An ordinary Quit, logout or shutdown always continues through normal history
+   checkpoint/termination even when update preparation fails; failure is logged
+   without an alert. Only an explicit update restart requires a ready helper
+   before initiating termination.
    The helper then waits at most 120 seconds for TinyStats' PID to exit.
 5. After waiting, the helper checks the original bundle's inode, signature/team,
    writable location and the staged bundle again immediately before installation.
    It checks for another TinyStats process using that exact bundle path, excluding
-   the helper itself. If one exists, it waits one second and retries once, then
+   the helper and the parent whose exit was already confirmed. If one exists, it waits one second and retries once, then
    refuses replacement and follows the same failure/reopen path. This final check
    reduces the immediate-relaunch race; it does not provide a cross-instance lock.
    Same-volume rename moves the original to a staging backup and the staged app
-   to the exact original path. A move failure restores the old bundle. Any helper
-   failure after the parent app exits, including plan decoding/validation failure,
-   attempts to reopen the untouched or restored signed app and records the error
-   in the local unified log. A relaunch error after successful installation is
+   to the exact original path. A move failure restores the old bundle. On an
+   explicit restart, helper failure after the parent exits (including plan decoding
+   or validation failure) attempts to reopen the untouched or restored signed app.
+   Ordinary Quit failures restore when needed and never reopen the app. Errors
+   are recorded in the local unified log. A relaunch error after successful installation is
    logged without rolling back or deleting the new app, which may already be running.
    Successful explicit restart uses `/usr/bin/open` on that path. Normal quit does
-   not relaunch after success. Backup removal after both renames is best-effort;
+   not relaunch after either success or failure. Backup removal after both renames is best-effort;
    failure to clean up does not turn a successful installation into a failure.
    Quarantine and Gatekeeper
    are never bypassed or disabled.

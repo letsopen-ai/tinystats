@@ -45,9 +45,14 @@ Termination first cancels/joins active update work. If a prepared update should
 install on normal quit, an asynchronous gate verifies and launches the bounded
 helper before starting `HistoryQuitCoordinator`. Explicit restart launches the
 same helper with relaunch enabled. A worker waits up to 10 seconds for the
-helper's validated-plan ready signal before allowing termination. Failure stops
-the helper, discards the candidate and cancels update termination, keeping the
-app running. The original history checkpoint/stop and
+helper's validated-plan ready signal before initiating an explicit update
+restart. A failed explicit restart stops the helper, discards the candidate,
+shows the error and keeps the app running. An ordinary Quit/logout/shutdown
+always continues, including when helper launch fails; it logs the failure and
+discards the candidate without an alert. Helper failure on ordinary Quit never
+reopens the app. If Quit arrives during an in-flight explicit restart, its
+already-written relaunch plan is preserved; successful installation still reopens
+TinyStats, while launch failure permits the pending Quit to complete. The original history checkpoint/stop and
 once-only reply logic remains intact, with its two-second deadline starting after
 update preparation. The helper waits for process exit, verifies again and performs
 the move/restore transaction described in [Updates](UPDATES.md).

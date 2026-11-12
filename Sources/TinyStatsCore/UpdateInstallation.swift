@@ -48,11 +48,11 @@ public struct NativeUpdateFileSystem: UpdateFileSystem {
       count += 1
       let attributes = try FileManager.default.attributesOfItem(atPath: entry.path)
       guard let type = attributes[.type] as? FileAttributeType,
-        [.typeDirectory, .typeRegular, .typeSymbolicLink].contains(type), count <= 20_000
+        [.typeDirectory, .typeRegular].contains(type), count <= 20_000
       else { throw UpdateError.invalid("Unsupported update bundle layout.") }
       let resolved = entry.resolvingSymlinksInPath().standardizedFileURL.path
       guard resolved.hasPrefix(url.standardizedFileURL.path + "/") else {
-        throw UpdateError.invalid("An update symbolic link escapes the app bundle.")
+        throw UpdateError.invalid("An update entry escapes the app bundle.")
       }
       bytes += (attributes[.size] as? NSNumber)?.uint64Value ?? 0
       guard bytes <= 512 * 1_048_576 else {
@@ -84,11 +84,17 @@ public protocol UpdateExitWaiter: Sendable {
 }
 
 public protocol UpdateRunningApplicationChecking: Sendable {
-  /// The installer helper itself must be excluded by the native implementation.
+  /// Exclude the helper and the parent whose exit was already confirmed.
   func isRunning(from original: URL) throws -> Bool
 }
 
 public enum UpdateInstallQuiescence {
+  public static func isOtherInstance(
+    pid: Int32, helperPID: Int32, parentPID: Int32,
+    bundlePath: String?, originalPath: String, terminated: Bool
+  ) -> Bool {
+    !terminated && pid != helperPID && pid != parentPID && bundlePath == originalPath
+  }
   /// One bounded retry lets an exiting instance finish without ever replacing a
   /// bundle used by a reopened app. Call after verification, just before renames.
   public static func requireIdle(
@@ -373,7 +379,7 @@ public enum UpdateInstallRecovery {
   ) throws {
     do { try install() } catch {
       report(error)
-      if recoverOnFailure?() ?? relaunch {
+      if relaunch && (recoverOnFailure?() ?? true) {
         do { try reopen() } catch { report(error) }
       }
       throw error

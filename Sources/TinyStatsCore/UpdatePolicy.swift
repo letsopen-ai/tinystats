@@ -41,6 +41,9 @@ public enum UpdatePolicy {
   public static let teamID = "CVQJTDR4LG"
   public static let latestURL = URL(
     string: "https://api.github.com/repos/letsopen-ai/tinystats/releases/latest")!
+  public static func accept(for url: URL) -> String {
+    url.host == "api.github.com" ? "application/vnd.github+json" : "application/octet-stream"
+  }
   public static let releasesURL = URL(string: "https://github.com/letsopen-ai/tinystats/releases")!
   public static let jsonLimit = 1_048_576
   public static let archiveLimit = 64 * 1_048_576

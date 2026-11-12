@@ -512,7 +512,8 @@ private struct HandshakeUpdateInstaller: UpdateInstalling {
   }
 }
 
-@Test @MainActor func updateMissingHelperHandshakeKeepsAppRunningAndDiscardsCandidate() async throws
+@Test @MainActor func updateMissingHelperHandshakeKeepsExplicitRestartRunningButAllowsNormalQuit()
+  async throws
 {
   for normalQuit in [false, true] {
     let name = "TinyStats.UpdateHandshake.\(UUID())"
@@ -541,7 +542,8 @@ private struct HandshakeUpdateInstaller: UpdateInstalling {
       let shouldQuit = await withCheckedContinuation { continuation in
         controller.prepareToQuit { continuation.resume(returning: $0) }
       }
-      #expect(!shouldQuit)
+      #expect(shouldQuit)
+      #expect(ui.alerts.isEmpty)
     } else {
       controller.restart()
       await controller.waitForIdle()
@@ -550,33 +552,39 @@ private struct HandshakeUpdateInstaller: UpdateInstalling {
     #expect(child.stopped && !terminated && controller.prepared == nil)
     #expect(controller.presentation.readyIdentifier == nil && !controller.presentation.busy)
     #expect(!FileManager.default.fileExists(atPath: root.path))
-    // A cancelled quit must leave the updater usable, not stuck in quitting=true.
-    controller.check()
-    await controller.waitForIdle()
-    #expect(!controller.presentation.busy)
+    if !normalQuit {
+      // An explicit restart failure leaves a usable running app.
+      controller.check()
+      await controller.waitForIdle()
+      #expect(!controller.presentation.busy)
+    }
   }
 }
 
-@Test func updateHelperDecodeAndValidationFailuresRecoverOnlyAfterParentExited() throws {
+@Test func updateHelperDecodeAndValidationFailuresRecoverOnlyForExplicitRestartAfterParentExit()
+  throws
+{
   for failure in ["decode", "validate"] {
-    for exited in [false, true] {
-      var signalled = false
-      var installed = false
-      var reopened = false
-      var reported = 0
-      #expect(throws: (any Error).self) {
-        try UpdateHelperLifecycle.perform(
-          relaunch: false, recoverOnFailure: { exited },
-          load: { () throws -> Int in
-            if failure == "decode" {
-              return try JSONDecoder().decode(Int.self, from: Data("{".utf8))
-            }
-            return 42
-          }, validate: { _ in throw UpdateError.invalid("Invalid plan") },
-          signalReady: { signalled = true }, install: { _ in installed = true },
-          reopen: { reopened = true }, report: { _ in reported += 1 })
+    for relaunch in [false, true] {
+      for exited in [false, true] {
+        var signalled = false
+        var installed = false
+        var reopened = false
+        var reported = 0
+        #expect(throws: (any Error).self) {
+          try UpdateHelperLifecycle.perform(
+            relaunch: relaunch, recoverOnFailure: { exited },
+            load: { () throws -> Int in
+              if failure == "decode" {
+                return try JSONDecoder().decode(Int.self, from: Data("{".utf8))
+              }
+              return 42
+            }, validate: { _ in throw UpdateError.invalid("Invalid plan") },
+            signalReady: { signalled = true }, install: { _ in installed = true },
+            reopen: { reopened = true }, report: { _ in reported += 1 })
+        }
+        #expect(!signalled && !installed && reopened == (relaunch && exited) && reported == 1)
       }
-      #expect(!signalled && !installed && reopened == exited && reported == 1)
     }
   }
   var events: [String] = []
@@ -709,4 +717,66 @@ private final class MutableUpdateInstallAccess: UpdateInstallLocationChecking, @
   #expect(controller.presentation.canInstall)
   #expect(controller.presentation.restartTitle == "Restart to Update 0.37.6 (78)")
   #expect(ui.alerts.last == "TinyStats 0.37.6 (78) is ready")
+}
+
+private final class HeldRestartUpdateInstaller: UpdateInstalling, @unchecked Sendable {
+  let started = DispatchSemaphore(value: 0)
+  let finish = DispatchSemaphore(value: 0)
+  private let lock = NSLock()
+  private var launches: [Bool] = []
+  let fail: Bool
+  init(fail: Bool) { self.fail = fail }
+  var relaunches: [Bool] { lock.withLock { launches } }
+  func launch(_ update: PreparedUpdate, original: URL, pid: Int32, relaunch: Bool) throws {
+    lock.withLock { launches.append(relaunch) }
+    started.signal()
+    guard finish.wait(timeout: .now() + 5) == .success else {
+      throw UpdateError.invalid("Fixture restart was not released")
+    }
+    if fail { throw UpdateError.invalid("Fixture helper launch failed") }
+  }
+}
+
+@Test @MainActor
+func updateOrdinaryQuitDuringExplicitRestartAlwaysCompletesWithoutChangingRelaunch()
+  async throws
+{
+  for fail in [false, true] {
+    let name = "TinyStats.UpdatePendingQuit.\(UUID())"
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+      .appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let installer = HeldRestartUpdateInstaller(fail: fail)
+    let ui = OfflineUpdateUI()
+    let controller = UpdateController(
+      defaults: defaults, version: "0.37.5", build: "77",
+      eligibility: .init(
+        bundleID: UpdatePolicy.bundleID, teamID: UpdatePolicy.teamID,
+        developerID: true, translocated: false, readOnly: false),
+      original: root.appendingPathComponent("Original.app"), canInstall: true, root: root,
+      client: UpdateClient(transport: PreparingUpdateTransport()), stager: PreparingUpdateStager(),
+      installer: installer, ui: ui, now: Date(timeIntervalSince1970: 1000), launchDelay: 180)
+    controller.tick(now: Date(timeIntervalSince1970: 2000), welcomeVisible: false)
+    await controller.waitForIdle()
+    var terminated = false
+    controller.terminate = { terminated = true }
+    controller.restart()
+    let started = await withCheckedContinuation { continuation in
+      DispatchQueue.global(qos: .utility).async {
+        continuation.resume(returning: installer.started.wait(timeout: .now() + 5) == .success)
+      }
+    }
+    #expect(started)
+    let shouldQuit = await withCheckedContinuation { continuation in
+      controller.prepareToQuit { continuation.resume(returning: $0) }
+      installer.finish.signal()
+    }
+    await controller.waitForIdle()
+    #expect(shouldQuit && !terminated && ui.alerts.isEmpty && installer.relaunches == [true])
+    if fail {
+      #expect(controller.prepared == nil && !FileManager.default.fileExists(atPath: root.path))
+    }
+  }
 }

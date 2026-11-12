@@ -357,12 +357,10 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
         for waiter in waiters { waiter.resume() }
         let completion = self.pendingQuit
         self.pendingQuit = nil
-        if case .failure = result { self.quitting = false }
-        completion?(
-          {
-            if case .success = result { return true }
-            return false
-          }())
+        // Update failure must never veto a pending ordinary Quit/logout/shutdown,
+        // including a Quit requested while an explicit restart was in flight.
+        if case .failure = result, completion == nil { self.quitting = false }
+        completion?(true)
         if case .success = result, relaunch, !self.quitting { self.terminate() }
       }
     }

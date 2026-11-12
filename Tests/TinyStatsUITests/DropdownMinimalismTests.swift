@@ -342,9 +342,9 @@ import Testing
       .first { $0.title == "Pause" })
   var state = UpdatePresentation(eligible: true, canInstall: true)
   for (eligible, checking, expected) in [
-    (true, true, "Internet requests enabled"),
+    (true, true, "GitHub update checks only"),
     (true, false, "Local only"), (false, true, "Local only"),
-    (true, true, "Internet requests enabled"),
+    (true, true, "GitHub update checks only"),
   ] {
     state.eligible = eligible
     state.preferences.automaticallyCheck = checking
@@ -366,12 +366,27 @@ import Testing
     let value = try #require(
       detail.tableView(table, viewFor: table.tableColumns[1], row: privacyIndex) as? NSTextField)
     #expect(
-      value.stringValue == (expected == "Internet requests enabled" ? "Internet enabled" : expected)
+      value.stringValue == (expected == "GitHub update checks only" ? "GitHub updates" : expected)
     )
   }
   // An updater remains a disclosed internet capability while monitoring is paused.
   detail.paused = true
   #expect(
     (detail.view as? MainContentView)?.sampleInformation.contains(
-      "Privacy: Internet requests enabled") == true)
+      "Privacy: GitHub update checks only") == true)
+}
+
+@Test @MainActor func samplePrivacyKeepsGeneralInternetStateWhenOtherChecksAreEnabled() {
+  for feature in 0..<4 {
+    var settings = Settings()
+    settings.weather.enabled = feature == 0
+    settings.connectivityChecks = feature == 1
+    settings.publicIPChecks = feature == 2
+    settings.pingCheck.enabled = feature == 3
+    let row = DetailReadingsBuilder.sampleRows(
+      snapshot: Snapshot(), settings: settings,
+      paused: false, updateChecksOn: true
+    ).first { $0.label == "Privacy" }
+    #expect(row?.value == "Internet requests enabled" && row?.compactValue == "Internet enabled")
+  }
 }
