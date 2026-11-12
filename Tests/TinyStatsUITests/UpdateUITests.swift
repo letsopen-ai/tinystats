@@ -15,6 +15,10 @@ import Testing
   let controller = PreferencesController(
     settings: Settings(), interfaces: [], snapshot: Snapshot(), history: [])
   defer { controller.close() }
+  let page = try #require(controller.embeddedView(page: .general))
+  #expect(
+    updateDescendants(page).compactMap { $0 as? NSTextField }
+      .contains { $0.stringValue == "Software Update" })
   let view = controller.updatesView
   var state = UpdatePresentation(version: "0.37.5", build: "77", eligible: true, canInstall: true)
   view.update(state)
@@ -54,7 +58,7 @@ import Testing
   #expect(button.isHidden)
   var invoked = false
   detail.onRestartUpdate = { invoked = true }
-  detail.updateReady = "0.37.6 (78)"
+  detail.updateState = .init(canInstall: true, readyVersion: "0.37.6", readyBuild: "78")
   detail.view.layoutSubtreeIfNeeded()
   #expect(!button.isHidden && button.toolTip == "Update 0.37.6 (78) ready — restart to install")
   #expect(button.accessibilityLabel() == "Restart to install TinyStats 0.37.6 (78)")
@@ -231,10 +235,12 @@ private actor PreparingUpdateTransport: UpdateTransport {
   }
 }
 private struct PreparingUpdateStager: UpdatePreparing {
+  var needsAttention = false
   let files: any UpdateFileSystem = NativeUpdateFileSystem()
   func prepare(archive: Data, manifest: UpdateManifest, root: URL, team: String) throws
     -> PreparedUpdate
   {
+    if needsAttention { throw UpdateError.needsAttention }
     try files.createPrivateDirectory(root)
     return PreparedUpdate(manifest: manifest, directory: root)
   }
@@ -283,7 +289,10 @@ private final class RecordingUpdateInstaller: UpdateInstalling, @unchecked Senda
       if mode == "downloadOff" { controller.setPreferences(check: true, download: false) }
       if mode == "checkOff" { controller.setPreferences(check: false, download: true) }
       await withCheckedContinuation { continuation in
-        controller.prepareToQuit { continuation.resume() }
+        controller.prepareToQuit { shouldQuit in
+          #expect(shouldQuit)
+          continuation.resume()
+        }
       }
       #expect(!terminated)
       #expect(installer.relaunches == (mode == "quit" ? [false] : []))
@@ -352,7 +361,8 @@ private final class RecordingUpdateInstaller: UpdateInstalling, @unchecked Senda
   await controller.waitForIdle()
   #expect(controller.prepared != nil)
   let state = UpdateModalQuitState()
-  controller.prepareToQuit {
+  controller.prepareToQuit { shouldQuit in
+    #expect(shouldQuit)
     state.replies += 1
     CFRunLoopStop(CFRunLoopGetMain())
   }
@@ -406,9 +416,9 @@ private final class RecordingUpdateInstaller: UpdateInstalling, @unchecked Senda
     try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: app.path)
     try? FileManager.default.removeItem(at: root)
   }
-  #expect(NativeUpdateInstaller.writable(app))
+  #expect(NativeUpdateInstaller.writable(app, cacheRoot: root))
   try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: app.path)
-  #expect(!NativeUpdateInstaller.writable(app))
+  #expect(!NativeUpdateInstaller.writable(app, cacheRoot: root))
   for text in [NativeUpdateVerifier.requirement, "notarized"] {
     var requirement: SecRequirement?
     #expect(SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess)
@@ -474,4 +484,175 @@ private struct UpdateCancelledTransport: UpdateTransport {
   controller.setPreferences(check: true, download: false)
   await controller.waitForIdle()
   #expect(terminated && installer.relaunches == [true])
+}
+
+private final class NeverReadyUpdateChild: UpdateHelperChild, @unchecked Sendable {
+  private let lock = NSLock()
+  private var didStop = false
+  var stopped: Bool { lock.withLock { didStop } }
+  func waitUntilReady(timeout: TimeInterval) throws -> Bool {
+    #expect(!Thread.isMainThread)
+    #expect(timeout == 10)
+    return false
+  }
+  func stop() { lock.withLock { didStop = true } }
+}
+private struct NeverReadyUpdateSpawner: UpdateHelperSpawning {
+  let child: NeverReadyUpdateChild
+  func spawn(executable: URL, arguments: [String]) throws -> any UpdateHelperChild { child }
+}
+private struct HandshakeUpdateInstaller: UpdateInstalling {
+  let spawner: any UpdateHelperSpawning
+  func launch(_ update: PreparedUpdate, original: URL, pid: Int32, relaunch: Bool) throws {
+    try UpdateHelperLaunch.start(executable: original, arguments: [], spawner: spawner)
+  }
+}
+
+@Test @MainActor func updateMissingHelperHandshakeKeepsAppRunningAndDiscardsCandidate() async throws
+{
+  for normalQuit in [false, true] {
+    let name = "TinyStats.UpdateHandshake.\(UUID())"
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+      .appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let child = NeverReadyUpdateChild()
+    let ui = OfflineUpdateUI()
+    let controller = UpdateController(
+      defaults: defaults, version: "0.37.5", build: "77",
+      eligibility: .init(
+        bundleID: UpdatePolicy.bundleID, teamID: UpdatePolicy.teamID,
+        developerID: true, translocated: false, readOnly: false),
+      original: root.appendingPathComponent("Original.app"), canInstall: true, root: root,
+      client: UpdateClient(transport: PreparingUpdateTransport()), stager: PreparingUpdateStager(),
+      installer: HandshakeUpdateInstaller(spawner: NeverReadyUpdateSpawner(child: child)), ui: ui,
+      now: Date(timeIntervalSince1970: 1000), launchDelay: 180)
+    controller.tick(now: Date(timeIntervalSince1970: 2000), welcomeVisible: false)
+    await controller.waitForIdle()
+    #expect(controller.prepared != nil)
+    var terminated = false
+    controller.terminate = { terminated = true }
+    if normalQuit {
+      let shouldQuit = await withCheckedContinuation { continuation in
+        controller.prepareToQuit { continuation.resume(returning: $0) }
+      }
+      #expect(!shouldQuit)
+    } else {
+      controller.restart()
+      await controller.waitForIdle()
+      #expect(ui.alerts == ["Couldn’t check for updates"])
+    }
+    #expect(child.stopped && !terminated && controller.prepared == nil)
+    #expect(controller.presentation.readyIdentifier == nil && !controller.presentation.busy)
+    #expect(!FileManager.default.fileExists(atPath: root.path))
+    // A cancelled quit must leave the updater usable, not stuck in quitting=true.
+    controller.check()
+    await controller.waitForIdle()
+    #expect(!controller.presentation.busy)
+  }
+}
+
+@Test func updateHelperDecodeAndValidationFailuresRecoverOnlyAfterParentExited() throws {
+  for failure in ["decode", "validate"] {
+    for exited in [false, true] {
+      var signalled = false
+      var installed = false
+      var reopened = false
+      var reported = 0
+      #expect(throws: (any Error).self) {
+        try UpdateHelperLifecycle.perform(
+          relaunch: false, recoverOnFailure: { exited },
+          load: { () throws -> Int in
+            if failure == "decode" {
+              return try JSONDecoder().decode(Int.self, from: Data("{".utf8))
+            }
+            return 42
+          }, validate: { _ in throw UpdateError.invalid("Invalid plan") },
+          signalReady: { signalled = true }, install: { _ in installed = true },
+          reopen: { reopened = true }, report: { _ in reported += 1 })
+      }
+      #expect(!signalled && !installed && reopened == exited && reported == 1)
+    }
+  }
+  var events: [String] = []
+  try UpdateHelperLifecycle.perform(
+    relaunch: true, recoverOnFailure: { true },
+    load: {
+      events.append("decode")
+      return 42
+    }, validate: { _ in events.append("validate") },
+    signalReady: { events.append("ready") }, install: { _ in events.append("install") },
+    reopen: { events.append("reopen") }, report: { _ in })
+  #expect(events == ["decode", "validate", "ready", "install", "reopen"])
+}
+
+@Test func updateNativeHelperPipeAcceptsReadyAndRejectsExitOrTimeoutOffline() throws {
+  try UpdateHelperLaunch.start(
+    executable: URL(fileURLWithPath: "/bin/sh"),
+    arguments: ["-c", "printf '\\001' >&3"], spawner: NativeUpdateHelperSpawner(), timeout: 1)
+  #expect(throws: (any Error).self) {
+    try UpdateHelperLaunch.start(
+      executable: URL(fileURLWithPath: "/usr/bin/true"),
+      arguments: [], spawner: NativeUpdateHelperSpawner(), timeout: 1)
+  }
+  let start = ProcessInfo.processInfo.systemUptime
+  #expect(throws: (any Error).self) {
+    try UpdateHelperLaunch.start(
+      executable: URL(fileURLWithPath: "/bin/sleep"),
+      arguments: ["30"], spawner: NativeUpdateHelperSpawner(), timeout: 0.02)
+  }
+  #expect(ProcessInfo.processInfo.systemUptime - start < 2)
+}
+
+@Test @MainActor func updateUnwritableReadyActionsOfferReleasePageEverywhere() throws {
+  _ = NSApplication.shared
+  let state = UpdatePresentation(
+    eligible: true, canInstall: false,
+    readyVersion: "0.37.6", readyBuild: "78")
+  #expect(state.restartTitle == "Open Release Page for 0.37.6 (78)")
+  let settings = UpdateSettingsView(frame: .zero)
+  settings.update(state)
+  #expect(settings.restart.toolTip == state.restartTitle)
+  #expect(settings.restart.accessibilityLabel() == state.restartTitle)
+  for loaded in [false, true] {
+    let detail = DetailController()
+    detail.isPopoverPresentation = true
+    if loaded { _ = detail.view }
+    detail.updateState = state
+    let button = try #require(
+      updateDescendants(detail.view).compactMap { $0 as? MenuActionRow }
+        .first { $0.title == state.restartTitle })
+    #expect(!button.isHidden && button.toolTip == state.restartTitle)
+    #expect(button.accessibilityLabel() == state.restartTitle)
+  }
+  var attention = state
+  attention.needsAttention = true
+  settings.update(attention)
+  #expect(settings.status.stringValue.contains("needs attention"))
+}
+
+@Test @MainActor func updateRecoveryFailureShowsSettingsAttentionWithoutBackgroundAlert()
+  async throws
+{
+  let name = "TinyStats.UpdateRecovery.\(UUID())"
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  let ui = OfflineUpdateUI()
+  let controller = UpdateController(
+    defaults: defaults, version: "0.37.5", build: "77",
+    eligibility: .init(
+      bundleID: UpdatePolicy.bundleID, teamID: UpdatePolicy.teamID,
+      developerID: true, translocated: false, readOnly: false),
+    original: root.appendingPathComponent("Original.app"), canInstall: true, root: root,
+    client: UpdateClient(transport: PreparingUpdateTransport()),
+    stager: PreparingUpdateStager(needsAttention: true), installer: NoOpUpdateInstaller(), ui: ui,
+    now: Date(timeIntervalSince1970: 1000), launchDelay: 180)
+  controller.tick(now: Date(timeIntervalSince1970: 2000), welcomeVisible: false)
+  await controller.waitForIdle()
+  #expect(ui.alerts.isEmpty && controller.prepared == nil && controller.presentation.needsAttention)
+  let settings = UpdateSettingsView(frame: .zero)
+  settings.update(controller.presentation)
+  #expect(settings.status.stringValue.hasPrefix("Update needs attention"))
 }

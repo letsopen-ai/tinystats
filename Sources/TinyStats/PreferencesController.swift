@@ -284,7 +284,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
           form.row(units.title, units),
           form.row("Update interval", interval, width: 240),
         ]), cadence,
-        form.text("Updates", heading: true), updatesView,
+        form.text("Software Update", heading: true), updatesView,
         form.text("Local monitoring", heading: true),
         form.group([
           form.row("Network interface", network, width: 300),

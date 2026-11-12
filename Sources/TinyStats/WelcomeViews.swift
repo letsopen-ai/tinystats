@@ -570,7 +570,7 @@ enum WelcomeFixture {
     promiseLabel.stringValue =
       updatesOn
       ? "Updates on · Weather and internet checks are optional. Opening setup changes nothing."
-      : "Update checks off. Opening setup changes nothing."
+      : "Update checks off · Weather and internet checks are optional. Opening setup changes nothing."
     weatherOn = settings.weather.enabled
     internetOn =
       settings.connectivityChecks || settings.publicIPChecks || settings.pingCheck.enabled
@@ -585,10 +585,17 @@ enum WelcomeFixture {
     super.layout()
     weather.frame = .init(x: 310, y: bounds.height - 144, width: 350, height: 140)
     internet.frame = .init(x: 310, y: bounds.height - 298, width: 350, height: 140)
-    updates.frame = .init(x: 310, y: 40, width: 350, height: 60)
-    for (card, badge) in [(weather, weatherPill), (internet, internetPill), (updates, updatesPill)]
-    {
-      badge.frame = .init(x: 224, y: card.frame.midY - 10, width: 34, height: 20)
+    updates.frame = .init(x: 310, y: internet.frame.minY - 14 - 60, width: 350, height: 60)
+    for (card, badge, offset) in [
+      (weather, weatherPill, CGFloat(28)),
+      (internet, internetPill, 0), (updates, updatesPill, -28),
+    ] {
+      // Cubic Bezier B(0.5): endpoints have weight 1/8 and controls 3/8.
+      let startY = (bounds.height - 150) / 2 + 12 + 75 + offset
+      let midpoint = NSPoint(
+        x: (170 + 3 * 240 + 3 * 240 + 310) / 8,
+        y: (startY + card.frame.midY) / 2)
+      badge.frame = .init(x: midpoint.x - 17, y: midpoint.y - 10, width: 34, height: 20)
     }
     promiseLabel.frame = .init(x: 20, y: 4, width: bounds.width - 40, height: 16)
   }

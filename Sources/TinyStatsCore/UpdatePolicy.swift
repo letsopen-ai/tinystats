@@ -4,10 +4,13 @@ import Foundation
 
 public enum UpdateError: Error, LocalizedError, Equatable, Sendable {
   case invalid(String)
+  case needsAttention
   case rateLimited(Date)
   public var errorDescription: String? {
     switch self {
     case .invalid(let reason): reason
+    case .needsAttention:
+      "An earlier update needs attention. Open the release page or inspect the recovery backup."
     case .rateLimited(let date): "GitHub has limited requests. Try again after \(date.formatted())."
     }
   }

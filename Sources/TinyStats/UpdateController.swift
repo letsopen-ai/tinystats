@@ -10,9 +10,13 @@ struct UpdatePresentation: Equatable {
   var eligible = false
   var canInstall = false
   var busy = false
+  var needsAttention = false
   var readyVersion: String?
   var readyBuild: String?
   var status: String {
+    if needsAttention {
+      return "Update needs attention · Open the release page or inspect the recovery backup"
+    }
     if let readyIdentifier { return "TinyStats \(version) (\(build)) · \(readyIdentifier) ready" }
     if busy { return "Checking for updates…" }
     let checked =
@@ -25,7 +29,16 @@ struct UpdatePresentation: Equatable {
     guard let readyVersion, let readyBuild else { return nil }
     return "\(readyVersion) (\(readyBuild))"
   }
-  var restartTitle: String { "Restart to Update \(readyIdentifier ?? "")" }
+  var restartTitle: String {
+    "\(canInstall ? "Restart to Update" : "Open Release Page for") \(readyIdentifier ?? "")"
+  }
+  var footerToolTip: String? {
+    readyIdentifier.map { canInstall ? "Update \($0) ready — restart to install" : restartTitle }
+  }
+  var footerAccessibilityLabel: String {
+    guard let readyIdentifier else { return "Update" }
+    return canInstall ? "Restart to install TinyStats \(readyIdentifier)" : restartTitle
+  }
 }
 
 @MainActor protocol UpdateUserInterface: AnyObject {
@@ -82,7 +95,7 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
   private var helperLaunched = false
   private var installationInFlight = false
   private var installationWaiters: [CheckedContinuation<Void, Never>] = []
-  private var pendingQuit: (@MainActor @Sendable () -> Void)?
+  private var pendingQuit: (@MainActor @Sendable (Bool) -> Void)?
   private let stagingGroup = DispatchGroup()
   private var stagingCancellation: UpdateStagingCancellation?
   var onChange: ((UpdatePresentation) -> Void)?
@@ -120,14 +133,28 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
       eligibility.developerID = false
     }
     let files = NativeUpdateFileSystem()
-    return .init(
+    let controller = UpdateController(
       defaults: defaults, version: version, build: build, eligibility: eligibility,
       original: bundle.bundleURL, canInstall: NativeUpdateInstaller.writable(bundle.bundleURL),
       root: NativeUpdateInstaller.root,
       client: UpdateClient(transport: NativeUpdateTransport(version: version)),
       stager: UpdateStager(
-        files: files, processes: NativeUpdateProcess(), verifier: NativeUpdateVerifier()),
+        files: files, processes: NativeUpdateProcess(), verifier: NativeUpdateVerifier(),
+        recovery: NativeUpdateRecoveryChecker(original: bundle.bundleURL)),
       installer: NativeUpdateInstaller(), ui: NativeUpdateUserInterface())
+    if eligibility.eligible { controller.inspectRecovery() }
+    return controller
+  }
+  private func inspectRecovery() {
+    let stager = self.stager
+    let root = self.root
+    DispatchQueue.global(qos: .utility).async { [weak self] in
+      let attention = (try? stager.recoveryNeedsAttention(root: root)) ?? true
+      HistoryQuitCoordinator.deliver { [weak self] in
+        self?.presentation.needsAttention = attention
+        self?.changed()
+      }
+    }
   }
   func setPreferences(check: Bool, download: Bool) {
     presentation.preferences.automaticallyCheck = check
@@ -254,6 +281,7 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
           return
         }
         prepared = update
+        presentation.needsAttention = false
         presentation.readyVersion = update.manifest.version
         presentation.readyBuild = update.manifest.build
         requestedRestart = restart
@@ -266,7 +294,8 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
           presentation.preferences.retryAfter = date
           presentation.preferences.save(to: defaults)
         }
-        logger.error("Update request failed: \(error.localizedDescription, privacy: .public)")
+        if case UpdateError.needsAttention = error { presentation.needsAttention = true }
+        logger.updateFailure("Update request failed", error: error)
         if manual && !quitting { showError(error) }
       }
     }
@@ -299,9 +328,7 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
         case .success: self.helperLaunched = true
         case .failure(let error):
           self.discardPrepared()
-          self.logger.error(
-            "Update installation preparation failed: \(error.localizedDescription, privacy: .public)"
-          )
+          self.logger.updateFailure("Update installation preparation failed", error: error)
           if !self.quitting { self.showError(error) }
         }
         self.changed()
@@ -310,14 +337,19 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
         for waiter in waiters { waiter.resume() }
         let completion = self.pendingQuit
         self.pendingQuit = nil
-        completion?()
+        if case .failure = result { self.quitting = false }
+        completion?(
+          {
+            if case .success = result { return true }
+            return false
+          }())
         if case .success = result, relaunch, !self.quitting { self.terminate() }
       }
     }
   }
   /// AppKit's termination loop may suspend the main dispatch queue. Wait only on
   /// worker-owned staging, and deliver through the common/modal main run loop.
-  func prepareToQuit(completion: @escaping @MainActor @Sendable () -> Void) {
+  func prepareToQuit(completion: @escaping @MainActor @Sendable (Bool) -> Void) {
     quitting = true
     task?.cancel()
     stagingCancellation?.cancel()
@@ -330,14 +362,14 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
       group.wait()
       HistoryQuitCoordinator.deliver { [weak self] in
         guard let self else {
-          completion()
+          completion(true)
           return
         }
         guard let prepared = self.prepared, !self.helperLaunched,
           self.presentation.preferences.automaticallyCheck,
           self.presentation.preferences.automaticallyDownload, self.presentation.canInstall
         else {
-          completion()
+          completion(true)
           return
         }
         self.pendingQuit = completion

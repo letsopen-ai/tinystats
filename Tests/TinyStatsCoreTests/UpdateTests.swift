@@ -383,14 +383,21 @@ private struct UpdateFailingMoveFiles: UpdateFileSystem {
   let staged: URL
   let original: URL
   let failRestore: Bool
+  var failStagedMove = true
+  var failBackupRemoval = false
   func createPrivateDirectory(_ url: URL) throws { try base.createPrivateDirectory(url) }
   func write(_ data: Data, to url: URL) throws { try base.write(data, to: url) }
   func contents(_ url: URL) throws -> [URL] { try base.contents(url) }
   func isDirectory(_ url: URL) -> Bool { base.isDirectory(url) }
   func validateBundleTree(_ url: URL) throws { try base.validateBundleTree(url) }
-  func remove(_ url: URL) throws { try base.remove(url) }
+  func remove(_ url: URL) throws {
+    if failBackupRemoval && url.lastPathComponent == "Previous.app" {
+      throw UpdateError.invalid("Injected backup cleanup failure")
+    }
+    try base.remove(url)
+  }
   func move(_ source: URL, to destination: URL) throws {
-    if source == staged || (failRestore && destination == original) {
+    if (failStagedMove && source == staged) || (failRestore && destination == original) {
       throw UpdateError.invalid("Injected rename failure")
     }
     try base.move(source, to: destination)
@@ -584,4 +591,80 @@ func updateFailedRestartReopensUntouchedOrRestoredTempApp(_ reason: String) thro
   #expect(
     UpdateHTTPPolicy.failure(
       status: 200, url: asset, headers: [:], length: -1, limit: 100, now: now) == nil)
+}
+
+private struct UpdateRecoveryFixture: UpdateRecoveryChecking {
+  let verified: Bool
+  let installedVersion: String
+  let installedBuild: String
+  func canDiscard(backup: URL) throws -> Bool {
+    try UpdateRecoveryVersion.canDiscard(
+      installedVersion: installedVersion,
+      installedBuild: installedBuild, backupVersion: "0.37.5", backupBuild: "77",
+      installedVerified: verified)
+  }
+}
+
+@Test func updateStaleRecoveryDiscardsOnlyAuthenticEqualOrNewerInstalledApp() throws {
+  for scenario in ["equal", "newer", "olderVersion", "olderBuild", "unverified", "malformed"] {
+    let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+      .appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let stale = root.appendingPathComponent("stale")
+    let backup = stale.appendingPathComponent("Previous.app")
+    try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+    let recovery = UpdateRecoveryFixture(
+      verified: scenario != "unverified",
+      installedVersion: scenario == "olderVersion"
+        ? "0.37.4"
+        : scenario == "malformed" ? "invalid" : scenario == "equal" ? "0.37.5" : "0.37.6",
+      installedBuild: scenario == "olderBuild" ? "76" : scenario == "equal" ? "77" : "78")
+    let stager = UpdateStager(
+      files: NativeUpdateFileSystem(), processes: UpdateFakeExtractor(),
+      verifier: UpdateFakeVerifier(), recovery: recovery)
+    let safe = scenario == "equal" || scenario == "newer"
+    #expect(try stager.recoveryNeedsAttention(root: root) == !safe)
+    let archive = updateZIP()
+    let manifest = UpdateManifest(
+      version: updateVersion, build: "78",
+      sha256: UpdatePolicy.digest(archive), file: updateFilename)
+    if safe {
+      _ = try stager.prepare(
+        archive: archive, manifest: manifest, root: root, team: UpdatePolicy.teamID)
+      #expect(!FileManager.default.fileExists(atPath: stale.path))
+    } else {
+      #expect(throws: UpdateError.needsAttention) {
+        try stager.prepare(
+          archive: archive, manifest: manifest, root: root, team: UpdatePolicy.teamID)
+      }
+      #expect(FileManager.default.fileExists(atPath: backup.path))
+    }
+  }
+}
+
+@Test func updateBackupCleanupFailureDoesNotFailCommittedInstall() throws {
+  let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+    .appendingPathComponent(UUID().uuidString)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let original = root.appendingPathComponent("Installed/TinyStats.app")
+  let staged = root.appendingPathComponent("Staged/TinyStats.app")
+  let backup = root.appendingPathComponent("Previous.app")
+  for app in [original, staged] {
+    try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+  }
+  try Data("new".utf8).write(to: staged.appendingPathComponent("marker"))
+  let files = UpdateFailingMoveFiles(
+    staged: staged, original: original, failRestore: false,
+    failStagedMove: false, failBackupRemoval: true)
+  var reopened = false
+  try UpdateInstallRecovery.perform(
+    relaunch: true,
+    install: {
+      try UpdateInstallTransaction.install(
+        original: original, staged: staged, backup: backup,
+        pid: 42, files: files, waiter: UpdateFakeWaiter(), verify: {})
+    }, reopen: { reopened = true }, report: { _ in Issue.record("Committed install must succeed") })
+  #expect(reopened && FileManager.default.fileExists(atPath: backup.path))
+  #expect(
+    try String(contentsOf: original.appendingPathComponent("marker"), encoding: .utf8) == "new")
 }

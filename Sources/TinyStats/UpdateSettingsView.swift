@@ -54,7 +54,7 @@ import TinyStatsCore
     restart.isHidden = value.readyVersion == nil
     restart.isEnabled = !value.busy
     restart.title = value.canInstall ? "Restart to Update" : "Open Release Page"
-    restart.setAccessibilityLabel(value.canInstall ? value.restartTitle : "Open Release Page")
+    restart.setAccessibilityLabel(value.restartTitle)
     status.stringValue = value.status
     note.stringValue =
       value.eligible

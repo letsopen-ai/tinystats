@@ -9,7 +9,7 @@ It consumes the existing public assets of [letsopen-ai/tinystats Releases](https
 Signed releases check once per 24 hours by default and prepare verified updates in
 the background by default. Defaults favor timely fixes without interrupting normal
 monitoring. The welcome tour and General settings disclose GitHub's role; both
-preferences can be disabled in **Settings › General › Updates**. Saved Off choices
+preferences can be disabled in **Settings › General › Software Update**. Saved Off choices
 are preserved; malformed explicit preferences fail closed to Off.
 
 The initial check waits a randomized three to seven minutes after launch and waits
@@ -119,26 +119,41 @@ Equal versions/builds and downgrades are never offered.
    code requirement must pass, followed by `/usr/sbin/spctl --assess --type execute`.
    Bundle ID, short version and build in Info.plist must exactly match the release
    manifest. Apple trust/Gatekeeper policy can perform its own system checks.
-4. Re-verify before launching a private copied executable helper via fixed argv
-   (no interpolated shell commands). The helper creates a separate session and
-   waits at most 120 seconds for TinyStats' PID to exit. The app uses its normal
-   termination path, including the existing bounded history checkpoint completion.
+4. Re-verify before launching the original signed bundle's own executable via
+   `posix_spawn`, fixed argv and `POSIX_SPAWN_SETSID` (no shell or bare executable
+   copy). Its running image survives the subsequent bundle renames. Standard I/O
+   points to `/dev/null`; a private inherited pipe is the only additional descriptor.
+   The helper decodes and validates its plan inside the recovery path, then signals
+   ready through that pipe. The app waits on a worker thread for at most 10 seconds.
+   An early exit, malformed plan, missing signal or timeout stops and reaps the
+   helper, discards the prepared update and keeps TinyStats running (including
+   cancelling an install-on-quit termination). Explicit restart shows the error.
+   Only a ready helper allows the normal history checkpoint/termination path.
+   The helper then waits at most 120 seconds for TinyStats' PID to exit.
 5. After waiting, the helper checks the original bundle's inode, signature/team,
    writable location and the staged bundle again immediately before installation.
    Same-volume rename moves the original to a staging backup and the staged app
-   to the exact original path. A move failure restores the old bundle. On an explicit restart, helper failure
+   to the exact original path. A move failure restores the old bundle. Any helper
+   failure after the parent app exits, including plan decoding/validation failure,
    attempts to reopen the untouched or restored signed app and records the error
    in the local unified log. A relaunch error after successful installation is
    logged without rolling back or deleting the new app, which may already be running.
    Successful explicit restart uses `/usr/bin/open` on that path. Normal quit does
-   not relaunch. The backup is removed only after success. Quarantine and Gatekeeper
+   not relaunch after success. Backup removal after both renames is best-effort;
+   failure to clean up does not turn a successful installation into a failure.
+   Quarantine and Gatekeeper
    are never bypassed or disabled.
 
 Failures remove candidate staging. An interrupted installation or failed rollback
-retains the backup for recovery, refuses further preparation and requires manual
-inspection. Preparing another candidate removes earlier unused candidates, bounding
-retained update storage. Do not delete `Previous.app` until the installation has
-been inspected. This is a two-rename transaction with rollback, not a crash-proof
+retains the backup for recovery. On launch, Settings shows **Update needs attention**
+if a recovery backup cannot be safely discarded. Before preparing another update,
+a stale recovery folder is removed only when the installed app passes the pinned
+Developer ID and notarization requirements and its numeric version and build are
+both at least as new as the authenticated backup. Otherwise the backup is preserved
+and preparation fails closed with the same attention status. A cleanup error also
+preserves that status. Preparing another candidate removes earlier unused candidates,
+bounding retained update storage. Do not manually delete `Previous.app` until the
+installation has been inspected. This is a two-rename transaction with rollback, not a crash-proof
 filesystem exchange: a power loss between renames can require manual restoration.
 
 ## Trust and remaining validation

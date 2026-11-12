@@ -986,6 +986,22 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     }
     #expect(!stage.weather.frame.intersects(stage.internet.frame))
     #expect(!stage.internet.frame.intersects(stage.updates.frame))
+    #expect(stage.weather.frame.minY - stage.internet.frame.maxY == 14)
+    #expect(stage.internet.frame.minY - stage.updates.frame.maxY == 14)
+    for (tile, badge, offset) in [
+      (stage.weather, stage.weatherPill, CGFloat(28)),
+      (stage.internet, stage.internetPill, 0), (stage.updates, stage.updatesPill, -28),
+    ] {
+      let startY = (stage.bounds.height - 150) / 2 + 12 + 75 + offset
+      #expect(badge.frame.midX == 240)
+      #expect(badge.frame.midY == (startY + tile.frame.midY) / 2)
+    }
+    #expect(
+      stage.promiseLabel.stringValue
+        == (enabled
+          ? "Updates on · Weather and internet checks are optional. Opening setup changes nothing."
+          : "Update checks off · Weather and internet checks are optional. Opening setup changes nothing.")
+    )
     #expect(stage.updates.accessibilityHelp()?.contains("Development builds never check") == true)
   }
 }
