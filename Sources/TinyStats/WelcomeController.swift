@@ -44,6 +44,7 @@ enum WelcomePresentation {
 }
 
 @MainActor final class WelcomeController: NSWindowController, NSWindowDelegate {
+  var currentUpdates: () -> UpdatePresentation
   var currentSettings: () -> Settings
   var onMenuBarChange: ((Settings) -> Void)?
   var onHistoryPersistence: ((Bool) -> Void)?
@@ -88,10 +89,12 @@ enum WelcomePresentation {
 
   init(
     settings: @escaping () -> Settings, initialStep: Int = 0,
+    updates: @escaping () -> UpdatePresentation = { UpdatePresentation() },
     glassEnvironment: @escaping () -> GlassSurface.Environment = { .current }
   ) {
     self.glassEnvironment = glassEnvironment
     currentSettings = settings
+    currentUpdates = updates
     step = min(4, max(0, initialStep))
     let window = WelcomeWindow(
       contentRect: .init(x: 0, y: 0, width: 720, height: 630),
@@ -194,7 +197,7 @@ enum WelcomePresentation {
       : .init(x: 30, y: 572, width: 560, height: 30)
     let titles = [
       "Your Mac, at a glance.", "Make the menu bar yours", "History stays on this Mac",
-      "Online only when you choose", "Ready when you are",
+      "Know what goes online", "Ready when you are",
     ]
     heading.stringValue = titles[step]
     message.stringValue =
@@ -237,7 +240,8 @@ enum WelcomePresentation {
     case 1: renderMenuBar(settings)
     case 2: renderHistory(settings)
     case 3:
-      let stage = WelcomeOnlineStageView(settings: settings, environment: glassEnvironment)
+      let stage = WelcomeOnlineStageView(
+        settings: settings, updates: currentUpdates(), environment: glassEnvironment)
       stage.weather.actionButton = button(
         "Set Up Weather…", action: #selector(openWeather), symbol: "slider.horizontal.3")
       stage.weather.actionButton?.setAccessibilityLabel("Set up Weather")
@@ -409,7 +413,7 @@ enum WelcomePresentation {
       check.state = settings.readouts.contains(module) ? .on : .off
     }
     updatePreview(settings)
-    onlineStage?.update(settings)
+    onlineStage?.update(settings, updates: currentUpdates())
     (alertsCard?.accessory as? WelcomeBadge)?.text = settings.alerts ? "On" : "Off"
     alertsCard?.captionLabel.stringValue = Self.alertsCaption(settings)
     alertsCard?.setAccessibilityHelp(Self.alertsCaption(settings))

@@ -30,7 +30,7 @@ import Testing
   #expect(
     descendants(general).compactMap { $0 as? NSTextField }.contains {
       $0.stringValue
-        == "No account. No analytics. Local only, unless you enable Weather or advanced internet checks."
+        == "No account. No analytics. Signed releases can check GitHub; Weather and internet checks are optional."
     })
 }
 

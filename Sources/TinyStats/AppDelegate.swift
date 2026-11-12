@@ -43,6 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   private var historyController: HistoryController?
   private var historyStorageActionPending = false
   private var historyQuit: HistoryQuitCoordinator?
+  private var updater: UpdateController?
+  private var updateQuitPending = false
+  private var updateQuitReady = false
+  private var restartUpdateItem: NSMenuItem?
+
   private var calendarPreferences: CalendarSettingsController?
   private var calendarReader: CalendarAgendaReader?
   private var sleeping = false
@@ -142,6 +147,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       }
       previewCycleProbe = .init(configuration: configuration)
     }
+    updater = UpdateController.live(defaults: Self.preferenceStore)
+    updater?.onChange = { [weak self] value in self?.updatePresentation(value) }
     rebuildItems()
     setupMenu()
     let worker = MonitorWorker(
@@ -167,6 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         self.refreshCalendarDemand()
       case .wake:
         self.sleeping = false
+        self.updater?.tick(welcomeVisible: self.welcome?.window?.isVisible == true)
         self.invalidateRemoteSnapshots()
         self.worker?.setSleeping(false, settings: self.settings)
         self.refreshCalendarDemand()
@@ -276,6 +284,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     let popover = NSPopover()
     popover.animates = false
     self.detail = detail
+    detail.onRestartUpdate = { [weak self] in self?.updater?.restart() }
+    if let value = updater?.presentation { updatePresentation(value) }
     self.popover = popover
     // Native transient dismissal can consume the click on another status item
     // before its action can switch pages. Own dismissal while this popover is open.
@@ -399,22 +409,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   }
   private func setupMenu() {
     let main = NSMenu()
-    let appMenu = NSMenu()
+    let appMenu = makeApplicationMenu()
     let root = NSMenuItem()
     root.submenu = appMenu
     main.addItem(root)
-    let settings = NSMenuItem(
-      title: StatusMenuTitles.settings, action: #selector(showSettings), keyEquivalent: ",")
-    settings.target = self
-    appMenu.addItem(settings)
-    let welcome = NSMenuItem(
-      title: StatusMenuTitles.welcome, action: #selector(showWelcome), keyEquivalent: "")
-    welcome.target = self
-    appMenu.addItem(welcome)
-    appMenu.addItem(.separator())
-    appMenu.addItem(
-      withTitle: StatusMenuTitles.quit, action: #selector(NSApplication.terminate(_:)),
-      keyEquivalent: "q")
     let editRoot = NSMenuItem()
     editRoot.title = "Edit"
     editRoot.submenu = Self.makeEditMenu()
@@ -438,6 +436,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     NSApp.windowsMenu = windows
     NSApp.mainMenu = main
   }
+  func makeApplicationMenu() -> NSMenu {
+    let appMenu = NSMenu(title: "TinyStats")
+    let about = appMenu.addItem(
+      withTitle: "About TinyStats", action: #selector(showAbout), keyEquivalent: "")
+    about.target = self
+    let check = appMenu.addItem(
+      withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+    check.target = self
+    let restart = appMenu.addItem(
+      withTitle: "Restart to Update…", action: #selector(restartToUpdate), keyEquivalent: "")
+    restart.target = self
+    restart.isHidden = true
+    restartUpdateItem = restart
+    appMenu.addItem(.separator())
+    let settings = NSMenuItem(
+      title: StatusMenuTitles.settings, action: #selector(showSettings), keyEquivalent: ",")
+    settings.target = self
+    appMenu.addItem(settings)
+    let welcome = NSMenuItem(
+      title: StatusMenuTitles.welcome, action: #selector(showWelcome), keyEquivalent: "")
+    welcome.target = self
+    appMenu.addItem(welcome)
+    appMenu.addItem(.separator())
+    appMenu.addItem(
+      withTitle: StatusMenuTitles.quit, action: #selector(NSApplication.terminate(_:)),
+      keyEquivalent: "q")
+    return appMenu
+  }
+  @objc private func showAbout() { NSApp.orderFrontStandardAboutPanel(nil) }
+  @objc private func checkForUpdates() { updater?.check() }
+  @objc private func restartToUpdate() { updater?.restart() }
+  private func updatePresentation(_ value: UpdatePresentation) {
+    preferences?.updatesView.update(value)
+    restartUpdateItem?.title = value.restartTitle
+    restartUpdateItem?.isHidden = value.readyVersion == nil
+    detail?.updateReady = value.readyIdentifier
+  }
   static func makeEditMenu() -> NSMenu {
     let edit = NSMenu(title: "Edit")
     edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
@@ -454,6 +489,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
   /// The worker's main-actor delivery. Internal so owned-window regressions can drive the
   /// same power-source transition path without starting a collector.
   func receive(_ snapshot: Snapshot, history: [HistoryPoint], alerts: [AlertEvent]) {
+    updater?.tick(welcomeVisible: welcome?.window?.isVisible == true)
     var snapshot = snapshot
     snapshot.internetChecks = snapshot.internetChecks.filtered(
       connectivity: settings.connectivityChecks, publicIP: settings.publicIPChecks,
@@ -898,6 +934,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     welcome?.setHistoryBusy(false)
   }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    if let updater, !updateQuitReady {
+      if !updateQuitPending {
+        updateQuitPending = true
+        updater.prepareToQuit { [weak self] in
+          HistoryQuitCoordinator.deliver { [weak self] in
+            guard let self else { return }
+            self.updateQuitReady = true
+            if self.beginHistoryQuit() == .terminateNow {
+              NSApp.reply(toApplicationShouldTerminate: true)
+            }
+          }
+        }
+      }
+      return .terminateLater
+    }
+    return beginHistoryQuit()
+  }
+  private func beginHistoryQuit() -> NSApplication.TerminateReply {
     if historyQuit?.replied == true { return .terminateNow }
     if historyQuit?.waiting == true { return .terminateLater }
     guard let worker, settings.persistHistory || historyStorageActionPending else {
@@ -928,7 +982,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       return
     }
     let controller = WelcomeController(
-      settings: { [weak self] in self?.settings ?? Settings() }, initialStep: initialStep)
+      settings: { [weak self] in self?.settings ?? Settings() }, initialStep: initialStep,
+      updates: { [weak self] in self?.updater?.presentation ?? UpdatePresentation() })
     controller.onMenuBarChange = { [weak self] value in
       guard let self else { return }
       self.applyPreferences(value)
@@ -1020,6 +1075,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
       settings: settings, interfaces: snapshot.interfaces.map(\.name).sorted(), snapshot: snapshot,
       history: history, initialPage: initialPage)
     controller.onChange = { [weak self] value in self?.applyPreferences(value) }
+    controller.updatesView.onCheck = { [weak self] in self?.updater?.check() }
+    controller.updatesView.onRestart = { [weak self] in self?.updater?.restart() }
+    controller.updatesView.onPreferences = { [weak self] check, download in
+      self?.updater?.setPreferences(check: check, download: download)
+    }
+    if let value = updater?.presentation { controller.updatesView.update(value) }
     controller.setHistoryStorageBusy(historyStorageActionPending)
     controller.onHistoryPersistence = { [weak self] enabled in
       self?.changeHistoryPersistence(enabled)

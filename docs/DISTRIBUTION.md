@@ -106,3 +106,20 @@ Per-source Power visibility and the dropdown Energy Mode section were developed 
 ## Immediate dropdown candidate — 0.37.4 (76)
 
 Native popover animation is disabled for show and hide; Separate/One icon-to-icon switches reuse the visible presentation. Scoped validation covers strict Swift format lint, a warning-as-error build and full native Swift tests with owned light/dark evidence. The capture-enabled suite passed 774 Swift Testing and 57 XCTest tests with `--no-parallel`: concurrent galleries exceeded the existing ClockWorker tests’ one-minute limits. Stills establish layout only; configuration and synchronous lifecycle regressions check the animation policy. This candidate does not refresh the release receipt. The maintainer must run the final-tree `scripts/verify-local.sh`; packaging, real diagnostics, Release benchmarks and physical status-item/macOS 14/15/Intel checks remain separate.
+
+## Native updater candidate — 0.37.5 (77)
+
+See [Updates](UPDATES.md) for the existing asset contract, default-on daily checks
+and preparation, signed-build eligibility, privacy, verification and quit/restart
+installation. The workflow is unchanged. Before publishing, validate a real
+signed-to-signed upgrade from a temporary writable app location, normal Quit,
+explicit restart, failure reopening, bundle ownership/writability, offline
+notarization/Gatekeeper behavior and recovery. Verify that the copied signed
+helper executable can launch outside its bundle, including when the downloaded
+app carries quarantine and launch constraints. No quarantine removal or
+Gatekeeper bypass is implemented. Inspect a
+current GitHub asset redirect chain; live verification was unavailable in the
+implementation sandbox. Offline fakes and owned-window stills do not establish
+those runtime claims or macOS 14/15/Intel compatibility. No release validation
+receipt is created for this candidate; the final-tree local gate result belongs
+in the implementation notes.

@@ -509,55 +509,88 @@ enum WelcomeFixture {
   let internet: WelcomeTileView
   let weatherPill = WelcomeBadge("Off")
   let internetPill = WelcomeBadge("Off")
+  let updates: WelcomeTileView
+  let updatesPill = WelcomeBadge("Off")
+  let promiseLabel = WelcomeGraphic.label("", size: 11, secondary: true)
+  private(set) var updatesOn = false
+  private var updateState: UpdatePresentation
   private(set) var weatherOn = false
   private(set) var internetOn = false
-  init(settings: Settings, environment: @escaping () -> GlassSurface.Environment) {
+  init(
+    settings: Settings, updates updateState: UpdatePresentation = .init(),
+    environment: @escaping () -> GlassSurface.Environment
+  ) {
+    self.updateState = updateState
+    updates = WelcomeTileView(
+      title: "Updates · GitHub", caption: "Daily checks · app version only",
+      symbol: "arrow.down.circle", height: 60, environment: environment)
     weather = WelcomeTileView(
       title: "Weather", caption: "MET Norway · api.met.no", symbol: Module.weather.symbol,
-      module: .weather, height: 154, environment: environment)
+      module: .weather, height: 140, environment: environment)
     internet = WelcomeTileView(
       title: "Internet checks", caption: "Apple or your URL · ipify · your ping address",
-      symbol: Module.network.symbol, module: .network, height: 154, environment: environment)
+      symbol: Module.network.symbol, module: .network, height: 140, environment: environment)
     super.init(
       label: "Online features. Weather and Internet checks are off until you turn them on.",
       group: true, environment: environment)
     platter = false
     weather.identifier = .init("welcome-weather")
     weather.lines = [
-      "Sends rounded location and your IP", "Pick a city or allow location in setup",
+      "Sends rounded location and your IP"
     ]
     weather.captionLabel.textColor = .labelColor
     weather.setAccessibilityHelp(
       "Off until opt-in. Choose a city or allow location in setup. When enabled, MET Norway receives rounded coordinates and your public IP. Opening setup enables nothing. Saved choices stay yours."
     )
     internet.identifier = .init("welcome-internet")
-    internet.lines = ["Each destination sees your IP", "Review destinations and timing first"]
+    internet.lines = ["Each destination sees your IP"]
     internet.captionLabel.textColor = .labelColor
     internet.accessory = WelcomeBadge("Advanced")
     internet.setAccessibilityHelp(
       "Off by default. HTTPS uses Apple’s preset or your URL; public IP uses ipify; ping uses your numeric address. Each destination sees your source IP. Review destinations and cadence before enabling. Existing online choices are preserved."
     )
-    for view in [weather, internet, weatherPill, internetPill] { addSubview(view) }
+    updates.identifier = .init("welcome-updates")
+    updates.setAccessibilityHelp(
+      "Signed releases check GitHub daily by default, sending only the app version. Change automatic checks and downloads in Settings › General. Development builds never check. Saved Off choices are preserved."
+    )
+    promiseLabel.alignment = .center
+    for view in [weather, internet, updates, weatherPill, internetPill, updatesPill, promiseLabel] {
+      addSubview(view)
+    }
     update(settings)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  func update(_ settings: Settings) {
+  func update(_ settings: Settings, updates: UpdatePresentation? = nil) {
+    if let updates { updateState = updates }
+    updatesOn = updateState.eligible && updateState.preferences.automaticallyCheck
+    updatesPill.text = updatesOn ? "On" : "Off"
+    self.updates.captionLabel.stringValue =
+      updateState.eligible
+      ? "Daily checks · app version only" : "Signed releases · Settings › General"
+    promiseLabel.stringValue =
+      updatesOn
+      ? "Updates on · Weather and internet checks are optional. Opening setup changes nothing."
+      : "Update checks off. Opening setup changes nothing."
     weatherOn = settings.weather.enabled
     internetOn =
       settings.connectivityChecks || settings.publicIPChecks || settings.pingCheck.enabled
     weatherPill.text = weatherOn ? "On" : "Off"
     internetPill.text = internetOn ? "On" : "Off"
     setAccessibilityLabel(
-      "Online features. Weather \(weatherPill.text). Internet checks \(internetPill.text). Opening setup changes nothing."
+      "Online features. Weather \(weatherPill.text). Internet checks \(internetPill.text). GitHub update checks \(updatesPill.text); daily by default on signed releases, disable in General. Opening setup changes nothing."
     )
     needsDisplay = true
   }
   override func layout() {
     super.layout()
-    weather.frame = .init(x: 310, y: bounds.height - 174, width: 350, height: 154)
-    internet.frame = .init(x: 310, y: bounds.height - 394, width: 350, height: 154)
-    weatherPill.frame = .init(x: 224, y: bounds.height - 151, width: 34, height: 20)
-    internetPill.frame = .init(x: 224, y: bounds.height - 297, width: 34, height: 20)
+    weather.frame = .init(x: 310, y: bounds.height - 144, width: 350, height: 140)
+    internet.frame = .init(x: 310, y: bounds.height - 298, width: 350, height: 140)
+    updates.frame = .init(x: 310, y: 40, width: 350, height: 60)
+    for (card, badge) in [(weather, weatherPill), (internet, internetPill), (updates, updatesPill)]
+    {
+      badge.frame = .init(x: 224, y: card.frame.midY - 10, width: 34, height: 20)
+    }
+    promiseLabel.frame = .init(x: 20, y: 4, width: bounds.width - 40, height: 16)
   }
   override func draw(_ dirtyRect: NSRect) {
     super.draw(dirtyRect)
@@ -568,8 +601,10 @@ enum WelcomeFixture {
     WelcomeGraphic.symbol(
       "laptopcomputer", in: .init(x: 75, y: mac.minY + 83, width: 40, height: 40))
     WelcomeGraphic.text("This Mac", 65, mac.minY + 52, size: 14, weight: .semibold)
-    WelcomeGraphic.text("Local first", 70, mac.minY + 31, color: secondaryInk)
-    for (card, on, offset) in [(weather, weatherOn, CGFloat(14)), (internet, internetOn, -14)] {
+    WelcomeGraphic.text("Your controls", 59, mac.minY + 31, color: secondaryInk)
+    for (card, on, offset) in [
+      (weather, weatherOn, CGFloat(28)), (internet, internetOn, 0), (updates, updatesOn, -28),
+    ] {
       let path = NSBezierPath()
       path.move(to: .init(x: mac.maxX, y: mac.midY + offset))
       path.curve(
@@ -581,15 +616,7 @@ enum WelcomeFixture {
       path.lineWidth = 1.5
       path.stroke()
     }
-    let promise =
-      weatherOn || internetOn
-      ? "Turn each off in its own setup. Opening setup changes nothing."
-      : "Off until you turn them on. Opening setup changes nothing."
-    let width = (promise as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)])
-      .width
-    WelcomeGraphic.symbol(
-      "lock", in: .init(x: (bounds.width - width) / 2 - 20, y: 5, width: 13, height: 13))
-    WelcomeGraphic.text(promise, (bounds.width - width) / 2, 4, size: 12, color: secondaryInk)
+
   }
 }
 
