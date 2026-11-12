@@ -132,6 +132,10 @@ Equal versions/builds and downgrades are never offered.
    The helper then waits at most 120 seconds for TinyStats' PID to exit.
 5. After waiting, the helper checks the original bundle's inode, signature/team,
    writable location and the staged bundle again immediately before installation.
+   It checks for another TinyStats process using that exact bundle path, excluding
+   the helper itself. If one exists, it waits one second and retries once, then
+   refuses replacement and follows the same failure/reopen path. This final check
+   reduces the immediate-relaunch race; it does not provide a cross-instance lock.
    Same-volume rename moves the original to a staging backup and the staged app
    to the exact original path. A move failure restores the old bundle. Any helper
    failure after the parent app exits, including plan decoding/validation failure,
@@ -144,6 +148,8 @@ Equal versions/builds and downgrades are never offered.
    Quarantine and Gatekeeper
    are never bypassed or disabled.
 
+## Failures
+
 Failures remove candidate staging. An interrupted installation or failed rollback
 retains the backup for recovery. On launch, Settings shows **Update needs attention**
 if a recovery backup cannot be safely discarded. Before preparing another update,
@@ -155,6 +161,26 @@ preserves that status. Preparing another candidate removes earlier unused candid
 bounding retained update storage. Do not manually delete `Previous.app` until the
 installation has been inspected. This is a two-rename transaction with rollback, not a crash-proof
 filesystem exchange: a power loss between renames can require manual restoration.
+
+If rollback itself fails, the backup stays at
+`~/Library/Caches/com.niechen.tinystats/Updates/<build>-<random>/Previous.app`.
+Recover it manually:
+
+1. Quit every TinyStats instance. In Finder choose **Go › Go to Folder…** and enter
+   `~/Library/Caches/com.niechen.tinystats/Updates/`. Open the recovery folder that
+   contains `Previous.app` and `install.json`.
+2. Open `install.json` as text and read the `original` URL. That is the exact
+   installation path to restore; decode any URL-escaped spaces. Do not change the
+   plan or run the helper manually. Preserve the whole recovery folder until done.
+3. If an app already exists at the original path, move it aside without deleting
+   or merging it. Move `Previous.app` into the original parent folder and rename it
+   to **TinyStats.app**, matching the original path exactly. Do not merge bundles.
+4. Open the restored app through Finder and confirm its version and normal behavior.
+   Do not bypass any macOS security warning. If the backup is missing, corrupt or
+   rejected, install a fresh signed ZIP from the official GitHub Releases page.
+5. Only after confirming a working installation, remove the leftover recovery folder
+   and any app you moved aside. An unresolved backup keeps the updater in the
+   **Update needs attention** state instead of silently deleting the older app.
 
 ## Trust and remaining validation
 

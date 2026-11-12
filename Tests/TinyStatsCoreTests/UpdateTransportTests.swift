@@ -81,3 +81,29 @@ private final class UpdateOfflineURLProtocol: URLProtocol, @unchecked Sendable {
     }
   }
 }
+
+@Test func updateRejectedRedirectReasonSurvivesSubsequentHTTP302Response() throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [UpdateOfflineURLProtocol.self]
+  let session = URLSession(configuration: configuration)
+  defer { session.invalidateAndCancel() }
+  let task = session.dataTask(with: UpdatePolicy.latestURL)  // Never resumed.
+  let response = try #require(
+    HTTPURLResponse(
+      url: UpdatePolicy.latestURL, statusCode: 302,
+      httpVersion: nil, headerFields: nil))
+  let request = UpdateRequest()
+  request.urlSession(
+    session, task: task, willPerformHTTPRedirection: response,
+    newRequest: URLRequest(url: URL(string: "https://evil.invalid/asset")!)
+  ) { redirect in
+    #expect(redirect == nil)
+  }
+  request.urlSession(session, dataTask: task, didReceive: response) { disposition in
+    #expect(disposition == .cancel)
+  }
+  #expect(
+    request.responseFailure as? UpdateError
+      == .invalid(
+        "GitHub redirected to a destination that is not allowed."))
+}

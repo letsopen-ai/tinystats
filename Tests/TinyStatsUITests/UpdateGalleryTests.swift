@@ -188,6 +188,20 @@ import Testing
     descriptions.append(
       "\(footerStem).png — Owned CPU dropdown with the temporary prepared-update footer icon and no-op action."
     )
+    // Show the changed privacy row using the same eligible synthetic presentation.
+    dropdown.showsAllReadings = true
+    dropdown.view.layoutSubtreeIfNeeded()
+    let table = try #require(
+      dropdown.view.subviews.compactMap { $0 as? NSScrollView }
+        .compactMap { $0.documentView as? NSTableView }.first)
+    if table.numberOfRows > 0 { table.scrollRowToVisible(table.numberOfRows - 1) }
+    let privacyStem = "updates-privacy-\(theme.rawValue)"
+    let privacyActivity = try await updatePNG(
+      dropdown.view,
+      to: folder.appendingPathComponent(privacyStem + ".png"))
+    descriptions.append(
+      "\(privacyStem).png — Owned CPU All readings with Internet requests enabled for eligible default-on GitHub update checks. \(privacyActivity)"
+    )
     alertWindow.close()
     let welcome = WelcomeController(settings: { settings }, initialStep: 3, updates: { state })
     defer { welcome.close() }

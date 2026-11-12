@@ -21,7 +21,7 @@ struct UpdatePresentation: Equatable {
     if busy { return "Checking for updates…" }
     let checked =
       preferences.lastCheck.map {
-        " · Checked \(RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date()))"
+        " · Checked \(UpdateText.checked($0, relativeTo: Date()))"
       } ?? ""
     return "TinyStats \(version) (\(build))\(checked)"
   }
@@ -29,6 +29,7 @@ struct UpdatePresentation: Equatable {
     guard let readyVersion, let readyBuild else { return nil }
     return "\(readyVersion) (\(readyBuild))"
   }
+  var updateChecksOn: Bool { eligible && preferences.automaticallyCheck }
   var restartTitle: String {
     "\(canInstall ? "Restart to Update" : "Open Release Page for") \(readyIdentifier ?? "")"
   }
@@ -81,6 +82,7 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
   private let client: UpdateClient
   private let stager: any UpdatePreparing
   private let installer: any UpdateInstalling
+  private let installAccess: (any UpdateInstallLocationChecking)?
   private let ui: any UpdateUserInterface
   private let original: URL
   private let root: URL
@@ -105,12 +107,14 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
     defaults: UserDefaults, version: String, build: String, eligibility: UpdateEligibility,
     original: URL, canInstall: Bool, root: URL, client: UpdateClient, stager: any UpdatePreparing,
     installer: any UpdateInstalling, ui: any UpdateUserInterface,
+    installAccess: (any UpdateInstallLocationChecking)? = nil,
     now: Date = Date(), launchDelay: TimeInterval = Double.random(in: 180...420)
   ) {
     self.defaults = defaults
     self.client = client
     self.stager = stager
     self.installer = installer
+    self.installAccess = installAccess
     self.ui = ui
     self.original = original
     self.root = root
@@ -141,7 +145,8 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
       stager: UpdateStager(
         files: files, processes: NativeUpdateProcess(), verifier: NativeUpdateVerifier(),
         recovery: NativeUpdateRecoveryChecker(original: bundle.bundleURL)),
-      installer: NativeUpdateInstaller(), ui: NativeUpdateUserInterface())
+      installer: NativeUpdateInstaller(), ui: NativeUpdateUserInterface(),
+      installAccess: NativeUpdateInstallLocation())
     if eligibility.eligible { controller.inspectRecovery() }
     return controller
   }
@@ -189,10 +194,13 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
     }
     guard !presentation.busy else { return }
     if let prepared {
+      refreshInstallAccess()
       if manual
         && ui.alert(
           title: "TinyStats \(prepared.manifest.version) (\(prepared.manifest.build)) is ready",
-          message: "The update is downloaded and verified. Restart to install it.",
+          message: presentation.canInstall
+            ? "The update is downloaded and verified. Restart to install it."
+            : "This location cannot be updated automatically. Open the release page to install this version.",
           buttons: [presentation.canInstall ? "Restart to Update" : "Open Release Page", "Later"])
           == 0
       {
@@ -261,11 +269,14 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
         let stager = self.stager
         let root = self.root
         let team = self.runningTeam
+        let access = self.installAccess
+        let original = self.original
+        let previousAccess = presentation.canInstall
         let cancellation = UpdateStagingCancellation()
         stagingCancellation = cancellation
         let group = stagingGroup
         group.enter()
-        let update = try await Task.detached(priority: .utility) {
+        let (update, canInstall) = try await Task.detached(priority: .utility) {
           defer { group.leave() }
           let result = try stager.prepare(
             archive: archive, manifest: candidate.manifest, root: root, team: team)
@@ -273,13 +284,14 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
             try? stager.files.remove(result.directory)
             throw CancellationError()
           }
-          return result
+          return (result, access?.canInstall(original) ?? previousAccess)
         }.value
         stagingCancellation = nil
         if Task.isCancelled || quitting {
           try? stager.files.remove(update.directory)
           return
         }
+        presentation.canInstall = canInstall
         prepared = update
         presentation.needsAttention = false
         presentation.readyVersion = update.manifest.version
@@ -302,11 +314,19 @@ private final class UpdateStagingCancellation: @unchecked Sendable {
   }
   func restart() {
     guard let prepared, !helperLaunched, !presentation.busy else { return }
+    refreshInstallAccess()
     guard presentation.canInstall else {
       ui.open(UpdatePolicy.releasesURL)
       return
     }
     launchInstaller(prepared, relaunch: true)
+  }
+  private func refreshInstallAccess() {
+    guard let installAccess else { return }
+    let allowed = installAccess.canInstall(original)
+    guard allowed != presentation.canInstall else { return }
+    presentation.canInstall = allowed
+    changed()
   }
   private func launchInstaller(_ update: PreparedUpdate, relaunch: Bool) {
     presentation.busy = true

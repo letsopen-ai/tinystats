@@ -47,6 +47,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
       updateButton.toolTip = updateState.footerToolTip
       updateButton.setAccessibilityLabel(updateState.footerAccessibilityLabel)
       updateButton.isHidden = !isPopoverPresentation || updateReady == nil
+      updateSampleRows()
+      updateSampleHelp()
       layoutContent()
     }
   }
@@ -1298,7 +1300,9 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     subtitleLabel.toolTip = subtitleLabel.stringValue
     subtitleLabel.setAccessibilityLabel(subtitleLabel.stringValue)
     if selected != .sensors || showsAllReadings {
-      rows += DetailReadingsBuilder.sampleRows(snapshot: s, settings: settings, paused: paused)
+      rows += DetailReadingsBuilder.sampleRows(
+        snapshot: s, settings: settings, paused: paused,
+        updateChecksOn: updateState.updateChecksOn)
     }
     refreshGlassInk()
     chart.series = lines
@@ -1330,7 +1334,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private func updateSampleRows() {
     guard let start = rows.firstIndex(where: \.sampleSection) else { return }
     let sample = DetailReadingsBuilder.sampleRows(
-      snapshot: snapshot, settings: settings, paused: paused)
+      snapshot: snapshot, settings: settings, paused: paused,
+      updateChecksOn: updateState.updateChecksOn)
     let previous = Array(rows[start...])
     guard previous != sample else { return }
     rows.replaceSubrange(start..., with: sample)
@@ -1346,7 +1351,8 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   }
   private func updateSampleHelp() {
     let information = DetailReadingsBuilder.sampleRows(
-      snapshot: snapshot, settings: settings, paused: paused
+      snapshot: snapshot, settings: settings, paused: paused,
+      updateChecksOn: updateState.updateChecksOn
     )
     .filter { !$0.heading }.map { "\($0.label): \($0.value)" }.joined(separator: "\n")
     // Keep the action's established AX label; supplemental help is reachable on every
