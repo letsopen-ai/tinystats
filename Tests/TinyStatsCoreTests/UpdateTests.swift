@@ -770,3 +770,23 @@ private final class UpdateRunningFixture: UpdateRunningApplicationChecking, @unc
     try FileManager.default.removeItem(at: link)
   }
 }
+
+@Test func updateScheduleTreatsFutureLastCheckAsDueAfterClockMovesBackwards() {
+  let now = Date(timeIntervalSince1970: 2000)
+  let launch = now.addingTimeInterval(-180)
+  var preferences = UpdatePreferences()
+  preferences.lastCheck = now.addingTimeInterval(3600)
+  func due(welcomeVisible: Bool = false) -> Bool {
+    preferences.due(now: now, launch: launch, delay: 180, welcomeVisible: welcomeVisible)
+  }
+  #expect(due())
+  #expect(!due(welcomeVisible: true))
+  preferences.automaticallyCheck = false
+  #expect(!due())
+  preferences.automaticallyCheck = true
+  preferences.retryAfter = now.addingTimeInterval(3600)
+  #expect(!due())  // Clock rollback does not bypass GitHub's rate-limit backoff.
+  preferences.retryAfter = nil
+  preferences.lastCheck = now
+  #expect(!due())
+}

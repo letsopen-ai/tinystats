@@ -21,8 +21,8 @@ import Testing
   let window = view.window
   let hasDisplay = !NSScreen.screens.isEmpty
   if hasDisplay, let window {
-    if NSApp.activationPolicy() == .prohibited { _ = NSApp.setActivationPolicy(.accessory) }
-    NSApp.activate(ignoringOtherApps: true)
+    if NSApp?.activationPolicy() == .prohibited { _ = NSApp?.setActivationPolicy(.accessory) }
+    NSApp?.activate(ignoringOtherApps: true)
     window.makeKeyAndOrderFront(nil)
     window.makeMain()
     try await Task.sleep(for: .milliseconds(200))
@@ -35,7 +35,7 @@ import Testing
   }
   try #require(bitmap.representation(using: .png, properties: [:])).write(to: url)
   return hasDisplay
-    ? "key=\(window?.isKeyWindow == true), main=\(window?.isMainWindow == true), active=\(NSApp.isActive)"
+    ? "key=\(window?.isKeyWindow == true), main=\(window?.isMainWindow == true), active=\(NSApp?.isActive == true)"
     : "No display available: NSScreen.screens is empty; native key/active capture unavailable."
 }
 
@@ -97,18 +97,18 @@ import Testing
   guard let path = ProcessInfo.processInfo.environment["TINYSTATS_UPDATE_RENDER_PATH"] else {
     return
   }
-  _ = NSApplication.shared
-  let savedPolicy = NSApp.activationPolicy()
+  let app = NSApplication.shared
+  let savedPolicy = app.activationPolicy()
   if !NSScreen.screens.isEmpty {
-    _ = NSApp.setActivationPolicy(.accessory)
-    NSApp.finishLaunching()
+    _ = app.setActivationPolicy(.accessory)
+    app.finishLaunching()
   }
-  defer { if !NSScreen.screens.isEmpty { _ = NSApp.setActivationPolicy(savedPolicy) } }
+  defer { if !NSScreen.screens.isEmpty { _ = app.setActivationPolicy(savedPolicy) } }
   let folder = URL(fileURLWithPath: path, isDirectory: true)
   try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-  let savedIcon = NSApp.applicationIconImage
-  NSApp.applicationIconImage = NSImage(contentsOfFile: "Resources/TinyStats.icns")
-  defer { NSApp.applicationIconImage = savedIcon }
+  let savedIcon = app.applicationIconImage
+  app.applicationIconImage = NSImage(contentsOfFile: "Resources/TinyStats.icns")
+  defer { app.applicationIconImage = savedIcon }
   var descriptions: [String] = []
   for theme in [AppTheme.light, .dark] {
     var settings = Settings()
