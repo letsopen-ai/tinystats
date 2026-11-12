@@ -114,10 +114,11 @@ and preparation, signed-build eligibility, privacy, verification and quit/restar
 installation. The workflow is unchanged. Before publishing, validate a real
 signed-to-signed upgrade from a temporary writable app location, normal Quit,
 explicit restart, failure reopening, bundle ownership/writability, offline
-notarization/Gatekeeper behavior and recovery. Verify that the copied signed
-helper executable can launch outside its bundle, including when the downloaded
-app carries quarantine and launch constraints. No quarantine removal or
-Gatekeeper bypass is implemented. Inspect a
+notarization/Gatekeeper behavior and recovery. Verify the original signed bundle
+executable's detached `posix_spawn` launch and ready-pipe handshake, including when
+the app carries quarantine and launch constraints. A missing ready signal must
+keep the app running; corrupt-plan and post-exit failures must recover correctly.
+No bare executable copy, quarantine removal or Gatekeeper bypass is implemented. Inspect a
 current GitHub asset redirect chain; live verification was unavailable in the
 implementation sandbox. Offline fakes and owned-window stills do not establish
 those runtime claims or macOS 14/15/Intel compatibility. No release validation

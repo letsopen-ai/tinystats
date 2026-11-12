@@ -167,9 +167,9 @@ struct NativeUpdateInstaller: UpdateInstalling {
     FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
       .appendingPathComponent(UpdatePolicy.bundleID).appendingPathComponent("Updates")
   }
-  static func writable(_ original: URL) -> Bool {
+  static func writable(_ original: URL, cacheRoot: URL = root) -> Bool {
     let parent = original.deletingLastPathComponent()
-    var cacheParent = root
+    var cacheParent = cacheRoot
     while !FileManager.default.fileExists(atPath: cacheParent.path), cacheParent.path != "/" {
       cacheParent.deleteLastPathComponent()
     }
@@ -202,34 +202,29 @@ struct NativeUpdateInstaller: UpdateInstalling {
       relaunch: relaunch, originalVersion: version, originalBuild: build,
       originalInode: (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0)
     let planURL = update.directory.appendingPathComponent("install.json")
-    let helper = update.directory.appendingPathComponent("TinyStatsInstaller")
     let files = NativeUpdateFileSystem()
     try? files.remove(planURL)
-    try? files.remove(helper)
     try files.write(JSONEncoder().encode(plan), to: planURL)
-    try FileManager.default.copyItem(at: executable, to: helper)
-    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
-    // Fixed argv, no shell evaluation. nohup prevents terminal/session teardown from
-    // cancelling the helper; the helper also starts a separate POSIX session.
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
-    process.arguments = [helper.path, "--install-update", planURL.path]
-    process.standardInput = FileHandle.nullDevice
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    try process.run()
+    // Use the original signed bundle executable, preserving its bundle identity
+    // and quarantine/launch context. The running image survives bundle renames.
+    try UpdateHelperLaunch.start(
+      executable: executable,
+      arguments: ["--install-update", planURL.path, String(pid), relaunch ? "1" : "0"],
+      spawner: NativeUpdateHelperSpawner())
   }
-  static func runHelper(planURL: URL) throws {
-    _ = setsid()
+  static func runHelper(planURL: URL, parentPID: Int32, relaunch: Bool) throws {
     let files = NativeUpdateFileSystem()
-    let plan = try JSONDecoder().decode(Plan.self, from: Data(contentsOf: planURL))
-    let directory = plan.directory.standardizedFileURL
-    try plan.validate(root: root, planURL: planURL)
-    let prepared = PreparedUpdate(manifest: plan.manifest, directory: directory)
+    // Recovery never relies on a decoded (possibly corrupt) plan for its target.
+    let original = Bundle.main.bundleURL.standardizedFileURL
+    let directory = planURL.deletingLastPathComponent().standardizedFileURL
+    let safeDirectory =
+      directory.deletingLastPathComponent().path == root.standardizedFileURL.path
+      && directory.path == directory.resolvingSymlinksInPath().path
+      && planURL.lastPathComponent == "install.json"
     let verifier = NativeUpdateVerifier()
     var succeeded = false
     defer {
-      if !succeeded
+      if safeDirectory && !succeeded
         && !FileManager.default.fileExists(
           atPath: directory.appendingPathComponent("Previous.app").path)
       {
@@ -237,9 +232,26 @@ struct NativeUpdateInstaller: UpdateInstalling {
       }
     }
     let logger = Logger(subsystem: UpdatePolicy.bundleID, category: "UpdateHelper")
-    try UpdateInstallRecovery.perform(
-      relaunch: plan.relaunch,
-      install: {
+    try UpdateHelperLifecycle.perform(
+      relaunch: relaunch,
+      recoverOnFailure: { kill(parentPID, 0) < 0 && errno == ESRCH },
+      load: {
+        guard safeDirectory, parentPID > 1, parentPID != getpid(),
+          let size = try FileManager.default.attributesOfItem(atPath: planURL.path)[.size]
+            as? NSNumber,
+          size.intValue <= UpdatePolicy.jsonLimit
+        else { throw UpdateError.invalid("Invalid update installation plan location.") }
+        return try JSONDecoder().decode(Plan.self, from: Data(contentsOf: planURL))
+      },
+      validate: { plan in
+        try plan.validate(root: root, planURL: planURL)
+        guard plan.original.standardizedFileURL.path == original.path,
+          plan.pid == parentPID, plan.relaunch == relaunch
+        else { throw UpdateError.invalid("The update helper identity does not match its plan.") }
+      },
+      signalReady: { try NativeUpdateHelperSpawner.signalReady() },
+      install: { plan in
+        let prepared = PreparedUpdate(manifest: plan.manifest, directory: directory)
         try UpdateInstallTransaction.install(
           original: plan.original, staged: prepared.app,
           backup: directory.appendingPathComponent("Previous.app"), pid: plan.pid,
@@ -267,13 +279,40 @@ struct NativeUpdateInstaller: UpdateInstalling {
         // Also reopen the restored/untouched app after a failed restart installation.
         // Refuse to open an unrelated or corrupted replacement at that path.
         try NativeUpdateVerifier.check(
-          NativeUpdateVerifier.code(plan.original), requirement: NativeUpdateVerifier.requirement)
-        try NativeUpdateProcess().run("/usr/bin/open", arguments: [plan.original.path], timeout: 15)
+          NativeUpdateVerifier.code(original), requirement: NativeUpdateVerifier.requirement)
+        try NativeUpdateProcess().run("/usr/bin/open", arguments: [original.path], timeout: 15)
       },
       report: { error in
-        logger.error("Update helper failed: \(error.localizedDescription, privacy: .public)")
+        logger.updateFailure("Update helper failed", error: error)
       })
     succeeded = true
     try? files.remove(directory)
+  }
+}
+
+/// A recovery backup is disposable only after authenticating the installed app
+/// and comparing trusted versions. Any uncertainty preserves it for inspection.
+struct NativeUpdateRecoveryChecker: UpdateRecoveryChecking {
+  let original: URL
+  func canDiscard(backup: URL) throws -> Bool {
+    func identity(_ app: URL) throws -> (String, String) {
+      let code = try NativeUpdateVerifier.code(app)
+      try NativeUpdateVerifier.check(code, requirement: NativeUpdateVerifier.requirement)
+      guard try NativeUpdateVerifier.team(code) == UpdatePolicy.teamID else {
+        throw UpdateError.needsAttention
+      }
+      try NativeUpdateVerifier.check(code, requirement: "notarized")
+      guard let bundle = Bundle(url: app), bundle.bundleIdentifier == UpdatePolicy.bundleID,
+        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+      else { throw UpdateError.needsAttention }
+      return (version, build)
+    }
+    let installed = try identity(original)
+    let previous = try identity(backup)
+    return try UpdateRecoveryVersion.canDiscard(
+      installedVersion: installed.0,
+      installedBuild: installed.1, backupVersion: previous.0, backupBuild: previous.1,
+      installedVerified: true)
   }
 }

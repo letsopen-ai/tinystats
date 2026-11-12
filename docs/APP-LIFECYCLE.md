@@ -44,7 +44,10 @@ Diagnostics and isolated/preview sessions never authorize requests.
 Termination first cancels/joins active update work. If a prepared update should
 install on normal quit, an asynchronous gate verifies and launches the bounded
 helper before starting `HistoryQuitCoordinator`. Explicit restart launches the
-same helper with relaunch enabled. The original history checkpoint/stop and
+same helper with relaunch enabled. A worker waits up to 10 seconds for the
+helper's validated-plan ready signal before allowing termination. Failure stops
+the helper, discards the candidate and cancels update termination, keeping the
+app running. The original history checkpoint/stop and
 once-only reply logic remains intact, with its two-second deadline starting after
 update preparation. The helper waits for process exit, verifies again and performs
 the move/restore transaction described in [Updates](UPDATES.md).

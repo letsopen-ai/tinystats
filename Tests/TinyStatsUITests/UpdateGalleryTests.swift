@@ -1,5 +1,4 @@
 import AppKit
-import ScreenCaptureKit
 import Testing
 
 @testable import TinyStats
@@ -179,7 +178,7 @@ import Testing
     dropdown.isPopoverPresentation = true
     dropdown.selected = .cpu
     dropdown.onRestartUpdate = {}
-    dropdown.updateReady = "0.37.6 (78)"
+    dropdown.updateState = state
     dropdown.view.appearance = theme.nativeAppearance
     dropdown.view.setFrameSize(SystemStyle.popoverSize)
     let footerStem = "updates-dropdown-ready-\(theme.rawValue)"

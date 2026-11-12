@@ -40,16 +40,17 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
   private let footerSeparator = NSBox()
   private let updateButton = MenuActionRow()
   var onRestartUpdate: (() -> Void)?
-  var updateReady: String? {
+  var updateState = UpdatePresentation() {
     didSet {
       guard isViewLoaded else { return }
-      updateButton.toolTip = updateReady.map { "Update \($0) ready — restart to install" }
-      updateButton.setAccessibilityLabel(
-        updateReady.map { "Restart to install TinyStats \($0)" } ?? "Update")
+      updateButton.title = updateState.restartTitle
+      updateButton.toolTip = updateState.footerToolTip
+      updateButton.setAccessibilityLabel(updateState.footerAccessibilityLabel)
       updateButton.isHidden = !isPopoverPresentation || updateReady == nil
       layoutContent()
     }
   }
+  var updateReady: String? { updateState.readyIdentifier }
   private struct PopoverKeyViewLayout: Equatable {
     let window: ObjectIdentifier
     let module: Module
@@ -177,15 +178,14 @@ final class DetailController: NSViewController, NSTableViewDataSource, NSTableVi
     openWindowRow.target = self
     openWindowRow.action = #selector(openInWindow)
     view.addSubview(openWindowRow)
-    updateButton.title = "Restart to Update"
+    updateButton.title = updateReady == nil ? "Restart to Update" : updateState.restartTitle
     updateButton.setIcon("arrow.down.circle.fill", fallback: "↓")
     updateButton.usesIconPresentation = true
     updateButton.target = self
     updateButton.action = #selector(restartUpdate)
     updateButton.isHidden = updateReady == nil
-    updateButton.toolTip = updateReady.map { "Update \($0) ready — restart to install" }
-    updateButton.setAccessibilityLabel(
-      updateReady.map { "Restart to install TinyStats \($0)" } ?? "Update")
+    updateButton.toolTip = updateState.footerToolTip
+    updateButton.setAccessibilityLabel(updateState.footerAccessibilityLabel)
     view.addSubview(updateButton)
     footerSeparator.boxType = .separator
     view.addSubview(footerSeparator)

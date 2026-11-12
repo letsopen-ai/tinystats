@@ -97,19 +97,53 @@ public protocol UpdatePreparing: Sendable {
   var files: any UpdateFileSystem { get }
   func prepare(archive: Data, manifest: UpdateManifest, root: URL, team: String) throws
     -> PreparedUpdate
+  func recoveryNeedsAttention(root: URL) throws -> Bool
+}
+
+extension UpdatePreparing {
+  public func recoveryNeedsAttention(root: URL) throws -> Bool { false }
+}
+
+public protocol UpdateRecoveryChecking: Sendable {
+  func canDiscard(backup: URL) throws -> Bool
+}
+
+public enum UpdateRecoveryVersion {
+  public static func canDiscard(
+    installedVersion: String, installedBuild: String,
+    backupVersion: String, backupBuild: String, installedVerified: Bool
+  ) throws -> Bool {
+    guard installedVerified else { return false }
+    return try UpdateVersion(installedVersion) >= UpdateVersion(backupVersion)
+      && UpdatePolicy.build(installedBuild) >= UpdatePolicy.build(backupBuild)
+  }
 }
 
 public struct UpdateStager: UpdatePreparing {
   public let files: any UpdateFileSystem
   public let processes: any UpdateProcessRunner
   public let verifier: any UpdateCodeVerifier
+  public let recovery: (any UpdateRecoveryChecking)?
   public init(
     files: any UpdateFileSystem, processes: any UpdateProcessRunner,
-    verifier: any UpdateCodeVerifier
+    verifier: any UpdateCodeVerifier, recovery: (any UpdateRecoveryChecking)? = nil
   ) {
     self.files = files
     self.processes = processes
     self.verifier = verifier
+    self.recovery = recovery
+  }
+  public func recoveryNeedsAttention(root: URL) throws -> Bool {
+    guard files.isDirectory(root) else { return false }
+    for previous in try files.contents(root) where files.isDirectory(previous) {
+      let backup = previous.appendingPathComponent("Previous.app")
+      if try files.contents(previous).contains(where: { $0.lastPathComponent == "Previous.app" }),
+        (try? recovery?.canDiscard(backup: backup)) != true
+      {
+        return true
+      }
+    }
+    return false
   }
   public func prepare(archive: Data, manifest: UpdateManifest, root: URL, team: String) throws
     -> PreparedUpdate
@@ -118,8 +152,8 @@ public struct UpdateStager: UpdatePreparing {
     try UpdatePolicy.verifyArchive(archive, manifest: manifest, sums: nil)
     try UpdateArchiveLayout.validate(archive)
     try files.createPrivateDirectory(root)
-    // Retain at most one prepared candidate. A backup means recovery is needed;
-    // never delete it or accumulate further updates around an interrupted install.
+    // Retain at most one prepared candidate. Preserve interrupted-install backups
+    // unless an authenticated installed app is at least as new as the backup.
     for previous in try files.contents(root) {
       let needsRecovery: Bool
       if files.isDirectory(previous) {
@@ -129,10 +163,15 @@ public struct UpdateStager: UpdatePreparing {
       } else {
         needsRecovery = false
       }
-      guard !needsRecovery else {
-        throw UpdateError.invalid("An earlier update needs recovery. Open the release page.")
+      if needsRecovery,
+        (try? recovery?.canDiscard(backup: previous.appendingPathComponent("Previous.app"))) != true
+      {
+        throw UpdateError.needsAttention
       }
-      try files.remove(previous)
+      do { try files.remove(previous) } catch {
+        if needsRecovery { throw UpdateError.needsAttention }
+        throw error
+      }
     }
     let directory = root.appendingPathComponent(manifest.build + "-" + UUID().uuidString)
     do {
@@ -294,7 +333,9 @@ public enum UpdateInstallTransaction {
       try files.move(backup, to: original)
       throw error
     }
-    try files.remove(backup)
+    // Both renames committed. Cleanup failure must not turn a successful install
+    // into a failed one; a later signed-version recovery check can remove it.
+    try? files.remove(backup)
   }
 }
 
@@ -302,12 +343,12 @@ public enum UpdateInstallTransaction {
 /// never roll back (or delete) a successfully installed, potentially running app.
 public enum UpdateInstallRecovery {
   public static func perform(
-    relaunch: Bool, install: () throws -> Void,
+    relaunch: Bool, recoverOnFailure: (() -> Bool)? = nil, install: () throws -> Void,
     reopen: () throws -> Void, report: (any Error) -> Void
   ) throws {
     do { try install() } catch {
       report(error)
-      if relaunch {
+      if recoverOnFailure?() ?? relaunch {
         do { try reopen() } catch { report(error) }
       }
       throw error

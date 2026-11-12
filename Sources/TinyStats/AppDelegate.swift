@@ -471,7 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     preferences?.updatesView.update(value)
     restartUpdateItem?.title = value.restartTitle
     restartUpdateItem?.isHidden = value.readyVersion == nil
-    detail?.updateReady = value.readyIdentifier
+    detail?.updateState = value
   }
   static func makeEditMenu() -> NSMenu {
     let edit = NSMenu(title: "Edit")
@@ -937,9 +937,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     if let updater, !updateQuitReady {
       if !updateQuitPending {
         updateQuitPending = true
-        updater.prepareToQuit { [weak self] in
+        updater.prepareToQuit { [weak self] shouldQuit in
           HistoryQuitCoordinator.deliver { [weak self] in
             guard let self else { return }
+            guard shouldQuit else {
+              self.updateQuitPending = false
+              self.updateQuitReady = false
+              NSApp.reply(toApplicationShouldTerminate: false)
+              return
+            }
             self.updateQuitReady = true
             if self.beginHistoryQuit() == .terminateNow {
               NSApp.reply(toApplicationShouldTerminate: true)
