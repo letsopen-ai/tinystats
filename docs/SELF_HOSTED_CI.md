@@ -16,8 +16,7 @@ git add docs/validation/local-release-validation.json
 git commit -m 'ci(release): record local native validation'
 ```
 
-For Teleframe use Python 3.11+ from the release virtualenv with
-`scripts/requirements-release.txt` installed. The record command runs the complete `scripts/verify-local.sh` gate (Swift/Python tests, strict lint/warnings, universal packaging and local diagnostics).
+The record command runs the complete `scripts/verify-local.sh` gate (Swift/Python tests, strict lint/warnings, universal packaging and local diagnostics).
 Logs remain in ignored `build/local-release-validation`; review failures there.
 Never fabricate or manually edit a passing receipt.
 

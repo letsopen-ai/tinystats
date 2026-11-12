@@ -13,12 +13,12 @@ class NotaryConfigurationTests(unittest.TestCase):
     def test_requires_private_regular_keychain(self):
         with tempfile.TemporaryDirectory() as directory:
             p = Path(directory) / 'keychain-db'; p.write_bytes(b'fixture'); p.chmod(0o644)
-            env = {'TELEFRAME_NOTARY_KEYCHAIN': str(p)}
+            env = {'TINYSTATS_NOTARY_KEYCHAIN': str(p)}
             with self.assertRaises(ValueError): keychain_arguments(env)
             p.chmod(0o600)
             self.assertEqual(keychain_arguments(env), ['--keychain', str(p)])
             q = Path(directory) / 'link'; q.symlink_to(p)
-            with self.assertRaises(ValueError): keychain_arguments({'TELEFRAME_NOTARY_KEYCHAIN': str(q)})
+            with self.assertRaises(ValueError): keychain_arguments({'TINYSTATS_NOTARY_KEYCHAIN': str(q)})
 
 
 if __name__ == '__main__': unittest.main()

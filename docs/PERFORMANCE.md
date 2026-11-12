@@ -1,6 +1,6 @@
 # Performance
 
-TinyStats aims to be a low-overhead menu bar monitor: one shared collection timer, power-aware cadence, work only for visible pages, and no routine disk writes or network requests unless you opt in to a feature that needs them.
+TinyStats aims to be a low-overhead menu bar monitor: one shared collection timer, power-aware cadence, work only for visible pages, and no routine network requests unless you opt in to a feature that needs them. Numeric history saving is on by default (you can turn it off); it stays local and bounded.
 
 ## How to measure
 

@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 def keychain_arguments(environment):
-    value = environment.get('TELEFRAME_NOTARY_KEYCHAIN')
+    value = environment.get('TINYSTATS_NOTARY_KEYCHAIN')
     if value is None:
         return []
     path = Path(value)
