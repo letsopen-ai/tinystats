@@ -39,6 +39,7 @@ final class UpdateRequest: NSObject, URLSessionDataDelegate, @unchecked Sendable
   private var continuation: CheckedContinuation<Data, any Error>?
   private var body = Data()
   private var failure: (any Error)?
+  var responseFailure: (any Error)? { lock.withLock { failure } }
   private var limit = 0
   private var redirects = 0
   private var cancelled = false
@@ -110,6 +111,12 @@ final class UpdateRequest: NSObject, URLSessionDataDelegate, @unchecked Sendable
     completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
   ) {
     lock.withLock {
+      // A rejected redirect may still deliver its 302 response. Keep the original
+      // security failure instead of replacing it with the less useful HTTP error.
+      guard failure == nil else {
+        completionHandler(.cancel)
+        return
+      }
       guard let http = response as? HTTPURLResponse, let url = http.url, UpdatePolicy.allows(url)
       else {
         failure = UpdateError.invalid("Invalid update response.")
@@ -127,6 +134,10 @@ final class UpdateRequest: NSObject, URLSessionDataDelegate, @unchecked Sendable
   }
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
     lock.withLock {
+      guard failure == nil else {
+        dataTask.cancel()
+        return
+      }
       guard data.count <= limit - body.count else {
         failure = UpdateError.invalid("The update response is too large.")
         dataTask.cancel()

@@ -131,6 +131,21 @@ protocol UpdateInstalling: Sendable {
   func launch(_ update: PreparedUpdate, original: URL, pid: Int32, relaunch: Bool) throws
 }
 
+struct NativeUpdateRunningApplications: UpdateRunningApplicationChecking {
+  func isRunning(from original: URL) throws -> Bool {
+    let path = original.resolvingSymlinksInPath().standardizedFileURL.path
+    return NSRunningApplication.runningApplications(withBundleIdentifier: UpdatePolicy.bundleID)
+      .contains { app in
+        !app.isTerminated && app.processIdentifier != getpid()
+          && app.bundleURL?.resolvingSymlinksInPath().standardizedFileURL.path == path
+      }
+  }
+}
+
+struct NativeUpdateInstallLocation: UpdateInstallLocationChecking {
+  func canInstall(_ original: URL) -> Bool { NativeUpdateInstaller.writable(original) }
+}
+
 struct NativeUpdateInstaller: UpdateInstalling {
   struct Plan: Codable {
     let original: URL
@@ -273,6 +288,10 @@ struct NativeUpdateInstaller: UpdateInstalling {
               originalCode, requirement: NativeUpdateVerifier.requirement)
             let team = try NativeUpdateVerifier.team(originalCode)
             try verifier.verify(prepared.app, manifest: plan.manifest, runningTeam: team)
+            try UpdateInstallQuiescence.requireIdle(
+              original: plan.original,
+              checker: NativeUpdateRunningApplications(),
+              retryDelay: { Thread.sleep(forTimeInterval: 1) })
           })
       },
       reopen: {

@@ -668,3 +668,70 @@ private struct UpdateRecoveryFixture: UpdateRecoveryChecking {
   #expect(
     try String(contentsOf: original.appendingPathComponent("marker"), encoding: .utf8) == "new")
 }
+
+private final class UpdateRunningFixture: UpdateRunningApplicationChecking, @unchecked Sendable {
+  private let lock = NSLock()
+  private var results: [Bool]
+  private(set) var paths: [URL] = []
+  init(_ results: [Bool]) { self.results = results }
+  func isRunning(from original: URL) throws -> Bool {
+    lock.withLock {
+      paths.append(original)
+      return results.removeFirst()
+    }
+  }
+}
+
+@Test func updateInstallRefusesReopenedOriginalAfterOneRetryAndRecovers() throws {
+  for remainsRunning in [false, true] {
+    let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+      .appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let original = root.appendingPathComponent("Installed/TinyStats.app")
+    let staged = root.appendingPathComponent("Staged/TinyStats.app")
+    let backup = root.appendingPathComponent("Previous.app")
+    for app in [original, staged] {
+      try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+    }
+    try Data("old".utf8).write(to: original.appendingPathComponent("marker"))
+    try Data("new".utf8).write(to: staged.appendingPathComponent("marker"))
+    let checker = UpdateRunningFixture([true, remainsRunning])
+    var delays = 0
+    var reopened = 0
+    let install = {
+      try UpdateInstallRecovery.perform(
+        relaunch: true,
+        install: {
+          try UpdateInstallTransaction.install(
+            original: original, staged: staged, backup: backup,
+            pid: 42, files: NativeUpdateFileSystem(), waiter: UpdateFakeWaiter(),
+            verify: {
+              try UpdateInstallQuiescence.requireIdle(
+                original: original, checker: checker,
+                retryDelay: { delays += 1 })
+            })
+        }, reopen: { reopened += 1 }, report: { _ in })
+    }
+    if remainsRunning { #expect(throws: (any Error).self) { try install() } } else { try install() }
+    #expect(delays == 1 && reopened == 1 && checker.paths == [original, original])
+    #expect(
+      try String(contentsOf: original.appendingPathComponent("marker"), encoding: .utf8)
+        == (remainsRunning ? "old" : "new"))
+    #expect(!FileManager.default.fileExists(atPath: backup.path))
+  }
+  let idle = UpdateRunningFixture([false])
+  try UpdateInstallQuiescence.requireIdle(
+    original: URL(fileURLWithPath: "/fixture/TinyStats.app"),
+    checker: idle, retryDelay: { Issue.record("An idle app needs no retry") })
+}
+
+@Test func updateStatusAndRateLimitDatesAlwaysUseEnglish() throws {
+  let epoch = Date(timeIntervalSince1970: 0)
+  #expect(UpdateText.checked(epoch, relativeTo: epoch.addingTimeInterval(7200)) == "2 hours ago")
+  let utc = try #require(TimeZone(secondsFromGMT: 0))
+  let date = UpdateText.date(epoch, timeZone: utc)
+  #expect(date.hasPrefix("Jan 1, 1970") && date.contains("AM"))
+  #expect(
+    UpdateError.rateLimited(epoch).localizedDescription
+      == "GitHub has limited requests. Try again after " + UpdateText.date(epoch) + ".")
+}

@@ -11,7 +11,8 @@ public enum UpdateError: Error, LocalizedError, Equatable, Sendable {
     case .invalid(let reason): reason
     case .needsAttention:
       "An earlier update needs attention. Open the release page or inspect the recovery backup."
-    case .rateLimited(let date): "GitHub has limited requests. Try again after \(date.formatted())."
+    case .rateLimited(let date):
+      "GitHub has limited requests. Try again after \(UpdateText.date(date))."
     }
   }
 }
@@ -239,5 +240,25 @@ public struct UpdatePreferences: Equatable, Sendable {
     automaticallyCheck && !welcomeVisible && now.timeIntervalSince(launch) >= delay
       && (lastCheck.map { now.timeIntervalSince($0) >= 86_400 } ?? true)
       && (retryAfter.map { now >= $0 } ?? true)
+  }
+}
+
+/// Updater copy is English regardless of the system locale. Keep local time for
+/// deadlines, but never inherit a localized month/unit name or calendar.
+public enum UpdateText {
+  public static func checked(_ date: Date, relativeTo now: Date) -> String {
+    let format = RelativeDateTimeFormatter()
+    format.locale = Locale(identifier: "en_US_POSIX")
+    format.dateTimeStyle = .numeric
+    return format.localizedString(for: date, relativeTo: now)
+  }
+  public static func date(_ date: Date, timeZone: TimeZone = .current) -> String {
+    let format = DateFormatter()
+    format.locale = Locale(identifier: "en_US_POSIX")
+    format.calendar = Calendar(identifier: .gregorian)
+    format.timeZone = timeZone
+    format.dateStyle = .medium
+    format.timeStyle = .short
+    return format.string(from: date)
   }
 }

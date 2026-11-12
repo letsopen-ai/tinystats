@@ -75,9 +75,13 @@ enum DetailReadingsBuilder {
   }
 
   /// Existing observations only; available as table rows and footer action help.
-  static func sampleRows(snapshot: Snapshot, settings: Settings, paused: Bool) -> [DetailRow] {
+  static func sampleRows(
+    snapshot: Snapshot, settings: Settings, paused: Bool,
+    updateChecksOn: Bool = false
+  ) -> [DetailRow] {
     let privacy =
       settings.connectivityChecks || settings.publicIPChecks || settings.weather.enabled
+        || updateChecksOn
       ? "Internet requests enabled"
       : settings.pingCheck.enabled ? "Network checks enabled" : "Local only"
     let cost = snapshot.sampleMilliseconds

@@ -83,6 +83,31 @@ public protocol UpdateExitWaiter: Sendable {
   func waitForExit(pid: Int32, timeout: TimeInterval) throws
 }
 
+public protocol UpdateRunningApplicationChecking: Sendable {
+  /// The installer helper itself must be excluded by the native implementation.
+  func isRunning(from original: URL) throws -> Bool
+}
+
+public enum UpdateInstallQuiescence {
+  /// One bounded retry lets an exiting instance finish without ever replacing a
+  /// bundle used by a reopened app. Call after verification, just before renames.
+  public static func requireIdle(
+    original: URL, checker: any UpdateRunningApplicationChecking,
+    retryDelay: () -> Void
+  ) throws {
+    if try !checker.isRunning(from: original) { return }
+    retryDelay()
+    guard try !checker.isRunning(from: original) else {
+      throw UpdateError.invalid(
+        "Another TinyStats instance is running from this app. Quit it and try again.")
+    }
+  }
+}
+
+public protocol UpdateInstallLocationChecking: Sendable {
+  func canInstall(_ original: URL) -> Bool
+}
+
 public struct PreparedUpdate: Sendable {
   public let manifest: UpdateManifest
   public let directory: URL

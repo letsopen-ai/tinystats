@@ -122,10 +122,14 @@ private struct NoOpUpdateInstaller: UpdateInstalling {
 }
 @MainActor private final class OfflineUpdateUI: UpdateUserInterface {
   var alerts: [String] = []
+  var messages: [String] = []
+  var buttonSets: [[String]] = []
   var opened: [URL] = []
   var choice = 0
   func alert(title: String, message: String, buttons: [String]) -> Int {
     alerts.append(title)
+    messages.append(message)
+    buttonSets.append(buttons)
     return choice
   }
   func open(_ url: URL) { opened.append(url) }
@@ -655,4 +659,54 @@ private struct HandshakeUpdateInstaller: UpdateInstalling {
   let settings = UpdateSettingsView(frame: .zero)
   settings.update(controller.presentation)
   #expect(settings.status.stringValue.hasPrefix("Update needs attention"))
+}
+
+private final class MutableUpdateInstallAccess: UpdateInstallLocationChecking, @unchecked Sendable {
+  private let lock = NSLock()
+  private var allowed: Bool
+  init(_ allowed: Bool) { self.allowed = allowed }
+  func set(_ value: Bool) { lock.withLock { allowed = value } }
+  func canInstall(_ original: URL) -> Bool { lock.withLock { allowed } }
+}
+
+@Test @MainActor func updatePreparedUIRefreshesInstallAccessBeforePublishingAndManualReadyAlert()
+  async throws
+{
+  let name = "TinyStats.UpdateAccess.\(UUID())"
+  let defaults = try #require(UserDefaults(suiteName: name))
+  defer { defaults.removePersistentDomain(forName: name) }
+  let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+    .appendingPathComponent(UUID().uuidString)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let access = MutableUpdateInstallAccess(false)
+  let ui = OfflineUpdateUI()
+  let installer = RecordingUpdateInstaller()
+  let controller = UpdateController(
+    defaults: defaults, version: "0.37.5", build: "77",
+    eligibility: .init(
+      bundleID: UpdatePolicy.bundleID, teamID: UpdatePolicy.teamID,
+      developerID: true, translocated: false, readOnly: false),
+    original: root.appendingPathComponent("Original.app"), canInstall: true, root: root,
+    client: UpdateClient(transport: PreparingUpdateTransport()), stager: PreparingUpdateStager(),
+    installer: installer, ui: ui, installAccess: access,
+    now: Date(timeIntervalSince1970: 1000), launchDelay: 180)
+  var readyStates: [UpdatePresentation] = []
+  controller.onChange = { if $0.readyIdentifier != nil { readyStates.append($0) } }
+  controller.tick(now: Date(timeIntervalSince1970: 2000), welcomeVisible: false)
+  await controller.waitForIdle()
+  #expect(!readyStates.isEmpty && readyStates.allSatisfy { !$0.canInstall })
+  #expect(controller.presentation.restartTitle == "Open Release Page for 0.37.6 (78)")
+  ui.choice = 1
+  controller.check()
+  #expect(ui.buttonSets.last?.first == "Open Release Page")
+  #expect(ui.messages.last?.contains("This location cannot be updated automatically") == true)
+  controller.restart()
+  await controller.waitForIdle()
+  #expect(installer.relaunches.isEmpty && ui.opened == [UpdatePolicy.releasesURL])
+  access.set(true)
+  ui.choice = 1  // Later: inspect refreshed ready UI without starting any installer.
+  controller.check()
+  #expect(controller.presentation.canInstall)
+  #expect(controller.presentation.restartTitle == "Restart to Update 0.37.6 (78)")
+  #expect(ui.alerts.last == "TinyStats 0.37.6 (78) is ready")
 }
