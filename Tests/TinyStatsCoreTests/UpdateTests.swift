@@ -735,3 +735,38 @@ private final class UpdateRunningFixture: UpdateRunningApplicationChecking, @unc
     UpdateError.rateLimited(epoch).localizedDescription
       == "GitHub has limited requests. Try again after " + UpdateText.date(epoch) + ".")
 }
+
+@Test func updateRunningInstanceFilterExcludesHelperAndConfirmedExitedParent() {
+  let path = "/fixture/TinyStats.app"
+  for (pid, bundlePath, terminated, expected) in [
+    (Int32(42), path, false, false),  // LaunchServices may still list the exited parent.
+    (Int32(43), path, false, false),  // Detached helper runs the original executable.
+    (Int32(44), path, false, true),
+    (Int32(44), path, true, false),
+    (Int32(44), "/another/TinyStats.app", false, false),
+  ] {
+    #expect(
+      UpdateInstallQuiescence.isOtherInstance(
+        pid: pid, helperPID: 43, parentPID: 42,
+        bundlePath: bundlePath, originalPath: path, terminated: terminated) == expected)
+  }
+}
+
+@Test func updateBundleTreeRejectsEverySymbolicLinkIncludingInternalTargets() throws {
+  let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+    .appendingPathComponent(UUID().uuidString)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let app = root.appendingPathComponent("TinyStats.app")
+  let contents = app.appendingPathComponent("Contents")
+  try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+  let regular = contents.appendingPathComponent("fixture")
+  try Data("fixture".utf8).write(to: regular)
+  let files = NativeUpdateFileSystem()
+  try files.validateBundleTree(app)
+  for target in [contents, regular, root, root.appendingPathComponent("missing")] {
+    let link = app.appendingPathComponent("link")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+    #expect(throws: (any Error).self) { try files.validateBundleTree(app) }
+    try FileManager.default.removeItem(at: link)
+  }
+}

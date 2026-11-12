@@ -76,7 +76,7 @@ final class UpdateRequest: NSObject, URLSessionDataDelegate, @unchecked Sendable
       let session = URLSession(configuration: config, delegate: self, delegateQueue: queue)
       self.session = session
       var request = URLRequest(url: url)
-      request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+      request.setValue(UpdatePolicy.accept(for: url), forHTTPHeaderField: "Accept")
       request.setValue(UpdatePolicy.userAgent(version: version), forHTTPHeaderField: "User-Agent")
       request.setValue("en", forHTTPHeaderField: "Accept-Language")
       request.httpShouldHandleCookies = false
@@ -100,7 +100,7 @@ final class UpdateRequest: NSObject, URLSessionDataDelegate, @unchecked Sendable
       next.setValue(
         task.originalRequest?.value(forHTTPHeaderField: "User-Agent"),
         forHTTPHeaderField: "User-Agent")
-      next.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+      next.setValue(UpdatePolicy.accept(for: url), forHTTPHeaderField: "Accept")
       next.setValue("en", forHTTPHeaderField: "Accept-Language")
       next.httpShouldHandleCookies = false
       completionHandler(next)

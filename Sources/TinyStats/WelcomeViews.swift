@@ -522,7 +522,7 @@ enum WelcomeFixture {
   ) {
     self.updateState = updateState
     updates = WelcomeTileView(
-      title: "Updates · GitHub", caption: "Daily checks · app version only",
+      title: "Updates · GitHub", caption: "Daily · app version only · Turn off in Settings",
       symbol: "arrow.down.circle", height: 60, environment: environment)
     weather = WelcomeTileView(
       title: "Weather", caption: "MET Norway · api.met.no", symbol: Module.weather.symbol,
@@ -566,7 +566,9 @@ enum WelcomeFixture {
     updatesPill.text = updatesOn ? "On" : "Off"
     self.updates.captionLabel.stringValue =
       updateState.eligible
-      ? "Daily checks · app version only" : "Signed releases · Settings › General"
+      ? (updatesOn
+        ? "Daily · app version only · Turn off in Settings" : "Checks off · Change in Settings")
+      : "Signed releases · Settings › General"
     promiseLabel.stringValue =
       updatesOn
       ? "Updates on · Weather and internet checks are optional. Opening setup changes nothing."

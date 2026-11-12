@@ -81,9 +81,11 @@ enum DetailReadingsBuilder {
   ) -> [DetailRow] {
     let privacy =
       settings.connectivityChecks || settings.publicIPChecks || settings.weather.enabled
-        || updateChecksOn
+        || (updateChecksOn && settings.pingCheck.enabled)
       ? "Internet requests enabled"
-      : settings.pingCheck.enabled ? "Network checks enabled" : "Local only"
+      : updateChecksOn
+        ? "GitHub update checks only"
+        : settings.pingCheck.enabled ? "Network checks enabled" : "Local only"
     let cost = snapshot.sampleMilliseconds
     var rows: [DetailRow] = [
       .init(label: "ABOUT THIS SAMPLE", value: "", heading: true, sampleSection: true),
@@ -91,7 +93,9 @@ enum DetailReadingsBuilder {
         label: "Privacy", value: privacy,
         compactValue: privacy == "Internet requests enabled"
           ? "Internet enabled"
-          : privacy == "Network checks enabled" ? "Network checks" : nil),
+          : privacy == "GitHub update checks only"
+            ? "GitHub updates"
+            : privacy == "Network checks enabled" ? "Network checks" : nil),
       .init(
         label: "Monitoring", value: paused ? "Paused · readings are frozen" : "Running",
         compactValue: paused ? "Paused" : nil),

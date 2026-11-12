@@ -977,6 +977,15 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     let stage = try #require(welcomeViews(root).compactMap { $0 as? WelcomeOnlineStageView }.first)
     stage.layoutSubtreeIfNeeded()
     #expect(stage.updatesPill.text == (enabled ? "On" : "Off"))
+    #expect(
+      stage.updates.captionLabel.stringValue
+        == (enabled
+          ? "Daily · app version only · Turn off in Settings" : "Checks off · Change in Settings"))
+    let caption = stage.updates.captionLabel
+    let ink = (caption.stringValue as NSString).size(withAttributes: [
+      .font: caption.font ?? NSFont.systemFont(ofSize: 11)
+    ])
+    #expect(ink.width <= caption.bounds.width)
     #expect(stage.updatesOn == enabled && !stage.weatherOn && !stage.internetOn)
     #expect(stage.updates.identifier?.rawValue == "welcome-updates")
     #expect(stage.promiseLabel.stringValue.count <= 100 && stage.promiseLabel.bounds.height <= 20)

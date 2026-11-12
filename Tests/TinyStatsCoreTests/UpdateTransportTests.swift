@@ -34,16 +34,29 @@ private final class UpdateOfflineURLProtocol: URLProtocol, @unchecked Sendable {
       configuration.protocolClasses = [UpdateOfflineURLProtocol.self]
       return configuration
     })
-  let data = try await transport.get(UpdatePolicy.latestURL, limit: 100)
-  #expect(data == Data("bounded reply".utf8))
-  let request = try #require(UpdateOfflineURLProtocol.captured.request)
-  #expect(request.value(forHTTPHeaderField: "Accept-Language") == "en")
-  #expect(
-    request.value(forHTTPHeaderField: "User-Agent") == UpdatePolicy.userAgent(version: "0.37.5"))
-  #expect(request.value(forHTTPHeaderField: "Accept") == "application/vnd.github+json")
-  #expect(
-    request.value(forHTTPHeaderField: "Cookie") == nil
-      && request.value(forHTTPHeaderField: "Authorization") == nil)
+  for (url, accept) in [
+    (UpdatePolicy.latestURL, "application/vnd.github+json"),
+    (
+      URL(
+        string: "https://github.com/letsopen-ai/tinystats/releases/download/v0.37.6/release.json")!,
+      "application/octet-stream"
+    ),
+    (URL(string: "https://objects.githubusercontent.com/asset")!, "application/octet-stream"),
+    (
+      URL(string: "https://release-assets.githubusercontent.com/asset")!, "application/octet-stream"
+    ),
+  ] {
+    let data = try await transport.get(url, limit: 100)
+    #expect(data == Data("bounded reply".utf8))
+    let request = try #require(UpdateOfflineURLProtocol.captured.request)
+    #expect(request.value(forHTTPHeaderField: "Accept-Language") == "en")
+    #expect(
+      request.value(forHTTPHeaderField: "User-Agent") == UpdatePolicy.userAgent(version: "0.37.5"))
+    #expect(request.value(forHTTPHeaderField: "Accept") == accept)
+    #expect(
+      request.value(forHTTPHeaderField: "Cookie") == nil
+        && request.value(forHTTPHeaderField: "Authorization") == nil)
+  }
   await #expect(throws: (any Error).self) {
     try await transport.get(UpdatePolicy.latestURL, limit: 4)
   }
@@ -61,7 +74,10 @@ private final class UpdateOfflineURLProtocol: URLProtocol, @unchecked Sendable {
   let response = HTTPURLResponse(
     url: UpdatePolicy.latestURL, statusCode: 302, httpVersion: nil, headerFields: nil)!
   for text in [
-    "https://release-assets.githubusercontent.com/asset", "http://github.com/asset",
+    "https://release-assets.githubusercontent.com/asset",
+    "https://api.github.com/repos/letsopen-ai/tinystats/releases/latest",
+    "https://github.com/letsopen-ai/tinystats/releases/download/v0.37.6/release.json",
+    "http://github.com/asset",
     "https://evil.invalid/asset",
   ] {
     let box = UpdateHeaderBox()
@@ -70,9 +86,15 @@ private final class UpdateOfflineURLProtocol: URLProtocol, @unchecked Sendable {
       session, task: task, willPerformHTTPRedirection: response,
       newRequest: URLRequest(url: URL(string: text)!)
     ) { box.set($0) }
-    if text.hasPrefix("https://release-assets") {
+    if text.hasPrefix("https://release-assets") || text.hasPrefix("https://api.github.com")
+      || text.hasPrefix("https://github.com")
+    {
       let next = try #require(box.request)
       #expect(next.value(forHTTPHeaderField: "Accept-Language") == "en")
+      #expect(
+        next.value(forHTTPHeaderField: "Accept")
+          == (text.hasPrefix("https://api.github.com")
+            ? "application/vnd.github+json" : "application/octet-stream"))
       #expect(
         next.value(forHTTPHeaderField: "User-Agent")
           == original.value(forHTTPHeaderField: "User-Agent"))
