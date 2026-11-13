@@ -1,5 +1,25 @@
 import AppKit
+import OSLog
 import TinyStatsCore
+
+if CommandLine.arguments.dropFirst().first == "--install-update" {
+  do {
+    guard CommandLine.arguments.count == 5, let pid = Int32(CommandLine.arguments[3]), pid > 1,
+      ["0", "1"].contains(CommandLine.arguments[4])
+    else {
+      throw UpdateError.invalid("Invalid update helper arguments.")
+    }
+    try NativeUpdateInstaller.runHelper(
+      planURL: URL(fileURLWithPath: CommandLine.arguments[2]),
+      parentPID: pid, relaunch: CommandLine.arguments[4] == "1")
+    exit(0)
+  } catch {
+    Logger(subsystem: UpdatePolicy.bundleID, category: "UpdateHelper")
+      .updateFailure("Update helper exited", error: error)
+    FileHandle.standardError.write(Data("TinyStats update installation failed.\n".utf8))
+    exit(1)
+  }
+}
 
 if CommandLine.arguments.contains("--diagnose") {
   let sampler = Sampler()

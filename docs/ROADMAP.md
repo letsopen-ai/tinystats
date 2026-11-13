@@ -51,3 +51,11 @@ See the [distribution checklist](DISTRIBUTION.md). The main open items are:
 - Individual GPU-core activity is not currently available from public APIs.
 
 These are explicit gaps. Local core monitoring is available now; full commercial feature parity is not claimed.
+
+## Native updater follow-up (0.37.5 candidate)
+
+- Validate signed-to-signed restart and normal-quit installation from a temporary
+  location; failure/rollback and offline Gatekeeper/notarization on macOS 14/15
+  and Intel remain native release checks. See [Updates](UPDATES.md).
+- Independently inspect current GitHub asset redirects before release; this
+  implementation's sandbox had no usable external network.

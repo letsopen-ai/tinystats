@@ -31,3 +31,28 @@ The retained routing contract is:
 The unresolved asynchronous History Quit assertion remains a separate issue. Neither its implementation nor its existing deadline/modal regression tests are changed here. A passing deadline fixture is not proof that the reported native assertion is fixed.
 
 Source contribution readiness and signed distribution remain separate in Goal audit and [Distribution](DISTRIBUTION.md).
+
+## Native update ownership — 0.37.5
+
+`UpdateController` is constructed only after duplicate/probe launch rejection. It
+uses the existing main-actor sample delivery and wake notification to evaluate
+persisted daily scheduling; no new recurring timer or collector is introduced.
+The welcome window gates scheduled requests. Network, extraction and security work
+stay outside the main actor; settings, menu/footer state and alerts stay on it.
+Diagnostics and isolated/preview sessions never authorize requests.
+
+Termination first cancels/joins active update work. If a prepared update should
+install on normal quit, an asynchronous gate verifies and launches the bounded
+helper before starting `HistoryQuitCoordinator`. Explicit restart launches the
+same helper with relaunch enabled. A worker waits up to 10 seconds for the
+helper's validated-plan ready signal before initiating an explicit update
+restart. A failed explicit restart stops the helper, discards the candidate,
+shows the error and keeps the app running. An ordinary Quit/logout/shutdown
+always continues, including when helper launch fails; it logs the failure and
+discards the candidate without an alert. Helper failure on ordinary Quit never
+reopens the app. If Quit arrives during an in-flight explicit restart, its
+already-written relaunch plan is preserved; successful installation still reopens
+TinyStats, while launch failure permits the pending Quit to complete. The original history checkpoint/stop and
+once-only reply logic remains intact, with its two-second deadline starting after
+update preparation. The helper waits for process exit, verifies again and performs
+the move/restore transaction described in [Updates](UPDATES.md).

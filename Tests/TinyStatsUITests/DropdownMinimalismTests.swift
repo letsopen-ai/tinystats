@@ -329,3 +329,64 @@ import Testing
   #expect(cell.toolTip?.contains("40.0–50.0") == true)
   #expect(cell.accessibilityLabel()?.contains("40.0 to 50.0") == true)
 }
+
+@Test @MainActor func samplePrivacyReflectsEligibleUpdateChecksInRowsAndLiveActionHelp() throws {
+  _ = NSApplication.shared
+  let detail = DetailController()
+  detail.isPopoverPresentation = true
+  detail.showsAllReadings = true
+  detail.selected = .cpu
+  _ = detail.view
+  let pause = try #require(
+    detail.view.subviews.compactMap { $0 as? MenuActionRow }
+      .first { $0.title == "Pause" })
+  var state = UpdatePresentation(eligible: true, canInstall: true)
+  for (eligible, checking, expected) in [
+    (true, true, "GitHub update checks only"),
+    (true, false, "Local only"), (false, true, "Local only"),
+    (true, true, "GitHub update checks only"),
+  ] {
+    state.eligible = eligible
+    state.preferences.automaticallyCheck = checking
+    detail.updateState = state
+    let rows = DetailReadingsBuilder.sampleRows(
+      snapshot: Snapshot(), settings: Settings(),
+      paused: false, updateChecksOn: state.updateChecksOn)
+    #expect(rows.first { $0.label == "Privacy" }?.value == expected)
+    #expect(pause.toolTip?.contains("Privacy: " + expected) == true)
+    #expect(pause.accessibilityHelp()?.contains("Privacy: " + expected) == true)
+    let table = try #require(
+      detail.view.subviews.compactMap { $0 as? NSScrollView }
+        .compactMap { $0.documentView as? NSTableView }.first)
+    let privacyIndex = try #require(
+      (0..<table.numberOfRows).first { index in
+        (detail.tableView(table, viewFor: table.tableColumns[0], row: index) as? NSTextField)?
+          .stringValue == "Privacy"
+      })
+    let value = try #require(
+      detail.tableView(table, viewFor: table.tableColumns[1], row: privacyIndex) as? NSTextField)
+    #expect(
+      value.stringValue == (expected == "GitHub update checks only" ? "GitHub updates" : expected)
+    )
+  }
+  // An updater remains a disclosed internet capability while monitoring is paused.
+  detail.paused = true
+  #expect(
+    (detail.view as? MainContentView)?.sampleInformation.contains(
+      "Privacy: GitHub update checks only") == true)
+}
+
+@Test @MainActor func samplePrivacyKeepsGeneralInternetStateWhenOtherChecksAreEnabled() {
+  for feature in 0..<4 {
+    var settings = Settings()
+    settings.weather.enabled = feature == 0
+    settings.connectivityChecks = feature == 1
+    settings.publicIPChecks = feature == 2
+    settings.pingCheck.enabled = feature == 3
+    let row = DetailReadingsBuilder.sampleRows(
+      snapshot: Snapshot(), settings: settings,
+      paused: false, updateChecksOn: true
+    ).first { $0.label == "Privacy" }
+    #expect(row?.value == "Internet requests enabled" && row?.compactValue == "Internet enabled")
+  }
+}
