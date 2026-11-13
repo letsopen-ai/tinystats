@@ -90,13 +90,16 @@ import Testing
   #expect(!(try png(view)).isEmpty)
 }
 
-@Test @MainActor func networkRatesKeepStatusWidthAcrossDigitsUnitsAndMissingSamples() throws {
+@Test(arguments: MenuBarWeight.allCases) @MainActor
+func networkRatesKeepStatusWidthAcrossDigitsUnitsAndMissingSamples(weight: MenuBarWeight) throws {
   for style in [MenuBarStyle.stacked, .historyValue, .text, .value] {
     for size in MenuBarSize.allCases {
       var settings = Settings()
+      settings.menuBarWeight = weight
       settings.styles["network"] = style
       settings.appearances["network"] = .init(size: size, color: .automatic)
       let view = MenuBarReadoutView()
+      view.weight = settings.menuBarWeight
       var widths: [CGFloat] = []
       for rate: Double? in [
         nil, -1, .nan, .infinity, 0, 9, 999, 999.9, 1_000, 9_999, 999_999, 1e9, 1e12,
@@ -371,12 +374,12 @@ import Testing
         view.frame = .init(x: 0, y: 0, width: width, height: 24)
         let rep = try bitmap(view)
         let font = NSFont.monospacedDigitSystemFont(
-          ofSize: size == .compact ? 10 : size == .standard ? 10.5 : 11, weight: .semibold)
+          ofSize: size == .compact ? 10 : size == .standard ? 10.5 : 11, weight: .regular)
         let prefix =
           style == .text
           ? ceil(
             ("NET " as NSString).size(withAttributes: [
-              .font: NSFont.monospacedDigitSystemFont(ofSize: size.pointSize, weight: .semibold)
+              .font: NSFont.monospacedDigitSystemFont(ofSize: size.pointSize, weight: .regular)
             ]).width) : 0
         let start = Int((1 + prefix + (style == .historyValue ? 49 : 0)) * 2)
         var visible = 0

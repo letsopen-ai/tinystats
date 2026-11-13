@@ -124,3 +124,7 @@ implementation sandbox. Offline fakes and owned-window stills do not establish
 those runtime claims or macOS 14/15/Intel compatibility. No release validation
 receipt is created for this candidate; the final-tree local gate result belongs
 in the implementation notes.
+
+## Regular menu-bar weight candidate — 0.37.6 (78)
+
+Regular is the default of the persisted Settings › Menu Bar › Weight control below Layout. Regular / Medium / Semibold immediately update readout fonts, SF Symbols, clock hands and graphic lines in Separate and One layouts and the live preview; missing/unknown saved values fall back to Regular. Network width reservations follow the selected weight. A clock-tick typography refresh was later limited so unchanged weights do not redraw non-clock items. Owned-view light/dark 2x stills cover all three weights without real status-bar interaction. The full `scripts/verify-local.sh` passed on the final tree: 91 Python tests OK; 844 Swift tests in 5 suites passed (verify2.log). No release validation receipt was created. Local checks prove only their validation host; Release measurements remain separate. Real status-bar captures on native macOS 14/15/Intel and 1x displays remain manual checks, especially thin 7–8pt calendar digits and vertical label legibility.
