@@ -217,7 +217,14 @@ import Testing
         let previewRect = wallpaper.convert(wallpaper.bounds, to: section)
         let controlRect = control.convert(control.bounds, to: section)
         #expect(previewRect.maxX < controlRect.minX)
-        #expect(controlRect.midY >= previewRect.minY && controlRect.midY <= previewRect.maxY)
+        let weight = try #require(
+          views.compactMap { $0 as? NSSegmentedControl }.first {
+            $0.accessibilityLabel() == "Menu bar weight"
+          })
+        let weightRect = weight.convert(weight.bounds, to: section)
+        #expect(weightRect.minX == controlRect.minX)
+        #expect(abs(previewRect.midY - (controlRect.midY + weightRect.midY) / 2) < 12)
+        #expect(section.bounds.contains(controlRect) && section.bounds.contains(weightRect))
         #expect(document.bounds.height <= form.contentView.bounds.height)
         #expect(form.contentView.bounds.minY == 0)
         for view in views

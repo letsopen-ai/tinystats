@@ -111,8 +111,10 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   static let menuBarHeaderHeightBudget: CGFloat = 74
   static let menuBarCPUBottomChromeBudget: CGFloat = 20
   static let menuBarCPUOptionsHeightBudget: CGFloat = 230
-  /// Includes the preview, title, help and segmented control in one row.
-  static let menuBarLayoutSectionHeightBudget: CGFloat = 74
+  /// Includes the preview and the Layout/Weight controls and captions.
+  // The 80pt control stack plus the form row’s two 6pt insets.
+  static let menuBarLayoutSectionHeightBudget: CGFloat = 92
+  private let weightSelector = MenuBarWeightControl.control()
   private let layoutSelector = MenuBarLayoutIcons.control()
   private let styleOptions = NSStackView()
   private lazy var styleDisclosure = NSButton(
@@ -307,6 +309,8 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
 
   private func buildMenuBarPage() {
     let form = SystemSettingsForm.self
+    weightSelector.target = self
+    weightSelector.action = #selector(weightChanged)
     layoutSelector.target = self
     layoutSelector.action = #selector(layoutChanged)
     layoutSelector.setAccessibilityLabel("Menu bar layout")
@@ -330,7 +334,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     NSLayoutConstraint.activate([
       previewScroll.leadingAnchor.constraint(equalTo: wallpaper.leadingAnchor, constant: 8),
       previewScroll.trailingAnchor.constraint(equalTo: wallpaper.trailingAnchor, constant: -8),
-      previewScroll.topAnchor.constraint(equalTo: wallpaper.topAnchor, constant: 6),
+      previewScroll.centerYAnchor.constraint(equalTo: wallpaper.centerYAnchor),
       previewScroll.heightAnchor.constraint(equalToConstant: 42),
     ])
     styleDisclosure.isBordered = false
@@ -431,7 +435,25 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     layoutChoice.spacing = 2
     layoutChoice.widthAnchor.constraint(equalToConstant: 190).isActive = true
     layoutHelp.widthAnchor.constraint(equalTo: layoutChoice.widthAnchor).isActive = true
-    let layoutRow = form.controls([wallpaper, layoutChoice])
+    let weightTitle = NSTextField(labelWithString: "Weight")
+    weightTitle.font = layoutTitle.font
+    weightTitle.textColor = layoutTitle.textColor
+    weightSelector.setAccessibilityTitleUIElement(weightTitle)
+    let weightHelp = form.text("Text and line thickness.")
+    let weightChoice = NSStackView(views: [
+      form.controls([weightTitle, weightSelector]), weightHelp,
+    ])
+    weightChoice.orientation = .vertical
+    weightChoice.alignment = .leading
+    weightChoice.spacing = 2
+    weightChoice.widthAnchor.constraint(equalToConstant: 190).isActive = true
+    weightHelp.widthAnchor.constraint(equalTo: weightChoice.widthAnchor).isActive = true
+    let choices = NSStackView(views: [layoutChoice, weightChoice])
+    weightTitle.widthAnchor.constraint(equalTo: layoutTitle.widthAnchor).isActive = true
+    choices.orientation = .vertical
+    choices.alignment = .leading
+    choices.spacing = 8
+    let layoutRow = form.controls([wallpaper, choices])
     wallpaper.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
     let layoutSection = form.group([
       form.row("", layoutRow, height: Self.menuBarLayoutSectionHeightBudget)
@@ -480,7 +502,15 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     onChange?(settings)
   }
 
+  @objc private func weightChanged() {
+    guard MenuBarWeight.allCases.indices.contains(weightSelector.selectedSegment) else { return }
+    settings.menuBarWeight = MenuBarWeight.allCases[weightSelector.selectedSegment]
+    updatePreview()
+    onChange?(settings)
+  }
+
   private func updateLayoutSelection() {
+    weightSelector.selectedSegment = MenuBarWeight.allCases.firstIndex(of: settings.menuBarWeight)!
     layoutSelector.selectedSegment = settings.separateItems ? 0 : 1
   }
 
@@ -539,6 +569,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
   @objc private func showHistoryStorage() { onHistory?() }
   func updateMenuBarSettings(_ value: Settings) {
     settings.separateItems = value.separateItems
+    settings.menuBarWeight = value.menuBarWeight
     settings.readouts = value.readouts
     individualOrder = value.readouts
     settings.styles = value.styles
@@ -697,7 +728,7 @@ final class PreferencesController: NSWindowController, NSWindowDelegate, NSTabVi
     }
     preview.update(
       groups: settings.separateItems ? groups : [groups.flatMap { $0 }],
-      paused: previewPaused, height: menuBarHeight)
+      paused: previewPaused, height: menuBarHeight, weight: settings.menuBarWeight)
     preview.frame.size = .init(
       width: max(654, preview.preferredWidth), height: max(36, menuBarHeight))
     preview.needsDisplay = true
