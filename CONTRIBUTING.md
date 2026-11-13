@@ -25,6 +25,7 @@ The build writes `build/TinyStats.app` and `build/TinyStats.zip`, using ad-hoc s
 - Hardware APIs vary. Do not assume SMC/GPU/battery counters exist. The SMC collector is read-only; never add fan writes to it. Privileged traffic and fan-control experiments remain unshipped and gated.
 - Keep history bounded and local. Preserve explicit saving Off, fail closed on malformed preferences, and retain Off/Clear controls.
 - Disclose and authorize scheduled network destinations. Weather is off by default for new installs and enabling it is an explicit opt-in. Preserve saved explicit Weather choices and gate current location on OS permission; diagnostics/tests never enable online features implicitly.
+- Owner-approved exception: eligible signed releases check GitHub for app updates once per 24 hours and prepare verified updates by default, as disclosed in the welcome tour and Settings › General › Software Update. Both preferences can be disabled; saved Off choices are preserved. Development builds, diagnostics and tests never enable update requests implicitly. See [Updates](docs/UPDATES.md) for destinations and security.
 - Retain protocol sources and licenses. Never copy proprietary implementations.
 
 `Sources/TinyStatsCore` contains models, collectors, settings and history; `Sources/CTinyStats` wraps system APIs; `Sources/TinyStats` owns AppKit and the worker. Traffic protocol, IPC/client and fan-policy foundations live in separate targets with deliberately narrow dependencies. Read [Design](docs/DESIGN.md) and [AGENTS.md](AGENTS.md) for the full rules.

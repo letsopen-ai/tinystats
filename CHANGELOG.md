@@ -4,6 +4,8 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Added native GitHub Release updates for signed TinyStats builds: daily checks and background preparation on by default, General settings and manual checks, verified updates with restart or normal-quit installation, and a prepared-update footer indicator. Updates require the pinned Developer ID team, notarization, Gatekeeper, matching checksums and a strictly newer version and build; development builds never start the updater. Version 0.37.5 (77).
+
 - Made menu-bar dropdowns appear and disappear immediately, with native popover animation disabled. Separate and One layouts retain one-click module switching in the same open dropdown and close-in-flight click replay. Version 0.37.4 (76).
 
 - Added per-power-source visibility for the Power menu-bar item: **On Power Adapter** and **On Battery** picture tiles in Settings › Menu Bar › Power (both on by default; older profiles migrated unchanged). The item hid and reappeared with the existing sampler's power-source readings in Separate and One layouts, closed its open dropdown, kept One-segment routing on the remaining modules and never disabled the module. Added an Energy Mode section to the Power dropdown with one Low Power / Automatic / High Performance row per power source; High Performance appeared only where `pmset` reported it. The current per-source modes were read on demand without privileges; a change ran only after an explicit click through a per-change macOS administrator prompt for a fixed `/usr/bin/pmset` argument vector, and a cancelled or failed prompt reverted the selection and offered Energy Mode settings. Version 0.37.3 (75).

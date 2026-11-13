@@ -40,7 +40,7 @@
 
 ## What is tinyStats?
 
-tinyStats puts live readings from your Mac into the menu bar — CPU and GPU load, memory pressure, disk and network throughput, temperatures, fans and battery — and opens a detail window with history and the processes behind each number when you click it. It is written in Swift and AppKit with no third-party runtime dependencies, samples everything on one shared timer that slows down in Low Power Mode, and keeps your data on your Mac: no account, no analytics, and nothing leaves your Mac unless you turn on one of the optional network features (weather and internet checks).
+tinyStats puts live readings from your Mac into the menu bar — CPU and GPU load, memory pressure, disk and network throughput, temperatures, fans and battery — and opens a detail window with history and the processes behind each number when you click it. It is written in Swift and AppKit with no third-party runtime dependencies, samples everything on one shared timer that slows down in Low Power Mode, and keeps monitoring data on your Mac, with no account or analytics. Signed releases check GitHub for updates daily (configurable in Settings › General). Weather and internet checks are optional and off by default.
 
 It is an early-stage, MIT-licensed project working toward a lean, open alternative to commercial menu bar monitors.
 
@@ -102,13 +102,13 @@ A five-step welcome tour on first launch helps you choose your menu bar readouts
 
 ### Download a signed build
 
-The latest **signed, notarized** download is [tinyStats 0.36.5](https://github.com/letsopen-ai/tinystats/releases/tag/v0.36.5). Current source on `main` is **0.37.4**, which is ahead of that release (compact menu bar, Separate/One layouts, per-module dropdowns, power visibility and Energy Mode, the redesigned welcome tour, the native main-window split, and immediate dropdown show/hide). Use the signed release if you want a notarized app today; build from source for the latest features until a newer signed build is published.
+The latest **signed, notarized** download is [tinyStats 0.36.5](https://github.com/letsopen-ai/tinystats/releases/tag/v0.36.5). Current source is **0.37.5**, which is ahead of that release (compact menu bar, Separate/One layouts, per-module dropdowns, power visibility and Energy Mode, the redesigned welcome tour, the native main-window split, and immediate dropdown show/hide). Use the signed release if you want a notarized app today; build from source for the latest features until a newer signed build is published.
 
 1. Open the [Releases](https://github.com/letsopen-ai/tinystats/releases) page and download `TinyStats-0.36.5-macOS-universal.zip`.
 2. Unzip it and drag `TinyStats.app` into `/Applications`.
 3. Open the app. The 0.36.5 build is notarized, so Gatekeeper should allow it.
 
-SHA-256 checksums ship alongside the ZIP as `SHA256SUMS.txt`. There is no Homebrew cask yet.
+SHA-256 checksums ship alongside the ZIP as `SHA256SUMS.txt`. There is no Homebrew cask yet. Signed builds from 0.37.5 check and prepare GitHub updates by default; disable either in Settings › General. Older releases need a manual first upgrade. See [Updates](docs/UPDATES.md).
 
 ### Build from source
 
@@ -142,18 +142,19 @@ The build produces `build/TinyStats.app` (and a `build/TinyStats.zip`). Drag `Ti
 
 ## Privacy
 
-tinyStats is local-first. Monitoring needs no account, and the app contains no analytics, crash reporting or update checks.
+tinyStats is local-first. Monitoring needs no account, and the app contains no analytics or crash reporting. Signed builds check GitHub for updates by default; you can turn this off in Settings › General.
 
 | What | Network? | Details |
 | --- | --- | --- |
 | System monitoring | **No** | All readings come from macOS APIs on your Mac. |
 | History | **No** | Saving is **on by default**: up to 28 days of numeric readings only (no process names, addresses or locations) in a private `~/Library/Application Support/TinyStatsHistory` folder that tinyStats asks Time Machine to skip. Turn saving off or clear it in History or Settings → General. [More](docs/HISTORY.md) |
+| Updates | **On by default** in signed releases | Checks `api.github.com` once a day and downloads from GitHub release asset hosts (`github.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`). Sends only a standard User-Agent containing the app version, with no personal identifiers; GitHub sees your IP. Disable checks/downloads in Settings › General. Prepared updates install on normal quit when both toggles are on. [More](docs/UPDATES.md) |
 | Weather | Opt-in, **off by default** | Sends rounded coordinates to **MET Norway** (`api.met.no`), which also sees your public IP. Current location requires macOS location permission; a manual city works without it. [More](docs/WEATHER.md) |
 | Internet checks | Opt-in, **off by default** | HTTPS checks (Apple preset or your URL), public-IP lookup via ipify and ICMP ping to an address you choose (no default). Each destination sees your IP. [More](docs/INTERNET.md) |
 | Calendar agenda | Opt-in, **off by default** | Read on-device with your permission, only while the Time page is open; never saved or uploaded. [More](docs/CALENDAR.md) |
 | Energy Mode | **No** | Applying Low Power, Automatic or High Performance from the Power dropdown can present a macOS administrator authorization prompt. The change runs only after an explicit click; tinyStats does not keep administrator privileges. [More](docs/BATTERY.md#energy-mode-profiles-0373) |
 
-tinyStats installs no helper tools or system services; the only thing it registers is itself as a login item, and only if you turn on **Launch at login**. Fan readings are strictly read-only — the app never writes fan speeds. An experimental privileged traffic service and fan-control policy exist in the source tree but are unbundled and not enabled; see [Privileged traffic](docs/PRIVILEGED-TRAFFIC.md) and [Fan control](docs/FAN-CONTROL.md).
+tinyStats installs no persistent helper tools or system services. The updater uses a temporary unprivileged installer that exits after installation. The app registers itself as a login item only if you turn on **Launch at login**. Fan readings are strictly read-only — the app never writes fan speeds. An experimental privileged traffic service and fan-control policy exist in the source tree but are unbundled and not enabled; see [Privileged traffic](docs/PRIVILEGED-TRAFFIC.md) and [Fan control](docs/FAN-CONTROL.md).
 
 ## Development
 

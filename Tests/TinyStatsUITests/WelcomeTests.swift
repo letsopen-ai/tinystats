@@ -533,7 +533,7 @@ private func welcomeStore() throws -> (String, UserDefaults) {
   #expect(actions.isEmpty)
   let root = try #require(controller.window?.contentView)
   let labels = welcomeViews(root).compactMap { $0 as? NSTextField }
-  #expect(labels.contains { $0.stringValue == "Online only when you choose" })
+  #expect(labels.contains { $0.stringValue == "Know what goes online" })
   #expect(
     labels.contains {
       $0.stringValue.contains("MET Norway · api.met.no")
@@ -961,5 +961,56 @@ private func welcomeStore() throws -> (String, UserDefaults) {
     #expect(stage.internetOn && stage.internetPill.text == "On")
     #expect(!stage.weatherOn && stage.weatherPill.text == "Off")
     #expect(settings == original)
+  }
+}
+
+@Test @MainActor func welcomeOnlineShowsDistinctUpdateDefaultAndNoOverlappingCaption() throws {
+  _ = NSApplication.shared
+  for enabled in [true, false] {
+    var updates = UpdatePresentation(eligible: true, canInstall: true)
+    updates.preferences.automaticallyCheck = enabled
+    let controller = WelcomeController(
+      settings: { Settings() }, initialStep: 3, updates: { updates })
+    defer { controller.close() }
+    let root = try #require(controller.window?.contentView)
+    root.layoutSubtreeIfNeeded()
+    let stage = try #require(welcomeViews(root).compactMap { $0 as? WelcomeOnlineStageView }.first)
+    stage.layoutSubtreeIfNeeded()
+    #expect(stage.updatesPill.text == (enabled ? "On" : "Off"))
+    #expect(
+      stage.updates.captionLabel.stringValue
+        == (enabled
+          ? "Daily · app version only · Turn off in Settings" : "Checks off · Change in Settings"))
+    let caption = stage.updates.captionLabel
+    let ink = (caption.stringValue as NSString).size(withAttributes: [
+      .font: caption.font ?? NSFont.systemFont(ofSize: 11)
+    ])
+    #expect(ink.width <= caption.bounds.width)
+    #expect(stage.updatesOn == enabled && !stage.weatherOn && !stage.internetOn)
+    #expect(stage.updates.identifier?.rawValue == "welcome-updates")
+    #expect(stage.promiseLabel.stringValue.count <= 100 && stage.promiseLabel.bounds.height <= 20)
+    for tile in [stage.weather, stage.internet, stage.updates] {
+      #expect(!tile.frame.intersects(stage.promiseLabel.frame))
+      #expect(stage.bounds.contains(tile.frame))
+    }
+    #expect(!stage.weather.frame.intersects(stage.internet.frame))
+    #expect(!stage.internet.frame.intersects(stage.updates.frame))
+    #expect(stage.weather.frame.minY - stage.internet.frame.maxY == 14)
+    #expect(stage.internet.frame.minY - stage.updates.frame.maxY == 14)
+    for (tile, badge, offset) in [
+      (stage.weather, stage.weatherPill, CGFloat(28)),
+      (stage.internet, stage.internetPill, 0), (stage.updates, stage.updatesPill, -28),
+    ] {
+      let startY = (stage.bounds.height - 150) / 2 + 12 + 75 + offset
+      #expect(badge.frame.midX == 240)
+      #expect(badge.frame.midY == (startY + tile.frame.midY) / 2)
+    }
+    #expect(
+      stage.promiseLabel.stringValue
+        == (enabled
+          ? "Updates on · Weather and internet checks are optional. Opening setup changes nothing."
+          : "Update checks off · Weather and internet checks are optional. Opening setup changes nothing.")
+    )
+    #expect(stage.updates.accessibilityHelp()?.contains("Development builds never check") == true)
   }
 }
