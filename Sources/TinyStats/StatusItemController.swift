@@ -3,13 +3,16 @@ import TinyStatsCore
 
 /// Owns native readouts and sender identity. Window routing and demand remain with AppDelegate.
 @MainActor final class StatusItemController {
-  static let buttonFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+  static func buttonFont(_ weight: MenuBarWeight) -> NSFont {
+    MenuBarTypography.forWeight(weight).buttonFont
+  }
 
   private var items: [(module: Module, item: NSStatusItem, readout: MenuBarReadoutView)] = []
 
   private var orderObservation = MenuBarOrderObservation()
   private var rebuilding = false
   private var separateItems = true
+  private var weight: MenuBarWeight?
   /// Enabled modules currently hidden by the power-source choice (never "disabled").
   private(set) var hiddenModules: Set<Module> = []
   /// One's drawn modules after power-source hiding (`[.overview]` when none remain); rendering
@@ -181,6 +184,7 @@ import TinyStatsCore
     }
     removeAll()
     separateItems = settings.separateItems
+    weight = settings.menuBarWeight
     orderObservation = MenuBarOrderObservation()
     let modules = settings.readouts.isEmpty ? [.overview] : settings.readouts
     if enforceOrder && separateItems {
@@ -222,10 +226,12 @@ import TinyStatsCore
     item.button?.target = target
     item.button?.action = action
     item.button?.sendAction(on: [.leftMouseDown, .rightMouseUp])
-    item.button?.font = Self.buttonFont
+    let weight = weight ?? .regular
+    item.button?.font = Self.buttonFont(weight)
     item.button?.setAccessibilityIdentifier(
       "\(Bundle.main.bundleIdentifier ?? "tinystats").readout.\(module.rawValue)")
     let readout = MenuBarReadoutView(frame: .zero)
+    readout.weight = weight
     if appearanceObserver == nil {
       readout.onAppearanceChange = appearanceChange
       appearanceObserver = readout
@@ -317,6 +323,14 @@ import TinyStatsCore
     if hidden != hiddenModules {
       hiddenModules = hidden
       applyPowerSourceVisibility(settings: settings)
+    }
+    if weight != settings.menuBarWeight {
+      let weight = settings.menuBarWeight
+      self.weight = weight
+      for target in targets {
+        target.readout.weight = weight
+        (target.button as? NSControl)?.font = Self.buttonFont(weight)
+      }
     }
     for (module, item, view) in items {
       // An all-hidden One item keeps the TinyStats item so the app stays reachable.

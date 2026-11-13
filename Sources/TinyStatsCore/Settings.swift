@@ -83,6 +83,7 @@ public struct Settings: Codable, Equatable, Sendable {
   public var theme: AppTheme = .system
   public var interval: Double = 2
   public var separateItems = true
+  public var menuBarWeight: MenuBarWeight = .regular
   public var readouts: [Module] = [.cpu, .memory, .network]
   public var networkInterface = "auto"
   /// Shared CPU/Memory/Network choice. Keep the original encoded key to preserve saved choices.
@@ -117,7 +118,7 @@ public struct Settings: Codable, Equatable, Sendable {
   public var appearances: [String: MenuBarAppearance] = [:]
   public init() {}
   private enum CodingKeys: String, CodingKey {
-    case persistHistory, theme, interval, separateItems, readouts, networkInterface,
+    case persistHistory, theme, interval, separateItems, menuBarWeight, readouts, networkInterface,
       networkTrafficGrouping, networkTrafficRevision, fahrenheit,
       batteryMenu,
       clockMenu,
@@ -138,6 +139,7 @@ public struct Settings: Codable, Equatable, Sendable {
     theme = (try? container.decode(AppTheme.self, forKey: .theme)) ?? .system
     interval = (try? container.decode(Double.self, forKey: .interval)) ?? fallback.interval
     separateItems = (try? container.decode(Bool.self, forKey: .separateItems)) ?? true
+    menuBarWeight = (try? container.decode(MenuBarWeight.self, forKey: .menuBarWeight)) ?? .regular
     // Obsolete menuBarSpacing is intentionally an unknown key: all layouts are compact.
     // Keep every recognized choice in order, even if a future/damaged entry is present.
     // An explicitly malformed list must not enable the default set of extra readouts.

@@ -4,7 +4,7 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
-- Made all menu-bar readout text and icons regular weight in Separate and One layouts, including compact labels, calendar digits, SF Symbols and matching Settings previews. Preserved font sizes, monospaced digits, compact spacing and measured width reservations; lightened the custom clock hour hand. Version 0.37.6 (78).
+- Made Regular the default menu-bar weight and added a compact Regular / Medium / Semibold Weight control under Layout in Settings › Menu Bar. The saved choice immediately updates readout text, SF Symbols, clock hands and graphic lines in Separate and One layouts and the live preview. Preserved font sizes, monospaced digits and compact spacing, with width reservations measured for each weight. Version 0.37.6 (78).
 
 - Added native GitHub Release updates for signed TinyStats builds: daily checks and background preparation on by default, General settings and manual checks, verified updates with restart or normal-quit installation, and a prepared-update footer indicator. Updates require the pinned Developer ID team, notarization, Gatekeeper, matching checksums and a strictly newer version and build; development builds never start the updater. Version 0.37.5 (77).
 

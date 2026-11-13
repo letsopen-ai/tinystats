@@ -72,7 +72,7 @@ extension AppTheme {
   /// Keep preview ink clear of its outline without changing production readout geometry.
   private static let outlineInset: CGFloat = 1.5
   func update(
-    groups: [[MenuBarReadout]], paused: Bool, height: CGFloat
+    groups: [[MenuBarReadout]], paused: Bool, height: CGFloat, weight: MenuBarWeight = .regular
   ) {
     if renderers.count != groups.count {
       for renderer in renderers { renderer.removeFromSuperview() }
@@ -87,6 +87,7 @@ extension AppTheme {
       let (renderer, readings) = pair
       if index > 0 { x += Self.nativeItemGap }
       x += Self.outlineInset
+      renderer.weight = weight
       renderer.readouts = readings
       renderer.paused = paused
       renderer.frame = .init(
