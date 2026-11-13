@@ -3,6 +3,8 @@ import TinyStatsCore
 
 /// Owns native readouts and sender identity. Window routing and demand remain with AppDelegate.
 @MainActor final class StatusItemController {
+  static let buttonFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+
   private var items: [(module: Module, item: NSStatusItem, readout: MenuBarReadoutView)] = []
 
   private var orderObservation = MenuBarOrderObservation()
@@ -220,7 +222,7 @@ import TinyStatsCore
     item.button?.target = target
     item.button?.action = action
     item.button?.sendAction(on: [.leftMouseDown, .rightMouseUp])
-    item.button?.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+    item.button?.font = Self.buttonFont
     item.button?.setAccessibilityIdentifier(
       "\(Bundle.main.bundleIdentifier ?? "tinystats").readout.\(module.rawValue)")
     let readout = MenuBarReadoutView(frame: .zero)

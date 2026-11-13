@@ -371,12 +371,12 @@ import Testing
         view.frame = .init(x: 0, y: 0, width: width, height: 24)
         let rep = try bitmap(view)
         let font = NSFont.monospacedDigitSystemFont(
-          ofSize: size == .compact ? 10 : size == .standard ? 10.5 : 11, weight: .semibold)
+          ofSize: size == .compact ? 10 : size == .standard ? 10.5 : 11, weight: .regular)
         let prefix =
           style == .text
           ? ceil(
             ("NET " as NSString).size(withAttributes: [
-              .font: NSFont.monospacedDigitSystemFont(ofSize: size.pointSize, weight: .semibold)
+              .font: NSFont.monospacedDigitSystemFont(ofSize: size.pointSize, weight: .regular)
             ]).width) : 0
         let start = Int((1 + prefix + (style == .historyValue ? 49 : 0)) * 2)
         var visible = 0
