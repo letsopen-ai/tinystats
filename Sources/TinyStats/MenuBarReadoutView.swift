@@ -173,65 +173,31 @@ struct MenuBarReadout {
   // Shared compact geometry for native items, previews and segment hit testing.
   let sidePadding: CGFloat = 0
   let itemSpacing: CGFloat = 1
-  static let verticalLabelFont = NSFont.systemFont(ofSize: 8, weight: .regular)
-  static let fonts = Dictionary(
-    uniqueKeysWithValues: MenuBarSize.allCases.map {
-      ($0, NSFont.monospacedDigitSystemFont(ofSize: $0.pointSize, weight: .regular))
-    })
-  static let networkFonts = Dictionary(
-    uniqueKeysWithValues: MenuBarSize.allCases.map {
-      (
-        $0,
-        NSFont.monospacedDigitSystemFont(
-          ofSize: $0 == .compact ? 10 : $0 == .standard ? 10.5 : 11, weight: .regular)
-      )
-    })
-  private static func rateWidth(_ font: NSFont) -> CGFloat {
-    let candidates =
-      ["B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s", "EB/s"].flatMap {
-        ["↑ 999 \($0)", "↓ 10.0 \($0)"]
-      } + ["↑ >999 EB/s", "↓ >999 EB/s"]
-    return ceil(
-      candidates.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0)
+  var weight: MenuBarWeight = .regular {
+    didSet { if weight != oldValue { needsDisplay = true } }
   }
-  private static let networkStackWidths = networkFonts.mapValues { rateWidth($0) }
-  private static let networkInlineWidths = fonts.mapValues { rateWidth($0) }
-  static let small = NSFont.systemFont(ofSize: 9, weight: .regular)
-  static let calendarFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-  static let smallCalendarFont = NSFont.monospacedDigitSystemFont(
-    ofSize: 7, weight: .regular)
-  // A zero point size preserves the symbols' native size; drawing keeps the existing scale.
-  static let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 0, weight: .regular)
-  static let symbols = Dictionary(
-    uniqueKeysWithValues: (Module.allCases.map(\.symbol) + [
-      "bolt.fill", "powerplug", "cloud", "cloud.bolt.rain", "cloud.sleet", "cloud.snow",
-      "cloud.rain", "cloud.fog", "moon.stars", "sun.max", "cloud.moon", "questionmark.circle",
-    ]).compactMap {
-      name in
-      NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-        .withSymbolConfiguration(symbolConfiguration).map { (name, $0) }
-    })
+  var typography: MenuBarTypography { .forWeight(weight) }
   // Preserve the parent status button's click behavior.
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
-  private func font(_ item: MenuBarReadout) -> NSFont { Self.fonts[item.appearance.size]! }
+  private func font(_ item: MenuBarReadout) -> NSFont { typography.fonts[item.appearance.size]! }
   private func size(_ value: String, font: NSFont) -> NSSize {
     (value as NSString).size(withAttributes: [.font: font])
   }
   private func stackWidth(_ item: MenuBarReadout) -> CGFloat {
-    if item.isNetwork { return Self.networkStackWidths[item.appearance.size]! }
+    if item.isNetwork { return typography.networkStackWidths[item.appearance.size]! }
     return max(
       29,
       ceil(
         max(
           size(
             item.secondary == nil ? item.label : item.value,
-            font: item.secondary == nil ? Self.small : stackedFont(item)
+            font: item.secondary == nil ? typography.small : stackedFont(item)
           ).width,
           size(item.secondary ?? item.value, font: stackedFont(item)).width)))
   }
   private func stackedFont(_ item: MenuBarReadout) -> NSFont {
     // Two value lines fit in the same native menu bar height as a label/value pair.
-    item.secondary == nil ? font(item) : Self.networkFonts[item.appearance.size]!
+    item.secondary == nil ? font(item) : typography.networkFonts[item.appearance.size]!
   }
   private func line(_ item: MenuBarReadout, label: Bool) -> String {
     (label ? item.label + " " : "") + item.value + (item.secondary.map { " " + $0 } ?? "")
@@ -240,7 +206,7 @@ struct MenuBarReadout {
     if item.isNetwork, item.style == .text || item.style == .value {
       let prefix = item.style == .text ? ceil(size(item.label + " ", font: font(item)).width) : 0
       return ceil(
-        prefix + 2 * Self.networkInlineWidths[item.appearance.size]!
+        prefix + 2 * typography.networkInlineWidths[item.appearance.size]!
           + size(" ", font: font(item)).width)
     }
     if let clock = item.clock {
@@ -268,7 +234,7 @@ struct MenuBarReadout {
     case .historyValue: return 49 + stackWidth(item)
     case .bar: return 13
     case .labeledBar: return 28
-    case .horizontal: return max(30, ceil(size(item.label, font: Self.small).width))
+    case .horizontal: return max(30, ceil(size(item.label, font: typography.small).width))
     case .pie, .ring: return 19
     case .cores: return item.coreBarsWidth
     case .battery: return item.charging ? 39 : 27
@@ -308,7 +274,8 @@ struct MenuBarReadout {
     if paused {
       text(
         palette: palette,
-        "Ⅱ", in: .init(x: x, y: 0, width: 12, height: bounds.height), font: Self.fonts[.standard]!)
+        "Ⅱ", in: .init(x: x, y: 0, width: 12, height: bounds.height),
+        font: typography.fonts[.standard]!)
     }
     for (item, segment) in zip(readouts, segments) {
       let x = segment.frame.minX
@@ -333,7 +300,7 @@ struct MenuBarReadout {
         } else if item.isNetwork, item.style != .label {
           let prefix = item.style == .text ? item.label + " " : ""
           let offset = ceil(size(prefix, font: font(item)).width)
-          let fieldWidth = Self.networkInlineWidths[item.appearance.size]!
+          let fieldWidth = typography.networkInlineWidths[item.appearance.size]!
           text(palette: palette, prefix, in: whole, font: font(item))
           networkText(
             palette: palette,
@@ -373,7 +340,7 @@ struct MenuBarReadout {
         drawHistory(
           item.secondValues, in: chart, domain: domain, color: palette.secondary, dashed: true)
         if (item.values + item.secondValues).compactMap({ $0 }).isEmpty {
-          text(palette: palette, "—", in: chart, font: Self.small, centered: true)
+          text(palette: palette, "—", in: chart, font: typography.small, centered: true)
         }
         if item.style == .historyValue {
           stack(
@@ -396,7 +363,7 @@ struct MenuBarReadout {
               x: x,
               y: bottom + height - CGFloat(index + 1) * height / CGFloat(max(1, letters.count)),
               width: 9, height: height / CGFloat(max(1, letters.count)) + 2),
-            font: Self.verticalLabelFont, centered: true)
+            font: typography.verticalLabelFont, centered: true)
         }
         gauge(
           palette: palette,
@@ -407,7 +374,8 @@ struct MenuBarReadout {
         let y = floor((bounds.height - height) / 2)
         text(
           palette: palette,
-          item.label, in: .init(x: x, y: y + 9, width: w, height: height - 9), font: Self.small)
+          item.label, in: .init(x: x, y: y + 9, width: w, height: height - 9),
+          font: typography.small)
         gauge(
           palette: palette,
           item.progress, in: .init(x: x, y: y + 1, width: w, height: 7), vertical: false,
@@ -420,7 +388,7 @@ struct MenuBarReadout {
             x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
         if item.style == .ring {
           tint.withAlphaComponent(0.2).setStroke()
-          background.lineWidth = 3
+          background.lineWidth = typography.ringStroke
           background.stroke()
         } else {
           tint.withAlphaComponent(0.2).setFill()
@@ -435,7 +403,7 @@ struct MenuBarReadout {
               endAngle: 90 - CGFloat(min(100, max(0, progress))) * 3.6, clockwise: true)
             if item.style == .ring {
               tint.setStroke()
-              path.lineWidth = 3
+              path.lineWidth = typography.ringStroke
               path.stroke()
             } else {
               path.close()
@@ -444,7 +412,7 @@ struct MenuBarReadout {
             }
           }
         } else {
-          text(palette: palette, "—", in: rect, font: Self.small, centered: true)
+          text(palette: palette, "—", in: rect, font: typography.small, centered: true)
         }
       case .cores:
         var coreX = x
@@ -464,7 +432,7 @@ struct MenuBarReadout {
           }
         }
         if item.cores.compactMap({ $0 }).isEmpty {
-          text(palette: palette, "—", in: rect, font: Self.small, centered: true)
+          text(palette: palette, "—", in: rect, font: typography.small, centered: true)
         }
       case .battery:
         if item.batteryAbsent {
@@ -520,7 +488,7 @@ struct MenuBarReadout {
       palette: palette,
       item.secondary == nil ? item.label : item.value,
       in: .init(x: rect.minX, y: bottom + split, width: rect.width, height: height - split),
-      font: item.secondary == nil ? Self.small : stackedFont(item),
+      font: item.secondary == nil ? typography.small : stackedFont(item),
       rightAligned: item.isNetwork)
     text(
       palette: palette,
@@ -583,18 +551,18 @@ struct MenuBarReadout {
         color.withAlphaComponent(0.1).setFill()
         let outline = NSBezierPath(
           roundedRect: box.insetBy(dx: 0.5, dy: 0.5), xRadius: 2, yRadius: 2)
-        outline.lineWidth = 1
+        outline.lineWidth = typography.outlineStroke
         outline.fill()
         outline.stroke()
         let rule = NSBezierPath()
         rule.move(to: .init(x: box.minX + 1, y: box.maxY - (stacked ? 2 : 4)))
         rule.line(to: .init(x: box.maxX - 1, y: box.maxY - (stacked ? 2 : 4)))
-        rule.lineWidth = 1
+        rule.lineWidth = typography.outlineStroke
         rule.stroke()
         text(
           palette: palette,
           String(day), in: box.offsetBy(dx: 0, dy: stacked ? -0.5 : -1.5),
-          font: stacked ? Self.smallCalendarFont : Self.calendarFont, centered: true)
+          font: stacked ? typography.smallCalendarFont : typography.calendarFont, centered: true)
         x += width
       }
     }
@@ -602,7 +570,7 @@ struct MenuBarReadout {
   private func drawDial(_ reading: ClockDialReading, in rect: NSRect, color: NSColor) {
     color.setStroke()
     let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5))
-    circle.lineWidth = 1
+    circle.lineWidth = typography.outlineStroke
     circle.stroke()
     let center = NSPoint(x: rect.midX, y: rect.midY)
     let radius = rect.width / 2
@@ -618,7 +586,7 @@ struct MenuBarReadout {
           x: center.x + CGFloat(sin(radians)) * radius * 0.95,
           y: center.y + CGFloat(cos(radians)) * radius * 0.95))
     }
-    ticks.lineWidth = 0.7
+    ticks.lineWidth = typography.tickStroke
     ticks.stroke()
     func hand(_ angle: Double, _ length: CGFloat, _ width: CGFloat) {
       let radians = angle * .pi / 180
@@ -632,11 +600,11 @@ struct MenuBarReadout {
       path.lineCapStyle = .round
       path.stroke()
     }
-    hand(reading.hourDegrees, 0.48, 1)
-    hand(reading.minuteDegrees, 0.76, 1)
+    hand(reading.hourDegrees, 0.48, typography.hourStroke)
+    hand(reading.minuteDegrees, 0.76, typography.minuteStroke)
     if let second = reading.secondDegrees {
       color.withAlphaComponent(0.6).setStroke()
-      hand(second, 0.82, 0.7)
+      hand(second, 0.82, typography.secondStroke)
     }
   }
   private func gauge(
@@ -644,7 +612,7 @@ struct MenuBarReadout {
   ) {
     palette.gaugeOutline.setStroke()
     let path = NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2)
-    path.lineWidth = 1
+    path.lineWidth = typography.outlineStroke
     path.stroke()
     if let value, value.isFinite {
       let inner = rect.insetBy(dx: 2, dy: 2)
@@ -655,7 +623,7 @@ struct MenuBarReadout {
         height: inner.height * (vertical ? fraction : 1)
       ).fill()
     } else {
-      text(palette: palette, "—", in: rect, font: Self.small, centered: true)
+      text(palette: palette, "—", in: rect, font: typography.small, centered: true)
     }
   }
   // Labels and numbers follow the host bar; metric colors carry graphical readings.
@@ -679,7 +647,7 @@ struct MenuBarReadout {
       withAttributes: attributes)
   }
   private func symbol(_ name: String, in rect: NSRect, color: NSColor) {
-    guard let image = Self.symbols[name] else { return }
+    guard let image = typography.symbols[name] else { return }
     let target = NSRect(
       x: rect.midX - min(16, rect.width) / 2,
       y: rect.midY - min(16, rect.height) / 2, width: min(16, rect.width),
@@ -711,7 +679,7 @@ struct MenuBarReadout {
     }
     color.setStroke()
     if dashed { path.setLineDash([3, 2], count: 2, phase: 0) }
-    path.lineWidth = 1
+    path.lineWidth = typography.historyStroke
     path.stroke()
   }
 }
