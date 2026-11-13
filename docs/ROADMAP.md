@@ -62,4 +62,4 @@ These are explicit gaps. Local core monitoring is available now; full commercial
 
 ## Regular menu-bar weight follow-up (0.37.6 candidate)
 
-- Complete the final-tree local gate and review regular-weight readouts on native macOS 14/15 and Intel, including constrained menu-bar space. Synthetic owned-view stills and focused rendering tests establish layout/ink only; see [Distribution](DISTRIBUTION.md#regular-menu-bar-weight-candidate--0376-78).
+- The full `scripts/verify-local.sh` passed on the final tree: 91 Python tests OK; 837 Swift tests in 5 suites passed (verify1.log). Real status-bar captures on native macOS 14/15/Intel and 1x displays remain manual checks, including constrained menu-bar space, thin 7–8pt calendar digits and vertical label legibility. Synthetic owned-view stills establish layout/ink only; see [Distribution](DISTRIBUTION.md#regular-menu-bar-weight-candidate--0376-78).

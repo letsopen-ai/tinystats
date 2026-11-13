@@ -127,4 +127,4 @@ in the implementation notes.
 
 ## Regular menu-bar weight candidate — 0.37.6 (78)
 
-Readout fonts, SF Symbols and matching production-renderer previews use regular weight in Separate and One layouts. Owned-view light/dark 2x stills cover representative modules without real status-bar interaction. The final-tree `scripts/verify-local.sh`, universal packaging, real diagnostics and Release measurements remain pending the subsequent maintainer run; no release validation receipt is created. Native macOS 14/15 and Intel runtime checks remain separate.
+Readout fonts, SF Symbols and matching production-renderer previews use regular weight in Separate and One layouts. Owned-view light/dark 2x stills cover representative modules without real status-bar interaction. The full `scripts/verify-local.sh` passed on the final tree: 91 Python tests OK; 837 Swift tests in 5 suites passed (verify1.log). No release validation receipt was created. This proves only the validation host; Release measurements remain separate. Real status-bar captures on native macOS 14/15/Intel and 1x displays remain manual checks, especially thin 7–8pt calendar digits and vertical label legibility.
