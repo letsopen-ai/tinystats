@@ -124,3 +124,7 @@ implementation sandbox. Offline fakes and owned-window stills do not establish
 those runtime claims or macOS 14/15/Intel compatibility. No release validation
 receipt is created for this candidate; the final-tree local gate result belongs
 in the implementation notes.
+
+## Regular menu-bar weight candidate — 0.37.6 (78)
+
+Readout fonts, SF Symbols and matching production-renderer previews use regular weight in Separate and One layouts. Owned-view light/dark 2x stills cover representative modules without real status-bar interaction. The final-tree `scripts/verify-local.sh`, universal packaging, real diagnostics and Release measurements remain pending the subsequent maintainer run; no release validation receipt is created. Native macOS 14/15 and Intel runtime checks remain separate.

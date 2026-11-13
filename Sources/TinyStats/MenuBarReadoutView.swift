@@ -173,17 +173,17 @@ struct MenuBarReadout {
   // Shared compact geometry for native items, previews and segment hit testing.
   let sidePadding: CGFloat = 0
   let itemSpacing: CGFloat = 1
-  private static let verticalLabelFont = NSFont.systemFont(ofSize: 8, weight: .semibold)
-  private static let fonts = Dictionary(
+  static let verticalLabelFont = NSFont.systemFont(ofSize: 8, weight: .regular)
+  static let fonts = Dictionary(
     uniqueKeysWithValues: MenuBarSize.allCases.map {
-      ($0, NSFont.monospacedDigitSystemFont(ofSize: $0.pointSize, weight: .semibold))
+      ($0, NSFont.monospacedDigitSystemFont(ofSize: $0.pointSize, weight: .regular))
     })
-  private static let networkFonts = Dictionary(
+  static let networkFonts = Dictionary(
     uniqueKeysWithValues: MenuBarSize.allCases.map {
       (
         $0,
         NSFont.monospacedDigitSystemFont(
-          ofSize: $0 == .compact ? 10 : $0 == .standard ? 10.5 : 11, weight: .semibold)
+          ofSize: $0 == .compact ? 10 : $0 == .standard ? 10.5 : 11, weight: .regular)
       )
     })
   private static func rateWidth(_ font: NSFont) -> CGFloat {
@@ -196,17 +196,20 @@ struct MenuBarReadout {
   }
   private static let networkStackWidths = networkFonts.mapValues { rateWidth($0) }
   private static let networkInlineWidths = fonts.mapValues { rateWidth($0) }
-  private static let small = NSFont.systemFont(ofSize: 9, weight: .medium)
-  private static let calendarFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-  private static let smallCalendarFont = NSFont.monospacedDigitSystemFont(
-    ofSize: 7, weight: .semibold)
-  private static let symbols = Dictionary(
+  static let small = NSFont.systemFont(ofSize: 9, weight: .regular)
+  static let calendarFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+  static let smallCalendarFont = NSFont.monospacedDigitSystemFont(
+    ofSize: 7, weight: .regular)
+  // A zero point size preserves the symbols' native size; drawing keeps the existing scale.
+  static let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 0, weight: .regular)
+  static let symbols = Dictionary(
     uniqueKeysWithValues: (Module.allCases.map(\.symbol) + [
       "bolt.fill", "powerplug", "cloud", "cloud.bolt.rain", "cloud.sleet", "cloud.snow",
       "cloud.rain", "cloud.fog", "moon.stars", "sun.max", "cloud.moon", "questionmark.circle",
     ]).compactMap {
       name in
-      NSImage(systemSymbolName: name, accessibilityDescription: nil).map { (name, $0) }
+      NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+        .withSymbolConfiguration(symbolConfiguration).map { (name, $0) }
     })
   // Preserve the parent status button's click behavior.
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -629,7 +632,7 @@ struct MenuBarReadout {
       path.lineCapStyle = .round
       path.stroke()
     }
-    hand(reading.hourDegrees, 0.48, 1.5)
+    hand(reading.hourDegrees, 0.48, 1)
     hand(reading.minuteDegrees, 0.76, 1)
     if let second = reading.secondDegrees {
       color.withAlphaComponent(0.6).setStroke()

@@ -59,3 +59,7 @@ These are explicit gaps. Local core monitoring is available now; full commercial
   and Intel remain native release checks. See [Updates](UPDATES.md).
 - Independently inspect current GitHub asset redirects before release; this
   implementation's sandbox had no usable external network.
+
+## Regular menu-bar weight follow-up (0.37.6 candidate)
+
+- Complete the final-tree local gate and review regular-weight readouts on native macOS 14/15 and Intel, including constrained menu-bar space. Synthetic owned-view stills and focused rendering tests establish layout/ink only; see [Distribution](DISTRIBUTION.md#regular-menu-bar-weight-candidate--0376-78).
