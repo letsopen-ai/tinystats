@@ -60,16 +60,20 @@ A successful main-push `workflow_run` from `letsopen-ai/tinystats` may start
 Xcode 27.1 build 27A9275 explicitly pinned. Both macOS workflows require a public
 repository; they skip while private to avoid paid minutes. Merge the migration
 only after publication. The release job keeps its `production` environment,
-job-level concurrency and 120-minute timeout. It verifies the triggering CI and
+job-level concurrency and 180-minute timeout. It verifies the triggering CI and
 current main against GitHub, then skips a version that already has a valid
 published tag/release. It checks out the exact source and verifies the committed
 local validation receipt before loading signing secrets. Metal is downloaded if
 missing and its selection is validated before credentials are materialized.
 
+The exact Xcode build check (27A9275) intentionally stops the release if GitHub ships a different 27.1 build; run `Hosted release toolchain smoke` first.
+
 Run `python3 scripts/local_release_validation.py record` locally after committing
 native inputs, then commit the receipt. That command runs the complete
 `verify-local.sh` gate locally. The hosted release builds and signs; it does not
 replace the local native test gate. Fork PRs receive no signing credentials.
+
+These workflow/script changes affect the local validation receipt fingerprint: before the first hosted release, the maintainer must run `python3 scripts/local_release_validation.py record` on the final tree and commit the fresh receipt; otherwise the release stops safely at the receipt check before signing secrets are touched.
 
 After publication, create the five signing secrets in the `production`
 environment with their existing names, add required reviewers, and restrict

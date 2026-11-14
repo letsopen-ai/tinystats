@@ -63,7 +63,7 @@ def signing_keychain(directory, certificate, password):
         _security_private('create-keychain', '-p', key_password, keychain)
         created = True
         keychain.chmod(0o600)
-        _security('set-keychain-settings', '-lut', '7200', keychain)
+        _security('set-keychain-settings', '-lut', '10800', keychain)
         _security_private('unlock-keychain', '-p', key_password, keychain)
         _security_private('import', certificate, '-k', keychain, '-P', password,
                   '-T', '/usr/bin/codesign', '-T', '/usr/bin/security')
@@ -80,7 +80,8 @@ def signing_keychain(directory, certificate, password):
                 remaining = [p for p in current if Path(p).resolve() != keychain.resolve()]
                 if not remaining:
                     remaining = initial
-                _security('list-keychains', '-d', 'user', '-s', *remaining)
+                if remaining:
+                    _security('list-keychains', '-d', 'user', '-s', *remaining)
             finally:
                 if created:
                     _security('delete-keychain', keychain)

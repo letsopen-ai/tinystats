@@ -22,7 +22,7 @@ jobs:
       cancel-in-progress: false
     runs-on: xcode-27
     environment: production
-    timeout-minutes: 120
+    timeout-minutes: 180
     permissions:
       contents: write
       actions: read
@@ -47,6 +47,7 @@ jobs:
         run: python3 scripts/runner_release_eligibility.py
       - name: Verify Xcode 27.1 and select the Metal toolchain
         if: steps.eligibility.outputs.release == 'true'
+        timeout-minutes: 20
         working-directory: release-source/${{ github.run_id }}-${{ github.run_attempt }}
         run: python3 scripts/hosted_release_toolchain.py
       - name: Check committed local validation before accessing signing credentials
@@ -85,7 +86,8 @@ jobs:
               listing = security('list-keychains', '-d', 'user')
               listing.check_returncode()
               remaining = [p for p in shlex.split(listing.stdout) if pathlib.Path(p).resolve() != keychain.resolve()]
-              security('list-keychains', '-d', 'user', '-s', *remaining).check_returncode()
+              if remaining:
+                  security('list-keychains', '-d', 'user', '-s', *remaining).check_returncode()
           finally:
               try:
                   deleted = security('delete-keychain', str(keychain))
