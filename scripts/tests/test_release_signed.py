@@ -17,6 +17,28 @@ SPEC.loader.exec_module(release)
 
 
 class SignedReleaseTests(unittest.TestCase):
+    def test_direct_release_accepts_hosted_runner_and_requires_scoped_keychains(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            keychain = str(root / 'tinystats-signing/release-signing.keychain-db')
+            env = {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted',
+                   'RUNNER_TEMP': str(root), 'USER': 'runner',
+                   'TINYSTATS_SIGNING_KEYCHAIN': keychain, 'TINYSTATS_NOTARY_KEYCHAIN': keychain}
+            with patch.dict(release.os.environ, env, clear=True), \
+                 patch.object(release.os, 'geteuid', return_value=501), \
+                 patch.object(sys, 'argv', ['release_signed.py', '--actions-direct']), \
+                 patch.object(release, 'source_commit', side_effect=RuntimeError('reached source guard')) as source:
+                with self.assertRaisesRegex(RuntimeError, 'reached source guard'): release.main()
+                source.assert_called_once()
+                source.reset_mock()
+                release.os.environ['RUNNER_ENVIRONMENT'] = 'self-hosted'
+                with self.assertRaises(ValueError): release.main()
+                source.assert_not_called()
+                release.os.environ['RUNNER_ENVIRONMENT'] = 'github-hosted'
+                release.os.environ.pop('TINYSTATS_NOTARY_KEYCHAIN')
+                with self.assertRaisesRegex(RuntimeError, 'hosted temporary keychain'): release.main()
+                source.assert_not_called()
+
     def test_notarization_requires_accepted_status_and_submission_id(self):
         self.assertEqual(release.check_notary('{"status":"Accepted","id":"test-id"}'), 'test-id')
         for data in ({'status': 'Rejected', 'id': 'x'}, {'status': 'In Progress', 'id': 'x'}, {'status': 'Accepted'}):

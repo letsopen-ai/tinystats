@@ -10,7 +10,7 @@ If GitHub does not offer the private reporting form, email [git@cnie.xyz](mailto
 
 ## Current boundaries
 
-PR checks are designed to run only on GitHub-hosted `ubuntu-latest` runners; no workflow in this repository sends PR code to self-hosted runners. Requiring maintainer approval for all external contributors' workflow runs is a pre-publication task whose setting becomes available once the repository is public; fork PR workflows are disabled while it is private. Approved fork runs use the PR's own workflow files and can reach any runner available to the repository, so runner reachability and human approval are the actual controls (see [Self-hosted CI](docs/SELF_HOSTED_CI.md#public-repository-safety)).
+All workflows use standard GitHub-hosted runners. PR source checks run on `ubuntu-latest`; production signing runs only for successful, verified main-push CI in the `production` environment on `xcode-27`, with Xcode 27.1 pinned and temporary signing material under `$RUNNER_TEMP`. Both macOS jobs skip private repositories. After going public, require approval for all external contributors' fork workflow runs and add production reviewers. Keep organization runner groups private-only. See [Release CI](docs/RELEASE_CI.md#public-repository-safety).
 
 - Signed-release updates require pinned Developer ID team `CVQJTDR4LG`, notarization, Gatekeeper, SHA-256 agreement, HTTPS allowlisted hosts and a strictly newer version/build. See [Updates](docs/UPDATES.md) for trust boundaries and rollback limitations.
 
