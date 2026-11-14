@@ -10,12 +10,11 @@ import json
 import os
 from pathlib import Path
 import plistlib
-import pwd
 import re
 import subprocess
 import sys
 from notary_config import keychain_arguments
-from signing_config import identity_keychain_arguments
+from signing_config import identity_keychain_arguments, verify_certificate_team
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = 'letsopen-ai/tinystats'
@@ -48,7 +47,7 @@ def source_commit():
 
 
 def verify_ci_validation(sha):
-    """Verify the committed MacBook validation receipt before M4 signing."""
+    """Verify the committed MacBook validation receipt before production signing."""
     from local_release_validation import verify
     if run(['git', 'rev-parse', 'HEAD'], True).stdout.strip() != sha:
         raise RuntimeError('Local validation checkout does not match the release source')
@@ -113,11 +112,15 @@ def main():
     authority.add_argument('--actions-direct', action='store_true')
     args = parser.parse_args()
     os.umask(0o077)
-    if os.getuid() == 0 or os.environ.get('USER') == 'runner':
-        raise RuntimeError('Production signing must not run as root or the unsigned runner')
-    if args.actions_direct and (os.environ.get('GITHUB_ACTIONS') != 'true' or
-                                pwd.getpwuid(os.getuid()).pw_name != 'release-runner'):
-        raise RuntimeError('Direct release requires the dedicated Actions runner')
+    if os.geteuid() == 0:
+        raise RuntimeError('Production signing must not run as root')
+    if args.actions_direct:
+        from runner_macos_secrets import hosted_temp
+        root = hosted_temp(os.environ) / 'tinystats-signing'
+        expected = str(root / 'release-signing.keychain-db')
+        if (os.environ.get('TINYSTATS_SIGNING_KEYCHAIN') != expected
+                or os.environ.get('TINYSTATS_NOTARY_KEYCHAIN') != expected):
+            raise RuntimeError('Direct release requires the hosted temporary keychain')
     sha = source_commit()
     version, build = version_metadata()
     assert_unpublished(version)
@@ -136,6 +139,7 @@ def main():
     if not matches:
         raise RuntimeError('Configured Developer ID identity is unavailable')
     identity = matches[0][0]
+    verify_certificate_team(os.environ, identity, team)
     # The direct Actions path checks the committed local gate before importing credentials.
     os.environ.pop('TINYSTATS_SIGN_IDENTITY', None)
     if args.actions_direct:
@@ -175,7 +179,7 @@ def main():
     notes = ROOT / 'build/release-notes.md'
     notes.write_text('Universal Mac production build of `' + sha + '`.\n\n'
         'Developer ID signed, Apple notarized and stapled. Extract TinyStats.app and move it to Applications.\n\n'
-        'The full local validation gate passed on the maintainer Mac for these release inputs; the M4 built and signed this package. Native macOS 14/15 and Intel runtime, '
+        'The full local validation gate passed on the maintainer Mac for these release inputs; the release runner built and signed this package. Native macOS 14/15 and Intel runtime, '
         'hardware and UI qualification remain separate; see docs/DISTRIBUTION.md.\n')
     # Last checks immediately before any tag/release mutation.
     if args.actions_direct:

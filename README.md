@@ -208,7 +208,7 @@ build/TinyStats.app/Contents/MacOS/TinyStats --preview              # persistent
 
 The code is split into `Sources/TinyStatsCore` (models, collectors, settings, history), `Sources/CTinyStats` (system API wrappers) and `Sources/TinyStats` (AppKit UI and the sampling worker). Start with [Design](docs/DESIGN.md), [Performance](docs/PERFORMANCE.md) and [Compatibility](docs/COMPATIBILITY.md).
 
-The automatic push/PR [release source checks](docs/SELF_HOSTED_CI.md) checks source metadata and committed local release validation receipts on Ubuntu. Native tests run locally; the M4 only builds/signs/releases. Keep using `verify-local.sh` for the complete required gate.
+Automatic push/PR [release source checks](docs/RELEASE_CI.md) check source metadata and committed local release validation receipts on Ubuntu. Native tests run locally; the standard GitHub-hosted macOS job builds/signs/releases. Keep using `verify-local.sh` for the complete required gate.
 
 ## Contributing
 

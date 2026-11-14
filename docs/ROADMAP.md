@@ -25,7 +25,7 @@ TinyStats is an early-stage project working toward a lean, native alternative to
 
 See the [distribution checklist](DISTRIBUTION.md). The main open items are:
 
-- Complete the [repository publication checklist](SELF_HOSTED_CI.md#before-making-the-repository-public) for fork approvals, legacy runners, release option A/B and secret migration.
+- Complete the [repository publication checklist](RELEASE_CI.md#before-making-the-repository-public) for fork approvals, production reviewers, hosted release validation and retirement of legacy runners.
 - Review the five-step magnified-menu-bar welcome on native macOS 14/15 and Intel, including VoiceOver, keyboard traversal and existing online choices; complete the coordinator’s final-tree release validation for 0.37.4 (76).
 
 - Measure and reduce native UI memory overhead; record real costs on current and minimum supported macOS ([Performance](PERFORMANCE.md)).

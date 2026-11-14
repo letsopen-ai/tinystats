@@ -26,4 +26,4 @@ jobs:
         run: python3 scripts/local_release_validation.py check --allow-published
       - name: Record scope
         run: |
-          echo 'Workflow policy, metadata and local validation receipt checks only. Native tests run locally on the maintainer Mac; M4 builds/signs/releases.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Workflow policy, metadata and local validation receipt checks only. Native tests run locally on the maintainer Mac; the hosted macOS job builds/signs/releases.' >> "$GITHUB_STEP_SUMMARY"

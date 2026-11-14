@@ -3,10 +3,14 @@
 This deliberately uses only the stdlib, not a general YAML parser. It supports
 block mappings, scalar/list triggers, inline or block runner labels, and folded
 job conditions. Shell/Python block scalars are never interpreted as YAML keys.
-Runner reachability and human approval remain necessary: PRs can edit this test too.
+Maintainer approval remains necessary: PRs can edit this test too.
 """
 
 from pathlib import Path
+import os
+import subprocess
+import tempfile
+from unittest.mock import patch
 import re
 import textwrap
 import unittest
@@ -19,9 +23,10 @@ BLOCK_SCALAR = re.compile(r"^[|>][+-]?[0-9]?$")
 GITHUB_HOSTED_RUNNER = re.compile(
     r'(?:ubuntu-(?:latest|20\.04|22\.04|24\.04)(?:-arm)?'
     r'|windows-(?:latest|2019|2022|2025)|windows-11-arm'
-    r'|macos-(?:latest|13|14|15|26)(?:-large|-xlarge)?|macos-15-intel)'
+    r'|macos-(?:latest|13|14|15|26)|macos-15-intel|xcode-27)'
 )
-SELF_HOSTED_TRIGGERS = {'push', 'workflow_run', 'workflow_dispatch'}
+TRUSTED_TRIGGERS = {'workflow_run', 'workflow_dispatch'}
+PUBLIC_GUARD = 'github.event.repository.private == false'
 REPOSITORY_GUARD = "github.repository == 'letsopen-ai/tinystats'"
 DISPATCH_GUARDS = (
     "github.ref == 'refs/heads/main'",
@@ -101,7 +106,7 @@ def is_github_hosted_runner(field):
         labels = [label.strip() for label in value[1:-1].split(',')]
     else:
         labels = [value]
-    return all(GITHUB_HOSTED_RUNNER.fullmatch(label.strip("\"'")) for label in labels)
+    return bool(labels) and all(GITHUB_HOSTED_RUNNER.fullmatch(label.strip("\"'")) for label in labels)
 
 
 def workflow_security_errors(source):
@@ -129,36 +134,37 @@ def workflow_security_errors(source):
         fields = mapping_fields(body, body[0][0]) if body else {}
         runner_field = fields.get('runs-on', ('', []))
         runner = field_text(runner_field)
-        labels = set(re.findall(r'[\w-]+', runner))
-        if is_github_hosted_runner(runner_field):
-            continue
-        if not triggers <= SELF_HOSTED_TRIGGERS:
-            errors.append(f'{job}: untrusted trigger with self-hosted runner')
-        if 'letsopen-org' not in labels:
-            errors.append(f'{job}: self-hosted runner missing letsopen-org label')
+        if not is_github_hosted_runner(runner_field):
+            errors.append(f'{job}: runner must use an allowed standard GitHub-hosted label')
+        trusted_job = 'xcode-27' in runner or 'workflow_run' in triggers
+        if trusted_job and not triggers <= TRUSTED_TRIGGERS:
+            errors.append(f'{job}: untrusted release trigger')
         guard = re.sub(r'\s*==\s*', ' == ', field_text(fields.get('if', ('', []))))
         if guard.startswith('${{') and guard.endswith('}}'):
             guard = guard[3:-2].strip()
-        # Inequality is allowed; bare ! still negates a guard or expression.
-        if '||' in guard or re.search(r'!(?!=)|\balways\s*\(', guard):
-            errors.append(f'{job}: guard must use conjunctions without negation or always()')
-        parts = {part.strip() for part in guard.split('&&')}
-        if REPOSITORY_GUARD not in parts:
-            errors.append(f'{job}: missing repository guard')
-        if not (all(term in parts for term in DISPATCH_GUARDS)
-                or all(term in parts for term in RELEASE_GUARDS)):
-            errors.append(f'{job}: missing trusted main event guards')
-        if 'workflow_run' in triggers or RELEASE_GUARDS[0] in parts:
-            environment, environment_body = fields.get('environment', ('', []))
-            if environment_body:
-                environment_fields = mapping_fields(environment_body, environment_body[0][0])
-                environment = field_text(environment_fields.get('name', ('', [])))
-            if environment.strip("\"'") != 'production':
-                errors.append(f'{job}: missing production environment')
-            permissions, permissions_body = fields.get('permissions', ('', []))
-            if (permissions or not permissions_body
-                    or not mapping_fields(permissions_body, permissions_body[0][0])):
-                errors.append(f'{job}: missing job-level permissions block')
+        if trusted_job:
+            # Inequality is allowed; bare ! still negates a guard or expression.
+            if '||' in guard or re.search(r'!(?!=)|\balways\s*\(', guard):
+                errors.append(f'{job}: guard must use conjunctions without negation or always()')
+            parts = {part.strip() for part in guard.split('&&')}
+            if PUBLIC_GUARD not in parts:
+                errors.append(f'{job}: missing public repository guard')
+            if REPOSITORY_GUARD not in parts:
+                errors.append(f'{job}: missing repository guard')
+            if not (all(term in parts for term in DISPATCH_GUARDS)
+                    or all(term in parts for term in RELEASE_GUARDS)):
+                errors.append(f'{job}: missing trusted main event guards')
+            if 'workflow_run' in triggers or RELEASE_GUARDS[0] in parts:
+                environment, environment_body = fields.get('environment', ('', []))
+                if environment_body:
+                    environment_fields = mapping_fields(environment_body, environment_body[0][0])
+                    environment = field_text(environment_fields.get('name', ('', [])))
+                if environment.strip("\"'") != 'production':
+                    errors.append(f'{job}: missing production environment')
+                permissions, permissions_body = fields.get('permissions', ('', []))
+                if (permissions or not permissions_body
+                        or not mapping_fields(permissions_body, permissions_body[0][0])):
+                    errors.append(f'{job}: missing job-level permissions block')
         for step in step_mappings(fields.get('steps', ('', []))[1]):
             action = field_text(step.get('uses', ('', []))).strip("\"'")
             if action.startswith('actions/checkout@'):
@@ -200,6 +206,71 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertEqual(field_text(concurrency['group']), 'production-release')
         self.assertEqual(field_text(concurrency['cancel-in-progress']), 'false')
 
+    def test_production_hosted_contract(self):
+        source = (ROOT / '.github/workflows/production-release.yml').read_text()
+        top = mapping_fields(workflow_lines(source), 0)
+        jobs_body = top['jobs'][1]
+        body = mapping_fields(jobs_body, jobs_body[0][0])['release'][1]
+        fields = mapping_fields(body, body[0][0])
+        self.assertEqual(field_text(fields['runs-on']), 'xcode-27')
+        self.assertEqual(field_text(fields['environment']), 'production')
+        self.assertLessEqual(int(field_text(fields['timeout-minutes'])), 120)
+        self.assertEqual(workflow_security_errors(source), [])
+        for term in (REPOSITORY_GUARD, PUBLIC_GUARD) + RELEASE_GUARDS:
+            self.assertTrue(workflow_security_errors(source.replace(term, 'true')))
+        permissions = fields['permissions'][1]
+        self.assertEqual({key: field_text(value) for key, value in mapping_fields(permissions, permissions[0][0]).items()},
+                         {'contents': 'write', 'actions': 'read'})
+        steps = list(step_mappings(fields['steps'][1]))
+        cleanup = [step for step in steps if field_text(step.get('name', ('', []))) == 'Clean up signing material']
+        self.assertEqual(len(cleanup), 1)
+        self.assertEqual(field_text(cleanup[0]['if']), 'always()')
+        for forbidden in ('/Users/', 'release-runner', 'Library/Caches/MacCIReleaseSecrets', 'mac-mini', 'letsopen-org'):
+            self.assertNotIn(forbidden, source)
+        self.assertLess(source.index('scripts/local_release_validation.py check'), source.index('secrets.MACOS_CERTIFICATE'))
+        self.assertIn('DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer', source)
+        checkout = next(step for step in steps if 'uses' in step)
+        inputs = checkout['with'][1]
+        inputs = mapping_fields(inputs, inputs[0][0])
+        self.assertEqual(field_text(inputs['fetch-depth']), '0')
+        self.assertEqual(field_text(inputs['ref']), '${{ github.event.workflow_run.head_sha }}')
+
+    def test_always_cleanup_detaches_and_deletes_even_after_failure(self):
+        source = (ROOT / '.github/workflows/production-release.yml').read_text()
+        # Exercise the actual independent workflow script without a real keychain.
+        cleanup = textwrap.dedent(source.split('        shell: python3 {0}\n        run: |\n', 1)[1])
+        for fail_detach, missing in ((False, False), (True, False), (False, True)):
+            with self.subTest(fail_detach=fail_detach, missing=missing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / 'tinystats-signing'; root.mkdir(mode=0o700)
+                (root / 'AuthKey.p8').write_text('fixture')
+                keychain = root / 'release-signing.keychain-db'
+                calls = []
+                def security(args, **kwargs):
+                    calls.append(args)
+                    command = args[1]
+                    if command == 'list-keychains' and '-s' not in args:
+                        return subprocess.CompletedProcess(args, 0, '"' + str(keychain) + '"\n"/fixture/other.keychain-db"\n', '')
+                    if command == 'list-keychains' and fail_detach:
+                        return subprocess.CompletedProcess(args, 1, '', 'fixture failure')
+                    return subprocess.CompletedProcess(args, int(command == 'delete-keychain' and missing), '', 'The specified keychain could not be found.')
+                with patch.dict(os.environ, {'RUNNER_TEMP': directory}), patch('subprocess.run', side_effect=security):
+                    if fail_detach:
+                        with self.assertRaises(subprocess.CalledProcessError): exec(cleanup, {})
+                    else: exec(cleanup, {})
+                self.assertFalse(root.exists())
+                self.assertEqual(calls[-1], ['/usr/bin/security', 'delete-keychain', str(keychain)])
+                self.assertEqual(calls[1], ['/usr/bin/security', 'list-keychains', '-d', 'user', '-s', '/fixture/other.keychain-db'])
+
+    def test_hosted_smoke_is_secret_free_and_public_main_only(self):
+        source = (ROOT / '.github/workflows/hosted-release-smoke.yml').read_text()
+        self.assertEqual(workflow_security_errors(source), [])
+        self.assertIn('name: Hosted release toolchain smoke', source)
+        self.assertNotIn('secrets.', source)
+        self.assertNotIn('environment:', source)
+        self.assertNotIn('contents: write', source)
+        for term in (REPOSITORY_GUARD, PUBLIC_GUARD) + DISPATCH_GUARDS:
+            self.assertTrue(workflow_security_errors(source.replace(term, 'true')))
+
     def test_repository_workflows(self):
         directory = ROOT / '.github' / 'workflows'
         paths = sorted(path for path in directory.iterdir() if path.suffix in {'.yml', '.yaml'})
@@ -217,8 +288,7 @@ class WorkflowSecurityTests(unittest.TestCase):
                 steps:
                   - uses: actions/checkout@v4
             """))
-        for message in ('top-level permissions', 'untrusted trigger', 'letsopen-org',
-                        'repository guard', 'trusted main event guards', 'full commit SHA'):
+        for message in ('top-level permissions', 'allowed standard GitHub-hosted label', 'full commit SHA'):
             with self.subTest(message=message):
                 self.assertTrue(any(message in error for error in errors), errors)
 
@@ -232,11 +302,11 @@ class WorkflowSecurityTests(unittest.TestCase):
               smoke:
                 if: >-
                   github.repository == 'letsopen-ai/tinystats' &&
+                  github.event.repository.private == false &&
                   github.event_name == 'workflow_dispatch' &&
                   github.ref == 'refs/heads/main'
                 runs-on:
-                  - self-hosted
-                  - letsopen-org
+                  - xcode-27
                 steps:
                   - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned
                     with:
@@ -259,15 +329,17 @@ class WorkflowSecurityTests(unittest.TestCase):
         for label in ('ubuntu-latest', 'ubuntu-22.04', 'ubuntu-24.04-arm',
                       'windows-latest', 'windows-2022', 'windows-2025',
                       'macos-latest', 'macos-14', 'macos-15', 'macos-26',
-                      'macos-15-intel', 'macos-26-large', 'macos-latest-xlarge'):
+                      'macos-15-intel'):
             for runner in (label, f'"{label}"', f'[{label}]', f'\n      - {label}'):
                 with self.subTest(runner=runner):
                     source = self.with_runner(runner).replace('workflow_dispatch:', 'pull_request:')
                     source = source.replace(REPOSITORY_GUARD, 'true')
                     self.assertEqual(workflow_security_errors(source), [])
 
-    def test_unknown_runner_forms_are_self_hosted(self):
-        for runner in ('[macOS, letsopen-org, release]',
+    def test_unknown_self_hosted_and_paid_runners_are_rejected(self):
+        for runner in ('[self-hosted, macOS]', 'self-hosted', 'macos-26-xlarge',
+                       'macos-26-large', 'macos-latest-xlarge', '[]',
+                       '[macOS, letsopen-org, release]',
                        '\n      - macOS\n      - letsopen-org\n      - release',
                        'letsopen-m4-release', '${{ inputs.runner }}',
                        '[ubuntu-latest, "${{ inputs.runner }}"]',
@@ -276,7 +348,7 @@ class WorkflowSecurityTests(unittest.TestCase):
                        'ubuntu-custom', 'windows-custom', 'macos-custom', 'macos-999'):
             with self.subTest(runner=runner):
                 source = self.with_runner(runner).replace('workflow_dispatch:', 'pull_request:')
-                self.assertIn('smoke: untrusted trigger with self-hosted runner',
+                self.assertIn('smoke: runner must use an allowed standard GitHub-hosted label',
                               workflow_security_errors(source))
 
     def test_expression_wrapped_conjunction_guard(self):
@@ -301,13 +373,13 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertEqual(workflow_security_errors(source), [])
 
     def test_guard_terms_must_be_exact_conjunction_parts(self):
-        for term in (REPOSITORY_GUARD,) + DISPATCH_GUARDS:
+        for term in (REPOSITORY_GUARD, PUBLIC_GUARD) + DISPATCH_GUARDS:
             with self.subTest(term=term):
                 source = self.trusted_dispatch().replace(term, f'contains("{term}", "x")')
                 self.assertTrue(workflow_security_errors(source))
 
     def test_each_dispatch_guard_is_required_at_job_level(self):
-        for term in (REPOSITORY_GUARD,) + DISPATCH_GUARDS:
+        for term in (REPOSITORY_GUARD, PUBLIC_GUARD) + DISPATCH_GUARDS:
             with self.subTest(term=term):
                 source = self.trusted_dispatch().replace(term, 'true')
                 self.assertTrue(workflow_security_errors(source))
@@ -321,17 +393,17 @@ class WorkflowSecurityTests(unittest.TestCase):
             for on in (f'on: {trigger}', f'"on": [push, {trigger}]', f"on:\n  {trigger}:"):
                 with self.subTest(on=on):
                     source = self.trusted_dispatch().replace('on:\n  workflow_dispatch:', on)
-                    self.assertIn('smoke: untrusted trigger with self-hosted runner',
+                    self.assertIn('smoke: untrusted release trigger',
                                   workflow_security_errors(source))
         source = self.trusted_dispatch().replace('workflow_dispatch:', 'pull_request_target:')
-        source = source.replace('- self-hosted', '- ubuntu-latest')
+        source = source.replace('- xcode-27', '- ubuntu-latest')
         self.assertIn('pull_request_target trigger is forbidden', workflow_security_errors(source))
 
     def trusted_release(self):
         source = self.trusted_dispatch().replace('workflow_dispatch:', 'workflow_run:')
         start = source.index('    if:')
         end = source.index('    runs-on:')
-        guard = '    if: >-\n      ' + ' &&\n      '.join((REPOSITORY_GUARD,) + RELEASE_GUARDS) + '\n'
+        guard = '    if: >-\n      ' + ' &&\n      '.join((REPOSITORY_GUARD, PUBLIC_GUARD) + RELEASE_GUARDS) + '\n'
         source = source[:start] + guard + source[end:]
         return source.replace('    steps:', '    environment: production\n'
                               '    permissions:\n      contents: write\n      actions: read\n    steps:')
@@ -339,7 +411,7 @@ class WorkflowSecurityTests(unittest.TestCase):
     def test_each_release_guard_is_required(self):
         source = self.trusted_release()
         self.assertEqual(workflow_security_errors(source), [])
-        for term in (REPOSITORY_GUARD,) + RELEASE_GUARDS:
+        for term in (REPOSITORY_GUARD, PUBLIC_GUARD) + RELEASE_GUARDS:
             with self.subTest(term=term):
                 self.assertTrue(workflow_security_errors(source.replace(term, 'true')))
 
@@ -362,7 +434,7 @@ class WorkflowSecurityTests(unittest.TestCase):
                     '    permissions:\n      contents: write\n      actions: read\n', replacement)
                 self.assertIn('smoke: missing job-level permissions block', workflow_security_errors(source))
 
-    def test_every_self_hosted_checkout_disables_persisted_credentials(self):
+    def test_every_checkout_disables_persisted_credentials(self):
         checkout = ('      - name: Another checkout\n'
                     '        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262\n'
                     '        with:\n          persist-credentials: false\n')

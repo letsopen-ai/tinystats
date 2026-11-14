@@ -5,8 +5,8 @@ import subprocess
 
 
 def command(args, cwd=None, timeout=180, capture=True, env=None):
-    # Keep the lock until detached build descendants have stopped, including when
-    # launchd/logout sends SIGTERM to this owner-session worker.
+    # Stop detached build descendants before credential cleanup, including when
+    # Actions cancels the hosted job.
     process = None
     interrupted = None
     def stop():
