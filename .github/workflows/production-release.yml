@@ -67,7 +67,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           MACOS_CERTIFICATE_FINGERPRINT: ${{ vars.MACOS_CERTIFICATE_FINGERPRINT }}
-          # Signing secrets are expected in the production environment.
+          # Resolved from the production environment, falling back to repository secrets of the same name.
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           APPLE_NOTARY_API_KEY_P8: ${{ secrets.APPLE_NOTARY_API_KEY_P8 }}

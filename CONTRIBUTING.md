@@ -54,9 +54,13 @@ Documentation-only changes need `git diff --check` and a factual/link review, wi
 
 ## CI and self-hosted runners
 
-Pull requests, including forks, are checked only on GitHub-hosted `ubuntu-latest`
-runners. Self-hosted runners never run fork or pull-request code. First-time and
-outside contributors' workflow runs need maintainer approval. See
+PR checks are designed to run only on GitHub-hosted `ubuntu-latest` runners;
+no workflow in this repository sends PR code to self-hosted runners. Before
+publication, maintainers must plan to require approval for all external
+contributors' workflow runs and apply that setting once the repository is
+public; fork PR workflows are disabled while it is private. An approved fork
+run uses the PR's own workflow files, so runner reachability and maintainer
+approval are the controls against running fork code on self-hosted runners. See
 [Self-hosted CI](docs/SELF_HOSTED_CI.md#public-repository-safety) for runner access
 restrictions and the trusted-main release flow.
 

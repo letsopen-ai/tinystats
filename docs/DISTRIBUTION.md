@@ -29,6 +29,7 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 - [ ] Spot-check representative hardware: more than one Apple Silicon generation, a laptop with a battery, and a fan-equipped model.
 - [ ] Check sleep/wake, external storage hot-plug, network/VPN switching, notched menu bars, Light/Dark appearance (including a light menu bar), launch at login and notification permission denial.
 - [ ] Review the known gaps in the [roadmap](ROADMAP.md) and decide which are acceptable for the release.
+- [ ] Complete the [repository publication checklist](SELF_HOSTED_CI.md#before-making-the-repository-public), including runner access and secret migration.
 - [ ] Reproduce the [performance](PERFORMANCE.md) measurements on representative hardware.
 - [ ] Publish checksums and installation instructions with the release; add a Homebrew cask once a stable signed download URL exists.
 
@@ -64,13 +65,26 @@ command runs the complete `verify-local.sh` gate locally. The M4 does not run
 the native test suite. Fork PRs do not receive signing credentials. Only trusted
 main source may use this runner and its signing authority.
 
-Store the five signing secrets in the `production` environment with a required
-reviewer: `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`,
-`APPLE_NOTARY_API_KEY_P8`, `APPLE_NOTARY_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`.
-The job keeps the existing `secrets.NAME` lookups: environment values take
-precedence over repository secrets of the same name, and repository-level
-values continue to work during migration. Runner access and public-repository
-settings are covered in [Self-hosted CI](SELF_HOSTED_CI.md#public-repository-safety).
+On GitHub Free, environment secrets and required reviewers are unavailable for
+this private repository. For releases from this repository after publication
+(option B in [Self-hosted CI](SELF_HOSTED_CI.md#public-repository-safety)), migrate
+in this order:
+
+1. While private, keep the five signing secrets at repository level:
+   `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`,
+   `APPLE_NOTARY_API_KEY_P8`, `APPLE_NOTARY_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`.
+2. After going public, create the five `production` environment secrets with
+   the same names. The existing `secrets.NAME` lookups resolve environment values
+   before repository values of the same name.
+3. Add a required reviewer and keep deployment branches limited to `main`.
+4. Run a release and verify the environment secrets and approval gate.
+5. Then delete the repository-level copies. Until then, any main-branch job
+   without `environment:` could read those copies and bypass reviewer approval.
+
+Each release then pauses for approval. The recommended option A instead moves
+signing/releases and repository-level signing secrets to a separate private
+repository, keeping the default runner group private-only. A private repository
+on Free cannot use the environment reviewer gate; that requires a paid plan.
 
 The job imports the existing Developer ID identity into a temporary keychain,
 checks its team and fingerprint, creates a temporary notarization profile, and
