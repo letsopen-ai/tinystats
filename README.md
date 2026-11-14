@@ -27,15 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/menubar-separate-light.png" width="420" alt="Compact Separate-layout menu bar readouts for CPU, memory and network">
-</p>
-
-<p align="center">
   <img src="docs/images/demo-dropdown.gif" width="400" alt="tinyStats One-layout menu bar: opening the CPU dropdown, switching to Memory, Network and Power, then closing">
-</p>
-
-<p align="center">
-  <img src="docs/images/dropdown-cpu-light.png" width="400" alt="tinyStats menu bar in the One layout with the CPU dropdown open">
 </p>
 
 ## What is tinyStats?
