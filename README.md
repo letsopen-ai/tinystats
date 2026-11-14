@@ -118,8 +118,7 @@ Processes that start and exit between samples are not captured.
 
 Configurations were not identical: tinyStats showed one combined item with CPU, memory, disk and network on a 2 s interval;
 iStat Menus showed five items — memory pressure, CPU, disk, network and CPU temperature — with its default settings.
-**CPU use was effectively the same for both, about 1% of one core, and energy impact was also about the same.**
-Energy impact (`top`'s POWER column, averaged) was 0.90 for tinyStats versus 0.85 for the iStat Menus menu bar app (helper 0.00).
+**CPU use was effectively the same for both, about 1% of one core.**
 This is a single run on one machine; numbers vary with configuration, hardware and macOS version.
 iStat Menus is a mature commercial app with far more features and options.
 
