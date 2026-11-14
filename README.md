@@ -92,6 +92,40 @@ A five-step welcome tour on first launch helps you choose your menu bar readouts
 
 <sub>Dropdown and menu-bar stills (and the demo GIF) are owned-window / gallery-mirror captures on a color backdrop, not a screenshot of the real menu bar, so they do not show a popover arrow. The Overview and Settings windows are the current native split. Some preview readings can be incomplete or fixture data — for example an empty process list or a Sensors chart from a gallery capture. A slightly sharper MP4 of the same dropdown sequence is at [docs/images/demo-dropdown.mp4](docs/images/demo-dropdown.mp4). Extra stills: the welcome tour's [menu bar step](docs/images/welcome-menubar-light.png) and [Menu Bar settings in Dark Mode](docs/images/menu-bar-settings-dark.png).</sub>
 
+## Lightweight by design
+
+One measured run compares tinyStats with iStat Menus 7:
+
+| Metric | tinyStats | iStat Menus |
+| --- | ---: | ---: |
+| Memory footprint avg / peak | 21.5 / 21.6 MB | 74.2 / 83.8 MB |
+| CPU avg (% of one core) / peak 10 s interval | 0.93 % / 1.3 % | 0.96 % / 4.3 % |
+| Processes | 1 | 2 resident + transient history XPC service |
+| Download size | 4.5 MB | 27.9 MB |
+| App size on disk | 12.9 MB | 67.1 MB (163.0 MB installed total[^istat-installed]) |
+
+MB = 1,048,576 bytes.
+
+[^istat-installed]: Includes helper apps and a second copy of the app in `~/Library/Application Support/iStat Menus 7`; excludes history data. Disk usage counts APFS clones fully.
+
+**How we measured:** 2026-11-14, Mac mini (M4, 16 GB), macOS 27.2, on an otherwise idle desktop with two idle self-hosted CI runner listeners running.
+Runtime: tinyStats 0.37.6 local arm64 build; iStat Menus 7.30, licensed, default profile.
+Sizes: tinyStats signed universal 0.37.5 release; iStat Menus 7.30 universal.
+After a 120 s warm-up, we sampled every 10 s for 10 minutes, summing all processes of each app
+(iStat Menus: menu bar app, helper agent and its history XPC service).
+Memory is `phys_footprint` from `footprint` (Activity Monitor's Memory); CPU comes from cumulative CPU-time deltas.
+Processes that start and exit between samples are not captured.
+
+Configurations were not identical: tinyStats showed one combined item with CPU, memory, disk and network on a 2 s interval;
+iStat Menus showed five items — memory pressure, CPU, disk, network and CPU temperature — with its default settings.
+**CPU use was effectively the same for both, about 1% of one core.**
+This is a single run on one machine; numbers vary with configuration, hardware and macOS version.
+iStat Menus is a mature commercial app with far more features and options.
+
+Reproduce the runtime measurement with [scripts/compare-menubar-footprint.py](scripts/compare-menubar-footprint.py); usage examples are in its docstring.
+
+iStat Menus is a trademark of Bjango Pty Ltd; tinyStats is not affiliated with Bjango.
+
 ## Requirements
 
 - macOS 14 Sonoma or newer
@@ -186,7 +220,7 @@ Bug reports, hardware diagnostics from different Macs, documentation and focused
 - [MET Norway](https://api.met.no/weatherapi/locationforecast/2.0/documentation) — forecast data under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Not an endorsement by MET Norway.
 - Apple's open-source [XNU](https://github.com/apple-oss-distributions/xnu) headers (APSL 2.0) — network statistics protocol facts.
 
-Full details are in [Third-party notices](THIRD_PARTY_NOTICES.md). tinyStats is independent of Bjango (iStat Menus), Stats and MET Norway.
+Full details are in [Third-party notices](THIRD_PARTY_NOTICES.md). tinyStats is not affiliated with Stats or MET Norway.
 
 ## License
 
