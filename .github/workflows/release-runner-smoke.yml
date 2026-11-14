@@ -9,7 +9,8 @@ concurrency:
 jobs:
   smoke:
     if: >-
-      contains(fromJSON('["niechen/tinystats", "letsopen-ai/tinystats"]'), github.repository) &&
+      github.repository == 'letsopen-ai/tinystats' &&
+      github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main'
     runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, letsopen-org, release, tinystats]
     timeout-minutes: 10

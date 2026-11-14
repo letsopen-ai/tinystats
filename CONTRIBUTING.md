@@ -50,7 +50,19 @@ Keep the source manifest and local logs under `build/ci` locally. In the PR, sum
 
 For collection/UI performance changes, run real diagnostics and measure the Release app with `scripts/benchmark-app.py`, following [Performance](docs/PERFORMANCE.md). Distinguish measured costs from targets, and real native UI/hardware checks from synthetic fixtures. A pass on one host is not native macOS 14/15 or Intel validation.
 
-Documentation-only changes need `git diff --check` and a factual/link review, without rebuilding an unchanged app. There is currently no dedicated repository-wide doc/link checker. An automatic push/PR [release source checks](docs/SELF_HOSTED_CI.md) checks metadata and local release validation receipts; native tests run locally. The complete local check remains the required gate.
+Documentation-only changes need `git diff --check` and a factual/link review, without rebuilding an unchanged app. There is currently no dedicated repository-wide doc/link checker. Automatic push/PR [release source checks](docs/SELF_HOSTED_CI.md) check workflow policy, metadata and local release validation receipts; native tests run locally. The complete local check remains the required gate.
+
+## CI and self-hosted runners
+
+PR checks are designed to run only on GitHub-hosted `ubuntu-latest` runners;
+no workflow in this repository sends PR code to self-hosted runners. Before
+publication, maintainers must plan to require approval for all external
+contributors' workflow runs and apply that setting once the repository is
+public; fork PR workflows are disabled while it is private. An approved fork
+run uses the PR's own workflow files, so runner reachability and maintainer
+approval are the controls against running fork code on self-hosted runners. See
+[Self-hosted CI](docs/SELF_HOSTED_CI.md#public-repository-safety) for runner access
+restrictions and the trusted-main release flow.
 
 ## Pull request workflow
 
