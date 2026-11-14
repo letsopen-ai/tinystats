@@ -18,9 +18,11 @@ choose patterns that cover its helpers too. Memory is summed per sample. CPU % i
 derived from cumulative CPU-time deltas (ps TIME), as a percentage of one core
 averaged over each interval. Summary memory values use MB = 1,048,576 bytes.
 
-This preserves the original comparison's sampling and summary calculations:
-processes that start and exit between samples are not captured, unavailable
-footprints contribute zero to the sum, and elapsed time uses the wall clock.
+Processes that start and exit between samples are not captured. Footprint stats
+use only samples where every matched process has a reading; the summary reports
+complete sample and missing reading counts, with null stats if none are complete.
+Elapsed time and scheduling use a monotonic clock. A CPU counter decrease or
+command change starts a new process baseline.
 Output stays local; samples.csv contains process IDs and full command lines,
 which may include personal paths. Review it before sharing.
 """
@@ -28,6 +30,7 @@ which may include personal paths. Review it before sharing.
 import argparse
 import csv
 import json
+import math
 import os
 import re
 import subprocess
@@ -87,6 +90,10 @@ def main():
     ap.add_argument("--out", default=".")
     ap.add_argument("--product", action="append", required=True)
     a = ap.parse_args()
+    for option, value in [("interval", a.interval), ("duration", a.duration), ("warmup", a.warmup)]:
+        if not math.isfinite(value) or (value <= 0 if option == "interval" else value < 0):
+            bound = "> 0" if option == "interval" else ">= 0"
+            ap.error(f"--{option} must be finite and {bound}")
     products = {}
     for spec in a.product:
         name, rx = spec.split("=", 1)
@@ -100,10 +107,10 @@ def main():
         w.writerow(
             ["t", "product", "pid", "rss_bytes", "footprint_bytes", "cpu_seconds", "command"]
         )
-        start = time.time()
+        start = time.monotonic()
         n = 0
         while True:
-            t = time.time() - start
+            t = time.monotonic() - start
             for pid, rss, cpu, cmd in list_procs():
                 if pid == me:
                     continue
@@ -116,7 +123,7 @@ def main():
             n += 1
             if t >= a.duration:
                 break
-            time.sleep(max(0, a.interval - ((time.time() - start) - t)))
+            time.sleep(max(0, a.interval - ((time.monotonic() - start) - t)))
     summarize(os.path.join(a.out, "samples.csv"), os.path.join(a.out, "summary.json"))
 
 
@@ -128,14 +135,29 @@ def summarize(path, out):
         pr = [r for r in rows if r["product"] == name]
         ts = sorted({float(r["t"]) for r in pr})
         fp, rss, cpu_tot = [], [], []
+        footprint_missing_readings = 0
+        cpu_previous = {}
         for t in ts:
             at = [r for r in pr if float(r["t"]) == t]
-            fp.append(sum(int(r["footprint_bytes"] or 0) for r in at))
+            missing = sum(r["footprint_bytes"] == "" for r in at)
+            footprint_missing_readings += missing
+            if not missing:
+                fp.append(sum(int(r["footprint_bytes"]) for r in at))
             rss.append(sum(int(r["rss_bytes"]) for r in at))
-            cpu_tot.append({r["pid"]: float(r["cpu_seconds"]) for r in at})
-        # CPU seconds consumed inside the window. A pid already running at the
-        # first sample contributes (last seen - first seen); a pid spawned during
-        # the window contributes all CPU time it accumulated (last seen value).
+            snapshot = {}
+            for r in at:
+                pid, cpu, command = r["pid"], float(r["cpu_seconds"]), r["command"]
+                previous = cpu_previous.get(pid)
+                generation = previous[2] if previous else 0
+                if previous and (cpu < previous[0] or command != previous[1]):
+                    generation += 1
+                snapshot[(pid, generation)] = cpu
+                cpu_previous[pid] = (cpu, command, generation)
+            cpu_tot.append(snapshot)
+        # CPU seconds consumed inside the window, keyed by PID and generation
+        # so counter resets and command changes start a new process. A process
+        # already running at the first sample contributes (last - first); one
+        # appearing mid-window has a zero baseline and contributes its last value.
         # Processes that start and exit between two samples are not captured.
         first_seen, last_seen = {}, {}
         for snap in cpu_tot:
@@ -160,9 +182,11 @@ def summarize(path, out):
             "window_s": round(span, 1),
             "pids": sorted({int(r["pid"]) for r in pr}),
             "processes": sorted({r["command"].split("/Contents/MacOS/")[-1] for r in pr}),
-            "footprint_mb_avg": mb(sum(fp) / len(fp)),
-            "footprint_mb_min": mb(min(fp)),
-            "footprint_mb_peak": mb(max(fp)),
+            "footprint_samples": len(fp),
+            "footprint_missing_readings": footprint_missing_readings,
+            "footprint_mb_avg": mb(sum(fp) / len(fp)) if fp else None,
+            "footprint_mb_min": mb(min(fp)) if fp else None,
+            "footprint_mb_peak": mb(max(fp)) if fp else None,
             "rss_mb_avg": mb(sum(rss) / len(rss)),
             "rss_mb_peak": mb(max(rss)),
             "cpu_seconds": round(total_cpu, 2),
