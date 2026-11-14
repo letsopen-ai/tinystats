@@ -6,9 +6,6 @@ on:
     branches: [main]
 permissions:
   contents: read
-concurrency:
-  group: production-release
-  cancel-in-progress: false
 jobs:
   release:
     if: >-
@@ -18,6 +15,9 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_repository.full_name == github.repository
+    concurrency:
+      group: production-release
+      cancel-in-progress: false
     runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, letsopen-org, release, tinystats]
     environment: production
     timeout-minutes: 480
