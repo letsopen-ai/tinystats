@@ -51,15 +51,26 @@ complete the other hardware, older-OS, Intel runtime or UX checks above.
 
 ## Automatic production releases
 
-Branch pushes and same-repository PRs run Ubuntu metadata-only `Release source checks`. A successful main
-push CI may start `Production release` on the dedicated M4 `release-runner`
-account. The job checks the triggering CI and current main against GitHub,
-then skips a version that already has a tag. It checks out the exact source in
+Branch pushes and PRs, including forks, run `Release source checks` on
+`ubuntu-latest` for workflow policy, metadata and local validation receipts.
+A successful main-push `workflow_run` from `letsopen-ai/tinystats` may start
+`Production release` on the organization runner `letsopen-m4-release`, using the
+dedicated M4 `release-runner` account. The job checks the triggering CI and
+current main against GitHub, then skips a version that already has a tag. It checks out the exact source in
 a separate directory and verifies a committed local validation receipt before
 loading signing secrets. Run `python3 scripts/local_release_validation.py record`
 on the MacBook after committing native inputs, then commit the receipt. That
-command runs the complete `verify-local.sh` gate locally. The M4 does not run tests. Fork PRs do not receive signing credentials. Only trusted main
-source may use this runner and its signing authority.
+command runs the complete `verify-local.sh` gate locally. The M4 does not run
+the native test suite. Fork PRs do not receive signing credentials. Only trusted
+main source may use this runner and its signing authority.
+
+Store the five signing secrets in the `production` environment with a required
+reviewer: `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`,
+`APPLE_NOTARY_API_KEY_P8`, `APPLE_NOTARY_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`.
+The job keeps the existing `secrets.NAME` lookups: environment values take
+precedence over repository secrets of the same name, and repository-level
+values continue to work during migration. Runner access and public-repository
+settings are covered in [Self-hosted CI](SELF_HOSTED_CI.md#public-repository-safety).
 
 The job imports the existing Developer ID identity into a temporary keychain,
 checks its team and fingerprint, creates a temporary notarization profile, and

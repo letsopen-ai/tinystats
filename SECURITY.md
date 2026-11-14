@@ -10,6 +10,8 @@ If GitHub does not offer the private reporting form, email [git@cnie.xyz](mailto
 
 ## Current boundaries
 
+Pull requests, including forks, use only GitHub-hosted runners; self-hosted runners never run fork or pull-request code, and outside contributors' workflow runs require maintainer approval (see [Self-hosted CI](docs/SELF_HOSTED_CI.md#public-repository-safety)).
+
 - Signed-release updates require pinned Developer ID team `CVQJTDR4LG`, notarization, Gatekeeper, SHA-256 agreement, HTTPS allowlisted hosts and a strictly newer version/build. See [Updates](docs/UPDATES.md) for trust boundaries and rollback limitations.
 
 - SMC sensor collection is read-only. The app does not write fan settings.
