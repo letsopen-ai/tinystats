@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 from actions_release_guard import from_environment
@@ -40,13 +41,16 @@ def run(environment):
             child.update({'TINYSTATS_DEVELOPER_ID': fingerprint, 'APPLE_TEAM_ID': team,
                 'TINYSTATS_NOTARY_PROFILE': 'tinystats-ci', 'TINYSTATS_SIGNING_KEYCHAIN': str(keychain),
                 'TINYSTATS_NOTARY_KEYCHAIN': str(keychain)})
-            command(['xcrun', 'notarytool', 'store-credentials', 'tinystats-ci',
-                     '--key', root / 'AuthKey.p8', '--key-id', environment['APPLE_NOTARY_KEY_ID'],
-                     '--issuer', environment['APPLE_NOTARY_ISSUER_ID'], '--keychain', keychain],
-                    cwd=ROOT, timeout=120, env=child)
+            try:
+                command(['xcrun', 'notarytool', 'store-credentials', 'tinystats-ci',
+                         '--key', root / 'AuthKey.p8', '--key-id', environment['APPLE_NOTARY_KEY_ID'],
+                         '--issuer', environment['APPLE_NOTARY_ISSUER_ID'], '--keychain', keychain],
+                        cwd=ROOT, timeout=120, env=child)
+            except (OSError, subprocess.SubprocessError):
+                raise RuntimeError('Notarization credential storage failed') from None
             from_environment(commit)
             command([sys.executable, ROOT / 'scripts/release_signed.py', '--actions-direct'],
-                    cwd=ROOT, timeout=6600, capture=False, env=child)
+                    cwd=ROOT, timeout=9000, capture=False, env=child)
 
 
 if __name__ == '__main__':

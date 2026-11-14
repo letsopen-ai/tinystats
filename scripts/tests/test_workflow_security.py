@@ -95,18 +95,24 @@ def step_mappings(lines):
         yield mapping_fields(item, indent + 2)
 
 
-def is_github_hosted_runner(field):
-    """Accept only literal hosted labels, never expressions or group mappings."""
+def runner_labels(field):
+    """Read literal labels; expressions and group mappings are unsupported."""
     value, body = field
     if body:
         if value or any(not text.startswith('- ') for _, text in body):
-            return False
+            return []
         labels = [text[2:].strip() for _, text in body]
     elif value.startswith('[') and value.endswith(']'):
         labels = [label.strip() for label in value[1:-1].split(',')]
     else:
         labels = [value]
-    return bool(labels) and all(GITHUB_HOSTED_RUNNER.fullmatch(label.strip("\"'")) for label in labels)
+    return [label.strip("\"'") for label in labels]
+
+
+def is_github_hosted_runner(field):
+    """Accept only literal hosted labels, never expressions or group mappings."""
+    labels = runner_labels(field)
+    return bool(labels) and all(GITHUB_HOSTED_RUNNER.fullmatch(label) for label in labels)
 
 
 def workflow_security_errors(source):
@@ -133,33 +139,38 @@ def workflow_security_errors(source):
     for job, (_, body) in jobs.items():
         fields = mapping_fields(body, body[0][0]) if body else {}
         runner_field = fields.get('runs-on', ('', []))
-        runner = field_text(runner_field)
+        labels = runner_labels(runner_field)
         if not is_github_hosted_runner(runner_field):
             errors.append(f'{job}: runner must use an allowed standard GitHub-hosted label')
-        trusted_job = 'xcode-27' in runner or 'workflow_run' in triggers
+        macos_job = any(label.startswith(('macos-', 'xcode-')) for label in labels)
+        environment, environment_body = fields.get('environment', ('', []))
+        if environment_body:
+            environment_fields = mapping_fields(environment_body, environment_body[0][0])
+            environment = field_text(environment_fields.get('name', ('', [])))
+        production = environment.strip("\"'") == 'production'
+        trusted_job = any(label.startswith('xcode-') for label in labels) or 'workflow_run' in triggers or production
         if trusted_job and not triggers <= TRUSTED_TRIGGERS:
             errors.append(f'{job}: untrusted release trigger')
         guard = re.sub(r'\s*==\s*', ' == ', field_text(fields.get('if', ('', []))))
         if guard.startswith('${{') and guard.endswith('}}'):
             guard = guard[3:-2].strip()
-        if trusted_job:
+        if trusted_job or macos_job:
             # Inequality is allowed; bare ! still negates a guard or expression.
             if '||' in guard or re.search(r'!(?!=)|\balways\s*\(', guard):
                 errors.append(f'{job}: guard must use conjunctions without negation or always()')
             parts = {part.strip() for part in guard.split('&&')}
             if PUBLIC_GUARD not in parts:
                 errors.append(f'{job}: missing public repository guard')
+        if trusted_job:
             if REPOSITORY_GUARD not in parts:
                 errors.append(f'{job}: missing repository guard')
             if not (all(term in parts for term in DISPATCH_GUARDS)
                     or all(term in parts for term in RELEASE_GUARDS)):
                 errors.append(f'{job}: missing trusted main event guards')
-            if 'workflow_run' in triggers or RELEASE_GUARDS[0] in parts:
-                environment, environment_body = fields.get('environment', ('', []))
-                if environment_body:
-                    environment_fields = mapping_fields(environment_body, environment_body[0][0])
-                    environment = field_text(environment_fields.get('name', ('', [])))
-                if environment.strip("\"'") != 'production':
+            if production and not all(term in parts for term in (REPOSITORY_GUARD, PUBLIC_GUARD) + RELEASE_GUARDS):
+                errors.append(f'{job}: production environment requires full release guards')
+            if production or 'workflow_run' in triggers or RELEASE_GUARDS[0] in parts:
+                if not production:
                     errors.append(f'{job}: missing production environment')
                 permissions, permissions_body = fields.get('permissions', ('', []))
                 if (permissions or not permissions_body
@@ -214,7 +225,7 @@ class WorkflowSecurityTests(unittest.TestCase):
         fields = mapping_fields(body, body[0][0])
         self.assertEqual(field_text(fields['runs-on']), 'xcode-27')
         self.assertEqual(field_text(fields['environment']), 'production')
-        self.assertLessEqual(int(field_text(fields['timeout-minutes'])), 120)
+        self.assertEqual(int(field_text(fields['timeout-minutes'])), 180)
         self.assertEqual(workflow_security_errors(source), [])
         for term in (REPOSITORY_GUARD, PUBLIC_GUARD) + RELEASE_GUARDS:
             self.assertTrue(workflow_security_errors(source.replace(term, 'true')))
@@ -222,6 +233,8 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertEqual({key: field_text(value) for key, value in mapping_fields(permissions, permissions[0][0]).items()},
                          {'contents': 'write', 'actions': 'read'})
         steps = list(step_mappings(fields['steps'][1]))
+        toolchain = next(step for step in steps if 'scripts/hosted_release_toolchain.py' in field_text(step.get('run', ('', []))))
+        self.assertEqual(int(field_text(toolchain['timeout-minutes'])), 20)
         cleanup = [step for step in steps if field_text(step.get('name', ('', []))) == 'Clean up signing material']
         self.assertEqual(len(cleanup), 1)
         self.assertEqual(field_text(cleanup[0]['if']), 'always()')
@@ -268,8 +281,33 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertNotIn('secrets.', source)
         self.assertNotIn('environment:', source)
         self.assertNotIn('contents: write', source)
+        top = mapping_fields(workflow_lines(source), 0)
+        jobs_body = top['jobs'][1]
+        body = mapping_fields(jobs_body, jobs_body[0][0])['smoke'][1]
+        fields = mapping_fields(body, body[0][0])
+        toolchain = next(step for step in step_mappings(fields['steps'][1])
+                         if 'scripts/hosted_release_toolchain.py' in field_text(step.get('run', ('', []))))
+        self.assertEqual(int(field_text(toolchain['timeout-minutes'])), 20)
+        self.assertLess(int(field_text(toolchain['timeout-minutes'])), int(field_text(fields['timeout-minutes'])))
         for term in (REPOSITORY_GUARD, PUBLIC_GUARD) + DISPATCH_GUARDS:
             self.assertTrue(workflow_security_errors(source.replace(term, 'true')))
+
+    def test_always_cleanup_skips_empty_search_list_updates(self):
+        source = (ROOT / '.github/workflows/production-release.yml').read_text()
+        cleanup = textwrap.dedent(source.split('        shell: python3 {0}\n        run: |\n', 1)[1])
+        for only_temporary in (False, True):
+            with self.subTest(only_temporary=only_temporary), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / 'tinystats-signing'; root.mkdir(mode=0o700)
+                keychain = root / 'release-signing.keychain-db'
+                def security(args, **kwargs):
+                    listing = '"' + str(keychain) + '"\n' if only_temporary else ''
+                    return subprocess.CompletedProcess(args, 0, listing, '')
+                with patch.dict(os.environ, {'RUNNER_TEMP': directory}), patch('subprocess.run', side_effect=security) as run:
+                    exec(cleanup, {})
+                self.assertEqual([call.args[0] for call in run.call_args_list], [
+                    ['/usr/bin/security', 'list-keychains', '-d', 'user'],
+                    ['/usr/bin/security', 'delete-keychain', str(keychain)]])
+                self.assertFalse(root.exists())
 
     def test_repository_workflows(self):
         directory = ROOT / '.github' / 'workflows'
@@ -291,6 +329,30 @@ class WorkflowSecurityTests(unittest.TestCase):
         for message in ('top-level permissions', 'allowed standard GitHub-hosted label', 'full commit SHA'):
             with self.subTest(message=message):
                 self.assertTrue(any(message in error for error in errors), errors)
+
+    def test_any_hosted_macos_job_requires_public_guard(self):
+        for label in ('macos-26', 'macos-latest', 'macos-15-intel', 'xcode-27', 'xcode-28'):
+            for runner in (label, f'"{label}"', f'[{label}]', f'\n      - {label}'):
+                with self.subTest(runner=runner):
+                    source = 'on: push\npermissions:\n  contents: read\njobs:\n  build:\n    runs-on: ' + runner + '\n'
+                    self.assertIn('build: missing public repository guard', workflow_security_errors(source))
+                    guarded = source + '    if: github.event.repository.private == false\n'
+                    self.assertNotIn('build: missing public repository guard', workflow_security_errors(guarded))
+
+    def test_production_environment_requires_full_release_guards_on_any_runner(self):
+        for environment in ('production', '"production"', '\n      name: production'):
+            source = ('on: push\npermissions:\n  contents: read\njobs:\n  unsafe:\n'
+                      '    runs-on: ubuntu-latest\n    environment: ' + environment + '\n')
+            with self.subTest(environment=environment):
+                self.assertIn('unsafe: production environment requires full release guards',
+                              workflow_security_errors(source))
+        source = self.trusted_dispatch().replace('- xcode-27', '- ubuntu-latest')
+        source = source.replace('    steps:', '    environment: production\n    steps:')
+        self.assertIn('smoke: production environment requires full release guards', workflow_security_errors(source))
+        for term in (REPOSITORY_GUARD, PUBLIC_GUARD) + RELEASE_GUARDS:
+            with self.subTest(term=term):
+                source = self.trusted_release().replace('- xcode-27', '- ubuntu-latest').replace(term, 'true')
+                self.assertIn('smoke: production environment requires full release guards', workflow_security_errors(source))
 
     def trusted_dispatch(self):
         return textwrap.dedent("""\

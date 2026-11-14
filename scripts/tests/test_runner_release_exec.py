@@ -2,9 +2,11 @@ import contextlib
 import base64
 import json
 import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
+import traceback
 import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -50,6 +52,7 @@ class DirectReleaseTests(unittest.TestCase):
         self.assertEqual(len(events), 2)
         self.assertIn('store-credentials', events[0].args[0])
         self.assertIn('--actions-direct', events[1].args[0])
+        self.assertEqual(events[1].kwargs['timeout'], 9000)
         for event in events:
             for name in runner.SECRET_NAMES:
                 self.assertNotIn(name, event.kwargs['env'])
@@ -86,11 +89,33 @@ class DirectReleaseTests(unittest.TestCase):
     def test_cleanup_runs_on_notary_and_release_failure(self):
         for failure in (0, 1):
             with self.subTest(failure=failure):
-                self.command.side_effect = ([RuntimeError('fixture failure')] if failure == 0
+                self.command.side_effect = ([subprocess.CalledProcessError(1, ['notarytool'])] if failure == 0
                                             else [None, RuntimeError('fixture failure')])
-                with self.assertRaisesRegex(RuntimeError, 'fixture failure'): runner.run(self.env)
+                message = 'Notarization credential storage failed' if failure == 0 else 'fixture failure'
+                with self.assertRaisesRegex(RuntimeError, message): runner.run(self.env)
                 self.assertFalse(self.root.exists())
         self.assertEqual(self.keychain_exits, [True, True])
+
+    def test_notary_failures_do_not_expose_command_arguments_or_chained_errors(self):
+        args = ['xcrun', 'notarytool', 'store-credentials', '--key', str(self.root / 'AuthKey.p8'),
+                '--key-id', self.env['APPLE_NOTARY_KEY_ID'], '--issuer', self.env['APPLE_NOTARY_ISSUER_ID']]
+        for failure in (subprocess.CalledProcessError(1, args, stderr=str(args)),
+                        subprocess.TimeoutExpired(args, 120), OSError(str(args))):
+            with self.subTest(failure=type(failure).__name__):
+                self.command.reset_mock(side_effect=True)
+                self.command.side_effect = failure
+                try:
+                    runner.run(self.env)
+                except RuntimeError as error:
+                    self.assertEqual(str(error), 'Notarization credential storage failed')
+                    rendered = ''.join(traceback.format_exception(error))
+                    for sensitive in (self.env['APPLE_NOTARY_KEY_ID'], self.env['APPLE_NOTARY_ISSUER_ID'], str(self.root)):
+                        self.assertNotIn(sensitive, rendered)
+                else:
+                    self.fail('Notary command failure was not raised')
+                self.assertEqual(self.command.call_count, 1)
+                self.assertFalse(self.root.exists())
+        self.assertEqual(self.keychain_exits, [True, True, True])
 
     def test_guards_precede_secret_staging(self):
         for check in (self.guard, self.source, self.validation):

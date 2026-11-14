@@ -24,7 +24,7 @@ def select(environment):
             ['xcodebuild', '-showComponent', 'MetalToolchain', '-json'], text=True))
     info = component()
     if info.get('status') != 'installed':
-        subprocess.run(['xcodebuild', '-downloadComponent', 'MetalToolchain'], check=True, timeout=1800)
+        subprocess.run(['xcodebuild', '-downloadComponent', 'MetalToolchain'], check=True, timeout=900)
         info = component()
     search, identifier = info.get('toolchainSearchPath'), info.get('toolchainIdentifier')
     if (info.get('status') != 'installed' or not isinstance(search, str)

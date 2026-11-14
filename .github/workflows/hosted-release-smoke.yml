@@ -25,6 +25,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify Xcode 27.1 and select the Metal toolchain
+        timeout-minutes: 20
         run: |
           python3 scripts/hosted_release_toolchain.py
           swift --version

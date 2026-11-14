@@ -29,6 +29,8 @@ production independently verifies its published assets and skips it. A new
 version needs a matching committed receipt before signing credentials are loaded.
 PR/manual source checks never authorize publication.
 
+These workflow/script changes affect the local validation receipt fingerprint: before the first hosted release, the maintainer must run `python3 scripts/local_release_validation.py record` on the final tree and commit the fresh receipt; otherwise the release stops safely at the receipt check before signing secrets are touched.
+
 ## Hosted production flow
 
 A successful main-push `workflow_run` from `letsopen-ai/tinystats` can start
@@ -42,8 +44,13 @@ The runner is the standard arm64 `xcode-27` image: a 3-core M1 with 7 GB RAM and
 14 GB SSD. `DEVELOPER_DIR` pins `/Applications/Xcode_27.1.app/Contents/Developer`;
 the toolchain step requires Xcode 27.1 build 27A9275. It downloads the Metal
 component if absent, then validates and selects its search path and identifier,
-before any signing secrets are materialized. Production has a 120-minute timeout;
-no larger or xlarge runner is allowed.
+before any signing secrets are materialized. Production has a 180-minute job
+timeout, a 20-minute toolchain step limit, a 900-second Metal download limit and
+a 9,000-second release subprocess limit.
+The temporary keychain unlock timeout is 10,800 seconds. No larger or xlarge
+runner is allowed.
+
+The exact Xcode build check (27A9275) intentionally stops the release if GitHub ships a different 27.1 build; run `Hosted release toolchain smoke` first.
 
 The entry point requires non-root GitHub-hosted Actions execution and an owned,
 real `$RUNNER_TEMP`. It restricts that directory to mode 0700 and exclusively

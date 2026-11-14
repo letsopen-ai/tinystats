@@ -27,8 +27,10 @@ class HostedToolchainTests(unittest.TestCase):
                     self.assertEqual(run.call_count, int(download))
                     if download:
                         self.assertEqual(run.call_args.args[0], ['xcodebuild', '-downloadComponent', 'MetalToolchain'])
+                        self.assertEqual(run.call_args.kwargs['timeout'], 900)
             self.assertIn('TOOLCHAINS=com.apple.metal com.apple.dt.toolchain.XcodeDefault\n', (root/'env').read_text())
             for version, info in [('Xcode 27.2', installed),
+                                  ('Xcode 27.1\nBuild version 27A9999', installed),
                                   ('Xcode 27.1\nBuild version 27A9275', dict(installed, toolchainIdentifier='bad\nVALUE=x')),
                                   ('Xcode 27.1\nBuild version 27A9275', dict(installed, toolchainSearchPath='/missing/toolchain'))]:
                 with patch.object(toolchain.platform, 'machine', return_value='arm64'), \
