@@ -975,8 +975,7 @@ Under CLI-only, every invocation is a new process, so the benchmarks target **pr
 
 ### Owner decision (2026-11-10)
 
-> “本地 Agent 不要用 MCP，更倾向于用 cli 去实现。” —— Chen Nie
-> ("For local agents, don't use MCP; I prefer implementing it with a CLI." — Chen Nie)
+> "The local agent should not use MCP; prefer implementing it as a CLI." (translated) — Chen Nie
 
 Coverage: the only external interface is the bundled signed unprivileged helper's JSON CLI. **MCP (any transport: stdio, Streamable HTTP) is out of scope** — not in the MVP, and not a "follow-on interface on the same track"; it can only be re-discussed if the Owner reverses the decision. Closed as a consequence: v0.4's A+C+E recommendation (changed to E+C), the `tinystats mcp` subcommand, §4.2's MCP client configuration, §5.6's tool annotations, and D4 (§12). The affected loopback HTTP (itself an MCP transport) is likewise unplanned (D12, marked closed from Round 6). `schema --json` replaces `tools/list` as the offline authoritative source for agents to learn the interface.
 
