@@ -12,10 +12,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   source-checks:
-    if: >-
-      github.repository == 'letsopen-ai/tinystats' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.repository == 'letsopen-ai/tinystats'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -23,8 +20,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Check workflow security policy
+        run: python3 -m unittest scripts/tests/test_workflow_security.py -v
       - name: Check local validation evidence for an unpublished version
         run: python3 scripts/local_release_validation.py check --allow-published
       - name: Record scope
         run: |
-          echo 'Metadata and local validation receipt checks only. Native tests run locally on the maintainer Mac; M4 builds/signs/releases.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Workflow policy, metadata and local validation receipt checks only. Native tests run locally on the maintainer Mac; M4 builds/signs/releases.' >> "$GITHUB_STEP_SUMMARY"
