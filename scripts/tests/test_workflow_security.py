@@ -78,6 +78,18 @@ def field_text(field):
     return " ".join([value] + [text for _, text in body]).strip()
 
 
+def step_mappings(lines):
+    """Read each block-style step, including steps that start with a name."""
+    if not lines:
+        return
+    indent = lines[0][0]
+    starts = [index for index, (depth, text) in enumerate(lines)
+              if depth == indent and text.startswith('- ')]
+    for start, end in zip(starts, starts[1:] + [len(lines)]):
+        item = [(indent + 2, lines[start][1][2:])] + lines[start + 1:end]
+        yield mapping_fields(item, indent + 2)
+
+
 def is_github_hosted_runner(field):
     """Accept only literal hosted labels, never expressions or group mappings."""
     value, body = field
@@ -127,7 +139,8 @@ def workflow_security_errors(source):
         guard = re.sub(r'\s*==\s*', ' == ', field_text(fields.get('if', ('', []))))
         if guard.startswith('${{') and guard.endswith('}}'):
             guard = guard[3:-2].strip()
-        if '||' in guard or '!' in guard or re.search(r'\balways\s*\(', guard):
+        # Inequality is allowed; bare ! still negates a guard or expression.
+        if '||' in guard or re.search(r'!(?!=)|\balways\s*\(', guard):
             errors.append(f'{job}: guard must use conjunctions without negation or always()')
         parts = {part.strip() for part in guard.split('&&')}
         if REPOSITORY_GUARD not in parts:
@@ -135,6 +148,25 @@ def workflow_security_errors(source):
         if not (all(term in parts for term in DISPATCH_GUARDS)
                 or all(term in parts for term in RELEASE_GUARDS)):
             errors.append(f'{job}: missing trusted main event guards')
+        if 'workflow_run' in triggers or RELEASE_GUARDS[0] in parts:
+            environment, environment_body = fields.get('environment', ('', []))
+            if environment_body:
+                environment_fields = mapping_fields(environment_body, environment_body[0][0])
+                environment = field_text(environment_fields.get('name', ('', [])))
+            if environment.strip("\"'") != 'production':
+                errors.append(f'{job}: missing production environment')
+            permissions, permissions_body = fields.get('permissions', ('', []))
+            if (permissions or not permissions_body
+                    or not mapping_fields(permissions_body, permissions_body[0][0])):
+                errors.append(f'{job}: missing job-level permissions block')
+        for step in step_mappings(fields.get('steps', ('', []))[1]):
+            action = field_text(step.get('uses', ('', []))).strip("\"'")
+            if action.startswith('actions/checkout@'):
+                _, with_body = step.get('with', ('', []))
+                inputs = mapping_fields(with_body, with_body[0][0]) if with_body else {}
+                credentials = field_text(inputs.get('persist-credentials', ('', [])))
+                if credentials.strip("\"'") != 'false':
+                    errors.append(f'{job}: checkout must set persist-credentials: false')
 
     scalar_indent = None
     for depth, text in lines:
@@ -156,6 +188,18 @@ def workflow_security_errors(source):
 
 
 class WorkflowSecurityTests(unittest.TestCase):
+    def test_production_release_concurrency_is_job_scoped(self):
+        source = (ROOT / '.github/workflows/production-release.yml').read_text()
+        top = mapping_fields(workflow_lines(source), 0)
+        self.assertNotIn('concurrency', top)
+        jobs_body = top['jobs'][1]
+        release_body = mapping_fields(jobs_body, jobs_body[0][0])['release'][1]
+        fields = mapping_fields(release_body, release_body[0][0])
+        concurrency_body = fields['concurrency'][1]
+        concurrency = mapping_fields(concurrency_body, concurrency_body[0][0])
+        self.assertEqual(field_text(concurrency['group']), 'production-release')
+        self.assertEqual(field_text(concurrency['cancel-in-progress']), 'false')
+
     def test_repository_workflows(self):
         directory = ROOT / '.github' / 'workflows'
         paths = sorted(path for path in directory.iterdir() if path.suffix in {'.yml', '.yaml'})
@@ -195,6 +239,8 @@ class WorkflowSecurityTests(unittest.TestCase):
                   - letsopen-org
                 steps:
                   - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # pinned
+                    with:
+                      persist-credentials: false
                   - uses: ./local-action
                   - run: |
                       uses: this-is-script-text
@@ -249,6 +295,11 @@ class WorkflowSecurityTests(unittest.TestCase):
                 self.assertIn('smoke: guard must use conjunctions without negation or always()',
                               workflow_security_errors(source))
 
+    def test_inequality_guard_is_allowed(self):
+        source = self.trusted_dispatch().replace(
+            REPOSITORY_GUARD, REPOSITORY_GUARD + " && github.actor != 'untrusted'")
+        self.assertEqual(workflow_security_errors(source), [])
+
     def test_guard_terms_must_be_exact_conjunction_parts(self):
         for term in (REPOSITORY_GUARD,) + DISPATCH_GUARDS:
             with self.subTest(term=term):
@@ -276,16 +327,58 @@ class WorkflowSecurityTests(unittest.TestCase):
         source = source.replace('- self-hosted', '- ubuntu-latest')
         self.assertIn('pull_request_target trigger is forbidden', workflow_security_errors(source))
 
-    def test_each_release_guard_is_required(self):
+    def trusted_release(self):
         source = self.trusted_dispatch().replace('workflow_dispatch:', 'workflow_run:')
         start = source.index('    if:')
         end = source.index('    runs-on:')
         guard = '    if: >-\n      ' + ' &&\n      '.join((REPOSITORY_GUARD,) + RELEASE_GUARDS) + '\n'
         source = source[:start] + guard + source[end:]
+        return source.replace('    steps:', '    environment: production\n'
+                              '    permissions:\n      contents: write\n      actions: read\n    steps:')
+
+    def test_each_release_guard_is_required(self):
+        source = self.trusted_release()
         self.assertEqual(workflow_security_errors(source), [])
         for term in (REPOSITORY_GUARD,) + RELEASE_GUARDS:
             with self.subTest(term=term):
                 self.assertTrue(workflow_security_errors(source.replace(term, 'true')))
+
+    def test_release_requires_production_environment(self):
+        for replacement in ('', '    environment: staging\n',
+                            '    env:\n      environment: production\n',
+                            '    environment:\n      name: staging\n'):
+            with self.subTest(replacement=replacement):
+                source = self.trusted_release().replace('    environment: production\n', replacement)
+                self.assertIn('smoke: missing production environment', workflow_security_errors(source))
+        source = self.trusted_release().replace('environment: production',
+                                               'environment:\n      name: production')
+        self.assertEqual(workflow_security_errors(source), [])
+
+    def test_release_requires_job_level_permissions_block(self):
+        for replacement in ('', '    permissions: {}\n', '    permissions:\n',
+                            '    env:\n      permissions: write-all\n'):
+            with self.subTest(replacement=replacement):
+                source = self.trusted_release().replace(
+                    '    permissions:\n      contents: write\n      actions: read\n', replacement)
+                self.assertIn('smoke: missing job-level permissions block', workflow_security_errors(source))
+
+    def test_every_self_hosted_checkout_disables_persisted_credentials(self):
+        checkout = ('      - name: Another checkout\n'
+                    '        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262\n'
+                    '        with:\n          persist-credentials: false\n')
+        for fixture in (self.trusted_dispatch(), self.trusted_release()):
+            source = fixture + checkout
+            self.assertEqual(workflow_security_errors(source), [])
+            for credentials in ('persist-credentials: true', 'unrelated-input: false'):
+                for occurrence in (0, 1):
+                    with self.subTest(credentials=credentials, occurrence=occurrence, fixture=fixture):
+                        setting = 'persist-credentials: false'
+                        start = source.index(setting)
+                        if occurrence == 1:
+                            start = source.index(setting, start + len(setting))
+                        broken = source[:start] + credentials + source[start + len(setting):]
+                        self.assertIn('smoke: checkout must set persist-credentials: false',
+                                      workflow_security_errors(broken))
 
     def test_commented_guards_and_nested_permissions_do_not_count(self):
         source = self.trusted_dispatch().replace(REPOSITORY_GUARD, 'true # ' + REPOSITORY_GUARD)

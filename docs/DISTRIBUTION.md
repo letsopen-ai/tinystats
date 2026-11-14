@@ -52,8 +52,9 @@ complete the other hardware, older-OS, Intel runtime or UX checks above.
 
 ## Automatic production releases
 
-Branch pushes and PRs, including forks, run `Release source checks` on
-`ubuntu-latest` for workflow policy, metadata and local validation receipts.
+Branch pushes and PRs, including fork PRs once the repository is public and the
+run is approved, run `Release source checks` on `ubuntu-latest` for workflow
+policy, metadata and local validation receipts.
 A successful main-push `workflow_run` from `letsopen-ai/tinystats` may start
 `Production release` on the organization runner `letsopen-m4-release`, using the
 dedicated M4 `release-runner` account. The job checks the triggering CI and
@@ -66,7 +67,9 @@ the native test suite. Fork PRs do not receive signing credentials. Only trusted
 main source may use this runner and its signing authority.
 
 On GitHub Free, environment secrets and required reviewers are unavailable for
-this private repository. For releases from this repository after publication
+this private repository. The `production` environment currently has a
+deployment-branch policy for `main` and no required reviewers.
+For releases from this repository after publication
 (option B in [Self-hosted CI](SELF_HOSTED_CI.md#public-repository-safety)), migrate
 in this order:
 
@@ -76,7 +79,7 @@ in this order:
 2. After going public, create the five `production` environment secrets with
    the same names. The existing `secrets.NAME` lookups resolve environment values
    before repository values of the same name.
-3. Add a required reviewer and keep deployment branches limited to `main`.
+3. Add a required reviewer and restrict deployment branches to `main`.
 4. Run a release and verify the environment secrets and approval gate.
 5. Then delete the repository-level copies. Until then, any main-branch job
    without `environment:` could read those copies and bypass reviewer approval.
