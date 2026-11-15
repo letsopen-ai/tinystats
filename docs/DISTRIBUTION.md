@@ -29,7 +29,7 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 - [ ] Spot-check representative hardware: more than one Apple Silicon generation, a laptop with a battery, and a fan-equipped model.
 - [ ] Check sleep/wake, external storage hot-plug, network/VPN switching, notched menu bars, Light/Dark appearance (including a light menu bar), launch at login and notification permission denial.
 - [ ] Review the known gaps in the [roadmap](ROADMAP.md) and decide which are acceptable for the release.
-- [ ] Complete the [repository publication checklist](RELEASE_CI.md#before-making-the-repository-public), including production reviewers, secret migration and the first hosted release.
+- [ ] Complete the [repository publication checklist](RELEASE_CI.md#before-making-the-repository-public), including external contributor workflow approvals, production reviewers, signing secret migration and the first hosted release.
 - [ ] Reproduce the [performance](PERFORMANCE.md) measurements on representative hardware.
 - [ ] Publish checksums and installation instructions with the release; add a Homebrew cask once a stable signed download URL exists.
 
@@ -37,10 +37,9 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 
 [TinyStats 0.36.5 build 68](https://github.com/letsopen-ai/tinystats/releases/tag/v0.36.5)
 was built, Developer ID signed, notarized, stapled and published by
-[the M4 organization release job](https://github.com/letsopen-ai/tinystats/actions/runs/41873473716).
+[the maintainer release workflow](https://github.com/letsopen-ai/tinystats/actions/runs/41873473716).
 Its annotated tag and public manifest identify source
-`53bf05506392ff83ea0fd875c38c23035f02acd0`. Tests ran locally on the MacBook,
-not on the M4: the complete gate passed 714 Swift tests plus Python tests,
+`53bf05506392ff83ea0fd875c38c23035f02acd0`. Tests ran locally: the complete gate passed 714 Swift tests plus Python tests,
 strict lint/warnings, universal app/service packaging and diagnostics.
 
 A separate MacBook download of the published ZIP matched its SHA-256
@@ -56,32 +55,35 @@ Branch pushes and PRs, including fork PRs once the repository is public and the
 run is approved, run `Release source checks` on `ubuntu-latest` for workflow
 policy, metadata and local validation receipts.
 A successful main-push `workflow_run` from `letsopen-ai/tinystats` may start
-`Production release` on the standard GitHub-hosted arm64 `xcode-27` image with
-Xcode 27.1 build 27A9275 explicitly pinned. Both macOS workflows require a public
-repository; they skip while private to avoid paid minutes. Merge the migration
-only after publication. The release job keeps its `production` environment,
-job-level concurrency and 180-minute timeout. It verifies the triggering CI and
-current main against GitHub, then skips a version that already has a valid
-published tag/release. It checks out the exact source and verifies the committed
-local validation receipt before loading signing secrets. Metal is downloaded if
-missing and its selection is validated before credentials are materialized.
+`Production release` on the GitHub-hosted arm64 `xcode-27` image with Xcode 27.1
+build 27A9275 pinned. Both macOS workflows require a public repository and skip
+while private. Merge the migration only after publication. The release job uses
+the `production` environment, job-level concurrency and a 180-minute timeout.
+It verifies the triggering CI and current main against GitHub, then skips a
+version that already has a valid published tag/release. It checks out the exact
+source and verifies the committed local validation receipt before loading signing
+secrets. Metal is downloaded if missing and its selection is validated before
+credentials are materialized. See [Release CI](RELEASE_CI.md) for the hosted path.
 
-The exact Xcode build check (27A9275) intentionally stops the release if GitHub ships a different 27.1 build; run `Hosted release toolchain smoke` first.
+The exact Xcode build check (27A9275) stops the release if GitHub ships a different 27.1 build; run `Hosted release toolchain smoke` first.
 
-Run `python3 scripts/local_release_validation.py record` locally after committing
-native inputs, then commit the receipt. That command runs the complete
-`verify-local.sh` gate locally. The hosted release builds and signs; it does not
-replace the local native test gate. Fork PRs receive no signing credentials.
+After committing native release inputs, run `python3 scripts/local_release_validation.py record`
+on the maintainer's Mac. It runs the complete `scripts/verify-local.sh` gate and
+writes `docs/validation/local-release-validation.json`; commit that receipt. The
+workflow checks it against the version and native inputs before accessing signing
+credentials. A new version without a matching receipt will not be released.
+The hosted build does not replace the local native test gate. Fork PRs do not
+receive signing credentials.
 
-These workflow/script changes affect the local validation receipt fingerprint: before the first hosted release, the maintainer must run `python3 scripts/local_release_validation.py record` on the final tree and commit the fresh receipt; otherwise the release stops safely at the receipt check before signing secrets are touched.
+These workflow and script changes affect the receipt fingerprint: before the first
+hosted release, record and commit a fresh receipt on the final tree.
 
 After publication, create the five signing secrets in the `production`
 environment with their existing names, add required reviewers, and restrict
 deployments to `main`. Verify a hosted release uses the environment and approval
 gate before deleting repository-level secret copies. See
 [Release CI](RELEASE_CI.md#production-secrets-and-approval) for names and the ordered
-publication checklist. Retire the Mac mini runners only after the first
-successful hosted release; they remain a rollback path until then.
+publication checklist.
 
 The job exclusively creates `$RUNNER_TEMP/tinystats-signing` with mode 0700,
 imports the Developer ID identity into a temporary keychain with a random
@@ -104,11 +106,9 @@ A previously tagged `vX.Y.Z` is skipped; existing artifacts are never replaced.
 Tag collisions, incomplete drafts, notarization rejection, stale main or a
 cancelled release request fail closed. Inspect and reconcile failed drafts and
 attempts before retrying; automatic retry does not overwrite them. Job-scoped
-private credentials are removed on normal completion or cancellation. If the
-runner or machine is forcibly terminated, inspect its private staging directory
-before retrying; the next attempt refuses to proceed while material remains.
-Inspect failed job output promptly: later runner checkout cleanup can remove
-its build directory. Keep any retained files private and monitor disk capacity.
+private credentials are removed on normal completion or cancellation. Maintainers
+should inspect failed attempts and reconcile any remaining private material before
+retrying.
 
 Actions → Production release reports the result. A skipped version is not a new
 release. The physical-device, minimum-OS/Intel runtime and UX checks above
