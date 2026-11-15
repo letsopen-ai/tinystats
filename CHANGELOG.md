@@ -4,7 +4,15 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## Unreleased
 
+- Documentation: refreshed install instructions and removed internal CI runner details ahead of the public release.
+
+## 0.37.6 — 2026-11-14
+
 - Made Regular the default menu-bar weight and added a compact Regular / Medium / Semibold Weight control under Layout in Settings › Menu Bar. The saved choice immediately updates readout text, SF Symbols, clock hands and graphic lines in Separate and One layouts and the live preview. Preserved font sizes, monospaced digits and compact spacing, with width reservations measured for each weight. Version 0.37.6 (78).
+
+## 0.37.5 — 2026-11-13
+
+Versions 0.36.6–0.37.4 were unpublished previews.
 
 - Added native GitHub Release updates for signed TinyStats builds: daily checks and background preparation on by default, General settings and manual checks, verified updates with restart or normal-quit installation, and a prepared-update footer indicator. Updates require the pinned Developer ID team, notarization, Gatekeeper, matching checksums and a strictly newer version and build; development builds never start the updater. Version 0.37.5 (77).
 
@@ -24,10 +32,16 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 - Redesigned all six welcome steps with a menu bar hero, candy module glyphs and visual choice cards; preserved immediate choices, opt-ins and replay. Version 0.36.6 (69).
 
-- Prepare version 0.36.5 (68): run signed, notarized GitHub Releases on the dedicated organization M4 release runner using job-scoped credentials.
+## 0.36.5 — 2026-11-05
+
+- Prepare version 0.36.5 (68): run signed, notarized GitHub Releases in CI using job-scoped credentials.
 - Preserve the footer logo optical weight and paper margin across the M4 rendering checks.
 
-- Extend the main window sidebar beneath the traffic lights, hide the redundant system title, align subsection headings with icons and emphasize only the selected navigation item. Use native unified traffic-light spacing, align page titles with the brand through a shared top inset, keep full-screen geometry within its own window, honour title-band double-click preferences and preserve the previous 884×692 minimum outer size. Preview version 0.36.4 (67).
+## 0.36.4 — 2026-11-03
+
+Versions 0.36.0–0.36.3 were unpublished previews.
+
+- Extend the main window sidebar beneath the traffic lights, hide the redundant system title, align subsection headings with icons and emphasize only the selected navigation item. Use native unified traffic-light spacing, align page titles with the brand through a shared top inset, keep full-screen geometry within its own window, honour title-band double-click preferences and preserve the previous 884×692 minimum outer size. Version 0.36.4 (67).
 
 - Match the dropdown logo’s optical weight to its neighbouring icons; verify footer tooltips and VoiceOver labels in every module/state and add matching help to Weather and calendar actions. Preview version 0.36.3 (66).
 
