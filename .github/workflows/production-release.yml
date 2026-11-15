@@ -8,8 +8,10 @@ permissions:
   contents: read
 jobs:
   release:
+    # Standard hosted macOS minutes are free only for public repositories.
     if: >-
       github.repository == 'letsopen-ai/tinystats' &&
+      github.event.repository.private == false &&
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.event == 'push' &&
@@ -18,14 +20,14 @@ jobs:
     concurrency:
       group: production-release
       cancel-in-progress: false
-    runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, letsopen-org, release, tinystats]
+    runs-on: xcode-27
     environment: production
-    timeout-minutes: 480
+    timeout-minutes: 180
     permissions:
       contents: write
       actions: read
     env:
-      PATH: /opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
     defaults:
       run:
         shell: bash --noprofile --norc -eo pipefail {0}
@@ -43,19 +45,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         working-directory: release-source/${{ github.run_id }}-${{ github.run_attempt }}
         run: python3 scripts/runner_release_eligibility.py
-      - name: Select the installed Metal toolchain
+      - name: Verify Xcode 27.1 and select the Metal toolchain
         if: steps.eligibility.outputs.release == 'true'
-        run: |
-          python3 - <<'PY'
-          import json, os, pathlib, subprocess
-          info = json.loads(subprocess.check_output(['xcodebuild', '-showComponent', 'MetalToolchain', '-json'], text=True))
-          search, identifier = info['toolchainSearchPath'], info['toolchainIdentifier']
-          if info['status'] != 'installed' or not pathlib.Path(search).is_dir() or any(c in search + identifier for c in '\r\n'):
-              raise SystemExit('Installed Metal toolchain is unavailable')
-          with open(os.environ['GITHUB_ENV'], 'a') as output:
-              output.write('EXTERNAL_TOOLCHAINS_DIR=' + search + '\n')
-              output.write('TOOLCHAINS=' + identifier + ' com.apple.dt.toolchain.XcodeDefault\n')
-          PY
+        timeout-minutes: 20
+        working-directory: release-source/${{ github.run_id }}-${{ github.run_attempt }}
+        run: python3 scripts/hosted_release_toolchain.py
       - name: Check committed local validation before accessing signing credentials
         if: steps.eligibility.outputs.release == 'true'
         working-directory: release-source/${{ github.run_id }}-${{ github.run_attempt }}
@@ -74,3 +68,30 @@ jobs:
           APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
         run: python3 scripts/runner_release_exec.py
+      - name: Clean up signing material
+        if: always()
+        shell: python3 {0}
+        run: |
+          import os, pathlib, shlex, shutil, stat, subprocess
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'tinystats-signing'
+          if not root.exists() and not root.is_symlink():
+              raise SystemExit(0)
+          mode = root.lstat()
+          if not stat.S_ISDIR(mode.st_mode) or mode.st_uid != os.getuid() or mode.st_mode & 0o077:
+              raise SystemExit('Refusing unsafe signing cleanup directory')
+          keychain = root / 'release-signing.keychain-db'
+          def security(*args):
+              return subprocess.run(['/usr/bin/security', *args], text=True, capture_output=True, timeout=30)
+          try:
+              listing = security('list-keychains', '-d', 'user')
+              listing.check_returncode()
+              remaining = [p for p in shlex.split(listing.stdout) if pathlib.Path(p).resolve() != keychain.resolve()]
+              if remaining:
+                  security('list-keychains', '-d', 'user', '-s', *remaining).check_returncode()
+          finally:
+              try:
+                  deleted = security('delete-keychain', str(keychain))
+                  if deleted.returncode and not any(message in deleted.stderr.lower() for message in ('not found', 'could not be found', 'no such file')):
+                      raise RuntimeError('Temporary signing keychain deletion failed')
+              finally:
+                  shutil.rmtree(root)

@@ -29,10 +29,7 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 - [ ] Spot-check representative hardware: more than one Apple Silicon generation, a laptop with a battery, and a fan-equipped model.
 - [ ] Check sleep/wake, external storage hot-plug, network/VPN switching, notched menu bars, Light/Dark appearance (including a light menu bar), launch at login and notification permission denial.
 - [ ] Review the known gaps in the [roadmap](ROADMAP.md) and decide which are acceptable for the release.
-- [ ] Require maintainer approval for external contributors’ workflow runs after publication.
-- [ ] Confirm no self-hosted runner is reachable from this repository once public; keep runner groups private-only.
-- [ ] Move signing secrets into the protected production environment with required reviewers and remove unused repository-level signing secrets.
-- [ ] Decide and land the GitHub-hosted release path before the next release.
+- [ ] Complete the [repository publication checklist](RELEASE_CI.md#before-making-the-repository-public), including external contributor workflow approvals, production reviewers, signing secret migration and the first hosted release.
 - [ ] Reproduce the [performance](PERFORMANCE.md) measurements on representative hardware.
 - [ ] Publish checksums and installation instructions with the release; add a Homebrew cask once a stable signed download URL exists.
 
@@ -57,25 +54,51 @@ complete the other hardware, older-OS, Intel runtime or UX checks above.
 Branch pushes and PRs, including fork PRs once the repository is public and the
 run is approved, run `Release source checks` on `ubuntu-latest` for workflow
 policy, metadata and local validation receipts.
-A maintainer-controlled CI workflow builds, signs and notarizes releases from
-trusted `main` source and publishes them as GitHub Releases. After committing
-native release inputs, run `python3 scripts/local_release_validation.py record`
-on the maintainer's Mac. It runs the complete `scripts/verify-local.sh` gate and
-writes `docs/validation/local-release-validation.json`; commit that receipt.
-The release workflow verifies the committed receipt against the version and
-native inputs before loading signing secrets; a new version without a matching
-receipt will not be released. Fork PRs do not receive signing credentials. A
-GitHub-hosted macOS release path is planned.
+A successful main-push `workflow_run` from `letsopen-ai/tinystats` may start
+`Production release` on the GitHub-hosted arm64 `xcode-27` image with Xcode 27.1
+build 27A9275 pinned. Both macOS workflows require a public repository and skip
+while private. Merge the migration only after publication. The release job uses
+the `production` environment, job-level concurrency and a 180-minute timeout.
+It verifies the triggering CI and current main against GitHub, then skips a
+version that already has a valid published tag/release. It checks out the exact
+source and verifies the committed local validation receipt before loading signing
+secrets. Metal is downloaded if missing and its selection is validated before
+credentials are materialized. See [Release CI](RELEASE_CI.md) for the hosted path.
 
-The job imports the existing Developer ID identity into a temporary keychain,
-checks its team and fingerprint, creates a temporary notarization profile, and
-runs `scripts/release_signed.py`. It builds universal Release output, requires
-Accepted Apple notarization, staples and validates the ticket, and verifies
+The exact Xcode build check (27A9275) stops the release if GitHub ships a different 27.1 build; run `Hosted release toolchain smoke` first.
+
+After committing native release inputs, run `python3 scripts/local_release_validation.py record`
+on the maintainer's Mac. It runs the complete `scripts/verify-local.sh` gate and
+writes `docs/validation/local-release-validation.json`; commit that receipt. The
+workflow checks it against the version and native inputs before accessing signing
+credentials. A new version without a matching receipt will not be released.
+The hosted build does not replace the local native test gate. Fork PRs do not
+receive signing credentials.
+
+These workflow and script changes affect the receipt fingerprint: before the first
+hosted release, record and commit a fresh receipt on the final tree.
+
+After publication, create the five signing secrets in the `production`
+environment with their existing names, add required reviewers, and restrict
+deployments to `main`. Verify a hosted release uses the environment and approval
+gate before deleting repository-level secret copies. See
+[Release CI](RELEASE_CI.md#production-secrets-and-approval) for names and the ordered
+publication checklist.
+
+The job exclusively creates `$RUNNER_TEMP/tinystats-signing` with mode 0700,
+imports the Developer ID identity into a temporary keychain with a random
+password, checks its fingerprint and certificate subject OU, creates a temporary
+notarization profile from the App Store Connect API key, and
+runs `scripts/release_signed.py --actions-direct`. Python finally blocks and an
+always-run workflow step remove the keychain and credential files. It builds
+universal Release output, requires Accepted Apple notarization, staples and validates the ticket, and verifies
 Gatekeeper, signature, team, version and architectures. The ZIP, SHA-256 sums
 and public manifest are uploaded to a draft GitHub Release and downloaded for
 byte comparison before publication. No privileged traffic service is bundled.
 A successful workflow or configuration alone does not qualify the migration:
-verify a new signed release and independently download its assets.
+verify a new signed release and independently download its assets. Hosted-only
+checks remain open: Xcode 27.1 path, Metal download, notarization from hosted IPs,
+3-core M1 runtime and a universal build within 14 GB disk.
 
 `VERSION` and `Resources/Info.plist` must agree. Advance both marketing versions
 and the plist build number in a reviewed main change to publish a new version.

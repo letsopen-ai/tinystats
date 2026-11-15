@@ -1,38 +1,38 @@
-name: Release runner smoke
+name: Hosted release toolchain smoke
 on:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: release-runner-smoke
+  group: hosted-release-smoke
   cancel-in-progress: false
 jobs:
   smoke:
     if: >-
       github.repository == 'letsopen-ai/tinystats' &&
+      github.event.repository.private == false &&
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, macOS, ARM64, mac-mini-m4, letsopen-org, release, tinystats]
-    timeout-minutes: 10
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
     defaults:
       run:
         shell: bash --noprofile --norc -eo pipefail {0}
     steps:
-      - name: Verify account and toolchain
-        run: |
-          test "$(id -un)" = release-runner
-          test "$(uname -m)" = arm64
-          case " $(id -Gn) " in *' admin '*|*' wheel '*) exit 1;; esac
-          if sudo -n true >/dev/null 2>&1; then exit 1; fi
-          xcodebuild -version
-          swift --version
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Verify Xcode 27.1 and select the Metal toolchain
+        timeout-minutes: 20
+        run: |
+          python3 scripts/hosted_release_toolchain.py
+          swift --version
       - name: Check request-guard fixtures
         run: |
           python3 -m unittest discover -s scripts/tests -p 'test_actions_release_guard.py' -q
           {
-            echo '### Release runner smoke passed'
-            echo 'Account and fixture checks only; no signing, notarization or publication was performed.'
+            echo '### Hosted release toolchain smoke passed'
+            echo 'Toolchain and fixture checks only; no signing, notarization or publication was performed.'
           } >> "$GITHUB_STEP_SUMMARY"

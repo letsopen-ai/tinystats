@@ -11,10 +11,12 @@ class FakeSecurity:
     def __init__(self, fail=None):
         self.search = ['/fixture/login.keychain-db']
         self.events = []
+        self.calls = []
         self.fail = fail
 
     def __call__(self, *args):
         self.events.append(args[0])
+        self.calls.append(args)
         if args[0] == self.fail:
             raise RuntimeError('fixture failure')
         if args[0] == 'create-keychain':
@@ -41,6 +43,25 @@ class KeychainTests(unittest.TestCase):
                 fake.search.append('/fixture/another.keychain-db')
         self.assertEqual(fake.search, ['/fixture/login.keychain-db', '/fixture/another.keychain-db'])
         self.assertEqual(fake.events[-1], 'delete-keychain')
+        settings = next(call for call in fake.calls if call[0] == 'set-keychain-settings')
+        self.assertEqual(settings[1:3], ('-lut', '10800'))
+
+    def test_empty_search_list_preserves_initial_fallback_or_skips_update(self):
+        for initial in ([], ['/fixture/login.keychain-db']):
+            with self.subTest(initial=initial):
+                fake = FakeSecurity(); fake.search = initial.copy()
+                with patch.object(keychain, '_security', side_effect=fake), \
+                     patch.object(keychain, '_security_private', side_effect=fake), \
+                     patch.object(keychain.os, 'geteuid', return_value=501):
+                    with keychain.signing_keychain(self.root, self.cert, 'fixture') as path:
+                        fake.search = [str(path)]
+                updates = [call for call in fake.calls if call[:4] == ('list-keychains', '-d', 'user', '-s')]
+                self.assertTrue(all(len(call) > 4 for call in updates))
+                self.assertEqual(len(updates), 1 + bool(initial))
+                if initial:
+                    self.assertEqual(fake.search, initial)
+                self.assertEqual(fake.events[-1], 'delete-keychain')
+                path.unlink()  # The fake deletion leaves its placeholder file.
 
     def test_import_failure_deletes_created_keychain(self):
         fake = FakeSecurity(fail='import')

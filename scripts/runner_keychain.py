@@ -1,6 +1,6 @@
 """Create a job-scoped macOS signing keychain; never use the login keychain.
 
-The caller serializes release jobs under this OS user and owns the surrounding
+Workflow concurrency serializes releases; the caller owns the surrounding
 private temporary directory. This module does not read GitHub secrets itself.
 """
 from contextlib import contextmanager
@@ -48,9 +48,9 @@ def signing_keychain(directory, certificate, password):
     directory, certificate = Path(directory), Path(certificate)
     if os.geteuid() == 0:
         raise ValueError('Signing must not run as root')
-    if directory.is_symlink() or not directory.is_dir() or directory.stat().st_mode & 0o077:
+    if directory.is_symlink() or not directory.is_dir() or directory.stat().st_mode & 0o077 or directory.stat().st_uid != os.getuid():
         raise ValueError('Signing directory must be private')
-    if certificate.is_symlink() or not certificate.is_file() or certificate.stat().st_mode & 0o077 or not password:
+    if certificate.is_symlink() or not certificate.is_file() or certificate.stat().st_mode & 0o077 or certificate.stat().st_uid != os.getuid() or not password:
         raise ValueError('A private certificate file and password are required')
     keychain = directory / 'release-signing.keychain-db'
     if keychain.exists() or keychain.is_symlink():
@@ -60,14 +60,14 @@ def signing_keychain(directory, certificate, password):
     created = False
     attached = False
     try:
-        _security('create-keychain', '-p', key_password, keychain)
+        _security_private('create-keychain', '-p', key_password, keychain)
         created = True
         keychain.chmod(0o600)
-        _security('set-keychain-settings', '-lut', '21600', keychain)
-        _security('unlock-keychain', '-p', key_password, keychain)
+        _security('set-keychain-settings', '-lut', '10800', keychain)
+        _security_private('unlock-keychain', '-p', key_password, keychain)
         _security_private('import', certificate, '-k', keychain, '-P', password,
                   '-T', '/usr/bin/codesign', '-T', '/usr/bin/security')
-        _security('set-key-partition-list', '-S', 'apple-tool:,apple:', '-s', '-k', key_password, keychain)
+        _security_private('set-key-partition-list', '-S', 'apple-tool:,apple:', '-s', '-k', key_password, keychain)
         # Use the current list, not a stale snapshot, to avoid dropping other entries.
         current = _search_list()
         attached = True  # Treat a failed search-list update as an unknown outcome.
@@ -80,7 +80,8 @@ def signing_keychain(directory, certificate, password):
                 remaining = [p for p in current if Path(p).resolve() != keychain.resolve()]
                 if not remaining:
                     remaining = initial
-                _security('list-keychains', '-d', 'user', '-s', *remaining)
+                if remaining:
+                    _security('list-keychains', '-d', 'user', '-s', *remaining)
             finally:
                 if created:
                     _security('delete-keychain', keychain)
