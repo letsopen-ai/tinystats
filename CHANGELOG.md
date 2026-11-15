@@ -41,7 +41,7 @@ Versions 0.36.6–0.37.4 were unpublished previews.
 
 Versions 0.36.0–0.36.3 were unpublished previews.
 
-- Extend the main window sidebar beneath the traffic lights, hide the redundant system title, align subsection headings with icons and emphasize only the selected navigation item. Use native unified traffic-light spacing, align page titles with the brand through a shared top inset, keep full-screen geometry within its own window, honour title-band double-click preferences and preserve the previous 884×692 minimum outer size. Preview version 0.36.4 (67).
+- Extend the main window sidebar beneath the traffic lights, hide the redundant system title, align subsection headings with icons and emphasize only the selected navigation item. Use native unified traffic-light spacing, align page titles with the brand through a shared top inset, keep full-screen geometry within its own window, honour title-band double-click preferences and preserve the previous 884×692 minimum outer size. Version 0.36.4 (67).
 
 - Match the dropdown logo’s optical weight to its neighbouring icons; verify footer tooltips and VoiceOver labels in every module/state and add matching help to Weather and calendar actions. Preview version 0.36.3 (66).
 

@@ -30,6 +30,9 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 - [ ] Check sleep/wake, external storage hot-plug, network/VPN switching, notched menu bars, Light/Dark appearance (including a light menu bar), launch at login and notification permission denial.
 - [ ] Review the known gaps in the [roadmap](ROADMAP.md) and decide which are acceptable for the release.
 - [ ] Require maintainer approval for external contributors’ workflow runs after publication.
+- [ ] Confirm no self-hosted runner is reachable from this repository once public; keep runner groups private-only.
+- [ ] Move signing secrets into the protected production environment with required reviewers and remove unused repository-level signing secrets.
+- [ ] Decide and land the GitHub-hosted release path before the next release.
 - [ ] Reproduce the [performance](PERFORMANCE.md) measurements on representative hardware.
 - [ ] Publish checksums and installation instructions with the release; add a Homebrew cask once a stable signed download URL exists.
 
@@ -55,10 +58,14 @@ Branch pushes and PRs, including fork PRs once the repository is public and the
 run is approved, run `Release source checks` on `ubuntu-latest` for workflow
 policy, metadata and local validation receipts.
 A maintainer-controlled CI workflow builds, signs and notarizes releases from
-trusted `main` source and publishes them as GitHub Releases. Native tests run
-locally, and the workflow verifies the committed local validation receipt before
-releasing. Fork PRs do not receive signing credentials. A GitHub-hosted macOS
-release path is planned.
+trusted `main` source and publishes them as GitHub Releases. After committing
+native release inputs, run `python3 scripts/local_release_validation.py record`
+on the maintainer's Mac. It runs the complete `scripts/verify-local.sh` gate and
+writes `docs/validation/local-release-validation.json`; commit that receipt.
+The release workflow verifies the committed receipt against the version and
+native inputs before loading signing secrets; a new version without a matching
+receipt will not be released. Fork PRs do not receive signing credentials. A
+GitHub-hosted macOS release path is planned.
 
 The job imports the existing Developer ID identity into a temporary keychain,
 checks its team and fingerprint, creates a temporary notarization profile, and
