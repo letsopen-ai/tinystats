@@ -100,7 +100,7 @@ MB = 1,048,576 bytes.
 
 [^istat-installed]: Includes helper apps and a second copy of the app in `~/Library/Application Support/iStat Menus 7`; excludes history data. Disk usage counts APFS clones fully.
 
-**How we measured:** 2026-11-14, Mac mini (M4, 16 GB), macOS 27.2, on an otherwise idle desktop with two idle self-hosted CI runner listeners running.
+**How we measured:** 2026-11-14, Mac mini (M4, 16 GB), macOS 27.2, on an otherwise idle desktop.
 Runtime: tinyStats 0.37.6 local arm64 build; iStat Menus 7.30, licensed, default profile.
 Sizes: tinyStats signed universal 0.37.5 release; iStat Menus 7.30 universal.
 After a 120 s warm-up, we sampled every 10 s for 10 minutes, summing all processes of each app
@@ -128,11 +128,11 @@ iStat Menus is a trademark of Bjango Pty Ltd; tinyStats is not affiliated with B
 
 ### Download a signed build
 
-The latest **signed, notarized** download is [tinyStats 0.36.5](https://github.com/letsopen-ai/tinystats/releases/tag/v0.36.5). Current source is **0.37.5**, which is ahead of that release (compact menu bar, Separate/One layouts, per-module dropdowns, power visibility and Energy Mode, the redesigned welcome tour, the native main-window split, and immediate dropdown show/hide). Use the signed release if you want a notarized app today; build from source for the latest features until a newer signed build is published.
+The current **signed, notarized** release is 0.37.6.
 
-1. Open the [Releases](https://github.com/letsopen-ai/tinystats/releases) page and download `TinyStats-0.36.5-macOS-universal.zip`.
+1. Open the [latest release](https://github.com/letsopen-ai/tinystats/releases/latest) and download `TinyStats-<version>-macOS-universal.zip`.
 2. Unzip it and drag `TinyStats.app` into `/Applications`.
-3. Open the app. The 0.36.5 build is notarized, so Gatekeeper should allow it.
+3. Open the app. The release is notarized, so Gatekeeper should allow it.
 
 SHA-256 checksums ship alongside the ZIP as `SHA256SUMS.txt`. There is no Homebrew cask yet. Signed builds from 0.37.5 check and prepare GitHub updates by default; disable either in Settings › General. Older releases need a manual first upgrade. See [Updates](docs/UPDATES.md).
 
@@ -200,7 +200,7 @@ build/TinyStats.app/Contents/MacOS/TinyStats --preview              # persistent
 
 The code is split into `Sources/TinyStatsCore` (models, collectors, settings, history), `Sources/CTinyStats` (system API wrappers) and `Sources/TinyStats` (AppKit UI and the sampling worker). Start with [Design](docs/DESIGN.md), [Performance](docs/PERFORMANCE.md) and [Compatibility](docs/COMPATIBILITY.md).
 
-The automatic push/PR [release source checks](docs/SELF_HOSTED_CI.md) checks source metadata and committed local release validation receipts on Ubuntu. Native tests run locally; the M4 only builds/signs/releases. Keep using `verify-local.sh` for the complete required gate.
+Automatic push/PR [release source checks](docs/DISTRIBUTION.md#automatic-production-releases) run on GitHub-hosted Ubuntu and check source metadata and committed local release validation receipts. Native tests run locally; signed releases are built by the maintainer release workflow. Keep using `verify-local.sh` for the complete required gate.
 
 ## Contributing
 
