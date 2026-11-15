@@ -76,7 +76,7 @@ and `SHA256SUMS.txt`. See [Distribution](DISTRIBUTION.md#automatic-production-re
 
 `Hosted release toolchain smoke` (`hosted-release-smoke.yml`) is a secret-free,
 main-only manual check of arm64, Xcode, Metal, Swift and request-guard fixtures.
-It has read-only contents permission and no environment. The former Mac mini
+It has read-only contents permission and no environment. The former self-hosted release runner
 crash-report workflow has been removed.
 
 ## Public repository safety
@@ -117,13 +117,13 @@ releases do not need them. Repository settings and secrets remain maintainer-man
   registrations so fork workflows cannot reach them after publication.
 - [ ] Go public, then enable approval for all external contributors' workflow runs.
 - [ ] Configure production secrets, required reviewers and the `main` branch policy.
-- [ ] Merge this migration (stacked on PR #35) only after publication.
+- [ ] Merge this migration only after publication.
 - [ ] Run `Hosted release toolchain smoke` from `main`, then watch the first new
   version's hosted release and independently verify downloaded assets.
 - [ ] Validate the Xcode path, Metal download, notarization from hosted IPs,
   build/runtime on the 3-core M1, and universal build within 14 GB disk.
-- [ ] After that release succeeds, retire org runners `letsopen-m4-release` and
-  `letsopen-m4-unsigned` and the Mac mini LaunchDaemons `com.niechen.ci.*`,
+- [ ] After that release succeeds, retire the previous self-hosted release
+  runners and their host services,
   coordinating with any other repositories. Keep them until then as a rollback
   path; no workflow here references them. Remove redundant signing secrets after
   checking other users.
