@@ -54,11 +54,12 @@ Documentation-only changes need `git diff --check` and a factual/link review, wi
 
 ## CI and hosted releases
 
-All workflows use standard GitHub-hosted runners. PR source checks run on
-`ubuntu-latest`; signed releases use `xcode-27` with Xcode 27.1 pinned and the
-`production` environment. Both hosted macOS jobs skip private repositories.
-After publication, maintainers must enable approval for all external
-contributors' fork workflow runs and add production reviewers. See
+PR source checks run on GitHub-hosted `ubuntu-latest`; signed releases use
+GitHub-hosted `xcode-27` with Xcode 27.1 pinned and the `production` environment.
+Both hosted macOS jobs skip private repositories. After publication, maintainers
+must require approval for all external contributors' fork workflow runs and add
+production reviewers. Approved fork runs use the PR's own workflow files, so
+runner access and maintainer approval remain important controls. See
 [Release CI](docs/RELEASE_CI.md#public-repository-safety) for the publication
 checklist and temporary signing credentials.
 

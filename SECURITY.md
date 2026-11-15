@@ -10,7 +10,7 @@ If GitHub does not offer the private reporting form, email [git@cnie.xyz](mailto
 
 ## Current boundaries
 
-All workflows use standard GitHub-hosted runners. PR source checks run on `ubuntu-latest`; production signing runs only for successful, verified main-push CI in the `production` environment on `xcode-27`, with Xcode 27.1 pinned and temporary signing material under `$RUNNER_TEMP`. Both macOS jobs skip private repositories. After going public, require approval for all external contributors' fork workflow runs and add production reviewers. Keep organization runner groups private-only. See [Release CI](docs/RELEASE_CI.md#public-repository-safety).
+PR source checks run on GitHub-hosted `ubuntu-latest`; production signing runs only for successful, verified main-push CI in the `production` environment on GitHub-hosted `xcode-27`, with Xcode 27.1 pinned and temporary signing material under `$RUNNER_TEMP`. Both macOS jobs skip private repositories. After publication, require approval for all external contributors' fork workflow runs and add production reviewers. Approved fork runs use the PR's own workflow files, so runner access and maintainer approval remain important controls. Keep organization runner groups private-only. See [Release CI](docs/RELEASE_CI.md#public-repository-safety).
 
 - Signed-release updates require pinned Developer ID team `CVQJTDR4LG`, notarization, Gatekeeper, SHA-256 agreement, HTTPS allowlisted hosts and a strictly newer version/build. See [Updates](docs/UPDATES.md) for trust boundaries and rollback limitations.
 
