@@ -29,7 +29,7 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 - [ ] Spot-check representative hardware: more than one Apple Silicon generation, a laptop with a battery, and a fan-equipped model.
 - [ ] Check sleep/wake, external storage hot-plug, network/VPN switching, notched menu bars, Light/Dark appearance (including a light menu bar), launch at login and notification permission denial.
 - [ ] Review the known gaps in the [roadmap](ROADMAP.md) and decide which are acceptable for the release.
-- [ ] Complete the [repository publication checklist](SELF_HOSTED_CI.md#before-making-the-repository-public), including runner access and secret migration.
+- [ ] Require maintainer approval for external contributors’ workflow runs after publication.
 - [ ] Reproduce the [performance](PERFORMANCE.md) measurements on representative hardware.
 - [ ] Publish checksums and installation instructions with the release; add a Homebrew cask once a stable signed download URL exists.
 
@@ -37,10 +37,9 @@ CPU/Memory/Network app grouping retains the existing bounded sampling and persis
 
 [TinyStats 0.36.5 build 68](https://github.com/letsopen-ai/tinystats/releases/tag/v0.36.5)
 was built, Developer ID signed, notarized, stapled and published by
-[the M4 organization release job](https://github.com/letsopen-ai/tinystats/actions/runs/41873473716).
+[the maintainer release workflow](https://github.com/letsopen-ai/tinystats/actions/runs/41873473716).
 Its annotated tag and public manifest identify source
-`53bf05506392ff83ea0fd875c38c23035f02acd0`. Tests ran locally on the MacBook,
-not on the M4: the complete gate passed 714 Swift tests plus Python tests,
+`53bf05506392ff83ea0fd875c38c23035f02acd0`. Tests ran locally: the complete gate passed 714 Swift tests plus Python tests,
 strict lint/warnings, universal app/service packaging and diagnostics.
 
 A separate MacBook download of the published ZIP matched its SHA-256
@@ -55,39 +54,11 @@ complete the other hardware, older-OS, Intel runtime or UX checks above.
 Branch pushes and PRs, including fork PRs once the repository is public and the
 run is approved, run `Release source checks` on `ubuntu-latest` for workflow
 policy, metadata and local validation receipts.
-A successful main-push `workflow_run` from `letsopen-ai/tinystats` may start
-`Production release` on the organization runner `letsopen-m4-release`, using the
-dedicated M4 `release-runner` account. The job checks the triggering CI and
-current main against GitHub, then skips a version that already has a tag. It checks out the exact source in
-a separate directory and verifies a committed local validation receipt before
-loading signing secrets. Run `python3 scripts/local_release_validation.py record`
-on the MacBook after committing native inputs, then commit the receipt. That
-command runs the complete `verify-local.sh` gate locally. The M4 does not run
-the native test suite. Fork PRs do not receive signing credentials. Only trusted
-main source may use this runner and its signing authority.
-
-On GitHub Free, environment secrets and required reviewers are unavailable for
-this private repository. The `production` environment currently has a
-deployment-branch policy for `main` and no required reviewers.
-For releases from this repository after publication
-(option B in [Self-hosted CI](SELF_HOSTED_CI.md#public-repository-safety)), migrate
-in this order:
-
-1. While private, keep the five signing secrets at repository level:
-   `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`,
-   `APPLE_NOTARY_API_KEY_P8`, `APPLE_NOTARY_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`.
-2. After going public, create the five `production` environment secrets with
-   the same names. The existing `secrets.NAME` lookups resolve environment values
-   before repository values of the same name.
-3. Add a required reviewer and restrict deployment branches to `main`.
-4. Run a release and verify the environment secrets and approval gate.
-5. Then delete the repository-level copies. Until then, any main-branch job
-   without `environment:` could read those copies and bypass reviewer approval.
-
-Each release then pauses for approval. The recommended option A instead moves
-signing/releases and repository-level signing secrets to a separate private
-repository, keeping the default runner group private-only. A private repository
-on Free cannot use the environment reviewer gate; that requires a paid plan.
+A maintainer-controlled CI workflow builds, signs and notarizes releases from
+trusted `main` source and publishes them as GitHub Releases. Native tests run
+locally, and the workflow verifies the committed local validation receipt before
+releasing. Fork PRs do not receive signing credentials. A GitHub-hosted macOS
+release path is planned.
 
 The job imports the existing Developer ID identity into a temporary keychain,
 checks its team and fingerprint, creates a temporary notarization profile, and
@@ -105,11 +76,9 @@ A previously tagged `vX.Y.Z` is skipped; existing artifacts are never replaced.
 Tag collisions, incomplete drafts, notarization rejection, stale main or a
 cancelled release request fail closed. Inspect and reconcile failed drafts and
 attempts before retrying; automatic retry does not overwrite them. Job-scoped
-private credentials are removed on normal completion or cancellation. If the
-runner or machine is forcibly terminated, inspect its private staging directory
-before retrying; the next attempt refuses to proceed while material remains.
-Inspect failed job output promptly: later runner checkout cleanup can remove
-its build directory. Keep any retained files private and monitor disk capacity.
+private credentials are removed on normal completion or cancellation. Maintainers
+should inspect failed attempts and reconcile any remaining private material before
+retrying.
 
 Actions → Production release reports the result. A skipped version is not a new
 release. The physical-device, minimum-OS/Intel runtime and UX checks above
