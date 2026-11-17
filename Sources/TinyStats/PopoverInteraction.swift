@@ -52,9 +52,20 @@ import AppKit
     ) { [weak self] _ in
       MainActor.assumeIsolated {
         guard let self, self.generation == generation else { return }
-        self.dismiss()
+        self.handleResign(event: NSApp.currentEvent)
       }
     }
+  }
+
+  // A status-item click can deactivate the app before its button action arrives.
+  // Keep the presentation alive for that action to toggle or switch its module.
+  func handleResign(event: NSEvent?) {
+    if let event, event.type == .leftMouseDown,
+      !event.modifierFlags.contains(.command), statusEvent?(event) == true
+    {
+      return
+    }
+    dismiss()
   }
 
   func stop() {

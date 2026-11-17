@@ -210,6 +210,36 @@ struct MenuBarClickRouterTests {
   }
 
   @Test(arguments: [false, true])
+  func statusClickSurvivesResignAndTogglesOrSwitches(combined: Bool) throws {
+    let fixture = try MenuBarRoutingFixture(combined: combined)
+    defer { fixture.close() }
+    let app = try #require(fixture.app)
+    app.activateStatusButton(
+      try fixture.target(.cpu).button, event: try fixture.event(.cpu, source: 0))
+    let same = try fixture.event(.cpu, source: 0)
+    app.popoverInteraction.handleResign(event: same)
+    #expect(app.popover?.isShown == true)
+    #expect(app.popoverInteraction.handle(same) == nil)
+    #expect(app.popover?.isShown == false)
+
+    app.activateStatusButton(
+      try fixture.target(.cpu).button, event: try fixture.event(.cpu, source: 0))
+    let different = try fixture.event(.memory, source: 0)
+    app.popoverInteraction.handleResign(event: different)
+    #expect(app.popoverInteraction.handle(different) == nil)
+    #expect(app.popover?.isShown == true && app.detail?.selected == .memory)
+    app.popover?.performClose(nil)
+    app.activateStatusButton(
+      try fixture.target(.memory).button, event: try fixture.event(.memory, source: 0))
+    #expect(app.popover?.isShown == true && app.detail?.selected == .memory)
+    app.popoverInteraction.handleResign(event: nil)
+    #expect(app.popover?.isShown == false)
+    app.activateStatusButton(
+      try fixture.target(.cpu).button, event: try fixture.event(.cpu, source: 0))
+    #expect(app.popover?.isShown == true && app.detail?.selected == .cpu)
+  }
+
+  @Test(arguments: [false, true])
   func closingPopoverRetainsClickAndAccountsBeforeReopening(combined: Bool) throws {
     let fixture = try MenuBarRoutingFixture(combined: combined, modules: [.cpu, .memory, .network])
     defer { fixture.close() }
