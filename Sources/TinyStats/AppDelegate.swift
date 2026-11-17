@@ -760,7 +760,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
           self?.statusItems.hits(event, dropdownWindow: self?.detail?.view.window) ?? false
         },
         onStatusClick: { [weak self] event in
-          self?.routeStatusEvent(event)
+          self?.routeStatusEvent(event) ?? false
         },
         onDismiss: { [weak self] in self?.popover?.performClose(nil) })
     } else {
