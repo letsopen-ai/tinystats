@@ -217,7 +217,7 @@ struct MenuBarClickRouterTests {
     app.activateStatusButton(
       try fixture.target(.cpu).button, event: try fixture.event(.cpu, source: 0))
     let same = try fixture.event(.cpu, source: 0)
-    app.popoverInteraction.handleResign(event: same)
+    NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
     #expect(app.popover?.isShown == true)
     #expect(app.popoverInteraction.handle(same) == nil)
     #expect(app.popover?.isShown == false)
@@ -225,15 +225,18 @@ struct MenuBarClickRouterTests {
     app.activateStatusButton(
       try fixture.target(.cpu).button, event: try fixture.event(.cpu, source: 0))
     let different = try fixture.event(.memory, source: 0)
-    app.popoverInteraction.handleResign(event: different)
+    NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
     #expect(app.popoverInteraction.handle(different) == nil)
+    #expect(app.popover?.isShown == true && app.detail?.selected == .memory)
+    fixture.runDismissals()
     #expect(app.popover?.isShown == true && app.detail?.selected == .memory)
     app.popover?.performClose(nil)
     app.activateStatusButton(
       try fixture.target(.memory).button, event: try fixture.event(.memory, source: 0))
     #expect(app.popover?.isShown == true && app.detail?.selected == .memory)
-    app.popoverInteraction.handleResign(event: nil)
-    #expect(app.popover?.isShown == false)
+    NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
+    fixture.runDismissals()
+    #expect(app.popover?.isShown != true)
     app.activateStatusButton(
       try fixture.target(.cpu).button, event: try fixture.event(.cpu, source: 0))
     #expect(app.popover?.isShown == true && app.detail?.selected == .cpu)
@@ -260,6 +263,7 @@ struct MenuBarClickRouterTests {
     // Hold the notification boundary explicitly, independent of native animation/timing.
     app.popoverWillClose(.init(name: NSPopover.willCloseNotification, object: closing))
     let click = try fixture.event(.memory, source: 1)
+    NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
     #expect(app.popoverInteraction.handle(click) == nil)
     #expect(app.detail?.selected == .cpu)  // Do not switch into a closing presentation.
     let lastClick = try fixture.event(.network, source: 0)
@@ -271,6 +275,8 @@ struct MenuBarClickRouterTests {
     #expect(app.popover === closing && !closing.animates)
     #expect(app.popover?.isShown == true && app.detail?.selected == .network)
     #expect(app.popoverInteraction.isMonitoring)
+    fixture.runDismissals()
+    #expect(app.popover?.isShown == true && app.detail?.selected == .network)
   }
 
   @Test func shownCloseCallbackStillReportsWithoutTearingDownCurrentPresentation() throws {

@@ -7,6 +7,7 @@ import TinyStatsCore
 /// All windows and cursor values are owned fixtures. Never creates a system status item,
 /// posts an event, moves the real cursor, launches collectors or enables online settings.
 @MainActor final class MenuBarRoutingFixture {
+  var dismissals: [DispatchWorkItem] = []
   var cursor = NSPoint.zero
   var presentations: [Bool] = []
   var cycles: [PopoverCycleProbe.Event] = []
@@ -48,10 +49,18 @@ import TinyStatsCore
       targets: targets, combined: combined, mouseLocation: { [unowned self] in self.cursor })
     app = AppDelegate(
       statusItems: items,
-      popoverInteraction: PopoverInteraction(mouseLocation: { [unowned self] in self.cursor }),
+      popoverInteraction: PopoverInteraction(
+        mouseLocation: { [unowned self] in self.cursor },
+        scheduleDismissal: { [unowned self] in self.dismissals.append($0) }),
       settings: settings, clickTrace: MenuBarClickTrace(environment: [:]),
       presentationReporter: { [unowned self] in self.presentations.append($0) },
       cycleReporter: { [unowned self] in self.cycles.append($0) }, energyModes: energyModes)
+  }
+
+  func runDismissals() {
+    let pending = dismissals
+    dismissals.removeAll()
+    for work in pending where !work.isCancelled { work.perform() }
   }
 
   func target(_ module: Module) throws -> StatusItemController.Target {

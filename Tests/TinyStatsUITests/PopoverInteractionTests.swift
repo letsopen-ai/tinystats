@@ -137,7 +137,10 @@ import Testing
     var dismissed = 0
     interaction.start(
       window: popover, statusEvent: { $0.window === status },
-      onStatusClick: { _ in clicks += 1 }, onDismiss: { dismissed += 1 })
+      onStatusClick: { _ in
+        clicks += 1
+        return true
+      }, onDismiss: { dismissed += 1 })
     let down = try mouse(status)
     #expect(interaction.handle(down) == nil)
     #expect(clicks == 1 && dismissed == 0 && interaction.isMonitoring)
@@ -176,12 +179,17 @@ import Testing
   @Test func restartAndPromotionRemoveOldObserversAndCapturedContent() throws {
     let popover = window()
     defer { popover.close() }
-    let interaction = PopoverInteraction(mouseLocation: { .init(x: -10_000, y: -10_000) })
+    var pending: [DispatchWorkItem] = []
+    let interaction = PopoverInteraction(
+      mouseLocation: { .init(x: -10_000, y: -10_000) },
+      scheduleDismissal: { pending.append($0) })
     var first = 0
     var second = 0
     interaction.start(window: popover, statusEvent: { _ in false }, onDismiss: { first += 1 })
     interaction.start(window: popover, statusEvent: { _ in false }, onDismiss: { second += 1 })
     NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
+    for work in pending where !work.isCancelled { work.perform() }
+    pending.removeAll()
     #expect(first == 0 && second == 1 && !interaction.isMonitoring)
     weak var released: NSObject?
     do {
@@ -200,6 +208,42 @@ import Testing
     #expect(released == nil && !interaction.isMonitoring)
     NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
     #expect(first == 0 && second == 1)
+  }
+
+  @Test func resignDismissesWhenStatusClickIsNotRouted() throws {
+    let popover = window()
+    let status = window()
+    defer {
+      popover.close()
+      status.close()
+    }
+    var pending: [DispatchWorkItem] = []
+    let interaction = PopoverInteraction(
+      mouseLocation: { .init(x: -10_000, y: -10_000) },
+      scheduleDismissal: { pending.append($0) })
+    defer { interaction.stop() }
+    var dismissed = 0
+    let command = try #require(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown, location: .zero, modifierFlags: [.command], timestamp: 0,
+        windowNumber: status.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)
+    )
+    let right = try mouse(status, type: .rightMouseDown)
+    let left = try mouse(status)
+    // Notification delivery deliberately does not inject or inspect currentEvent.
+    // Include no click, native pass-through clicks, and a router rejection.
+    for event in [nil, command, right, left] {
+      interaction.start(
+        window: popover, statusEvent: { $0.window === status },
+        onStatusClick: { _ in false }, onDismiss: { dismissed += 1 })
+      NotificationCenter.default.post(
+        name: NSApplication.didResignActiveNotification, object: NSApp)
+      if let event { #expect(interaction.handle(event) === event) }
+      for work in pending where !work.isCancelled { work.perform() }
+      pending.removeAll()
+      #expect(!interaction.isMonitoring)
+    }
+    #expect(dismissed == 4)
   }
 
   @Test func fieldEditorKeepsEscapeForPlainAndMarkedText() throws {

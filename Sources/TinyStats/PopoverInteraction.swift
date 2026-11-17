@@ -8,21 +8,29 @@ import AppKit
   private var globalMonitor: Any?
   private var resignObserver: NSObjectProtocol?
   private var statusEvent: ((NSEvent) -> Bool)?
-  private var onStatusClick: ((NSEvent) -> Void)?
+  private var onStatusClick: ((NSEvent) -> Bool)?
+  private var resignDismissal: DispatchWorkItem?
   private var onDismiss: (() -> Void)?
   private var generation: UInt = 0
   private let mouseLocation: () -> NSPoint
+  private let scheduleDismissal: (DispatchWorkItem) -> Void
   var onEvent: ((NSEvent, String) -> Void)?
 
-  init(mouseLocation: @escaping () -> NSPoint = { NSEvent.mouseLocation }) {
+  init(
+    mouseLocation: @escaping () -> NSPoint = { NSEvent.mouseLocation },
+    scheduleDismissal: @escaping (DispatchWorkItem) -> Void = {
+      DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100), execute: $0)
+    }
+  ) {
     self.mouseLocation = mouseLocation
+    self.scheduleDismissal = scheduleDismissal
   }
 
   var isMonitoring: Bool { localMonitor != nil }
 
   func start(
     window: NSWindow, statusEvent: @escaping (NSEvent) -> Bool,
-    onStatusClick: ((NSEvent) -> Void)? = nil, onDismiss: @escaping () -> Void
+    onStatusClick: ((NSEvent) -> Bool)? = nil, onDismiss: @escaping () -> Void
   ) {
     stop()
     self.window = window
@@ -52,24 +60,30 @@ import AppKit
     ) { [weak self] _ in
       MainActor.assumeIsolated {
         guard let self, self.generation == generation else { return }
-        self.handleResign(event: NSApp.currentEvent)
+        self.scheduleResignDismissal()
       }
     }
   }
 
-  // A status-item click can deactivate the app before its button action arrives.
-  // Keep the presentation alive for that action to toggle or switch its module.
-  func handleResign(event: NSEvent?) {
-    if let event, event.type == .leftMouseDown,
-      !event.modifierFlags.contains(.command), statusEvent?(event) == true
-    {
-      return
+  // AppKit can resign before delivering a status click, and currentEvent need not
+  // be that click. Bound the grace period so an unhandled click cannot orphan UI.
+  private func scheduleResignDismissal() {
+    resignDismissal?.cancel()
+    let generation = generation
+    let work = DispatchWorkItem { [weak self] in
+      MainActor.assumeIsolated {
+        guard let self, self.generation == generation else { return }
+        self.dismiss()
+      }
     }
-    dismiss()
+    resignDismissal = work
+    scheduleDismissal(work)
   }
 
   func stop() {
     generation &+= 1
+    resignDismissal?.cancel()
+    resignDismissal = nil
     if let localMonitor { NSEvent.removeMonitor(localMonitor) }
     if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
     if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
@@ -192,8 +206,11 @@ import AppKit
       {
         // Route before native button tracking/dismissal. Consuming this down event prevents
         // a second button action. Right-click, native Command-drag and sheets retain AppKit input.
-        onStatusClick(event)
-        return nil
+        if onStatusClick(event) {
+          resignDismissal?.cancel()
+          resignDismissal = nil
+          return nil
+        }
       }
       onEvent?(event, "native-status-pass-through")
       return event

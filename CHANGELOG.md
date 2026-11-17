@@ -4,8 +4,7 @@ All notable changes to TinyStats. Versions marked "preview" were development bui
 
 ## 0.37.7 — 2026-11-18
 
-- Fixed menu-bar dropdown toggling when a status click deactivates the app: clicking the open module closes it, and clicking another module switches in one click in Separate and One layouts. Version 0.37.7 (79).
-
+- Updated menu-bar dropdown click routing to toggle the open module or switch modules in Separate and One layouts, including across app deactivation. Version 0.37.7 (79).
 - Documentation: refreshed install instructions and removed internal CI runner details ahead of the public release.
 
 ## 0.37.6 — 2026-11-14
