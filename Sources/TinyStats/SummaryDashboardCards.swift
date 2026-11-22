@@ -579,22 +579,23 @@ extension SummaryDashboardView {
       path.fill()
     }
   }
-  static func coreCells(_ cpu: CPUReading, area: NSRect, capsules: Bool = false) -> [(Int, NSRect)]
-  {
+  static func coreCells(_ cpu: CPUReading, area: NSRect, popover: Bool = false) -> [(Int, NSRect)] {
     let order = displayedCoreIndices(cpu)
     guard !order.isEmpty else { return [] }
-    if capsules {
+    if popover {
       let columns = min(12, order.count)
       let cellWidth = area.width / CGFloat(columns)
       let rows = (order.count + columns - 1) / columns
-      let rowHeight = max(24, (area.height - 16) / CGFloat(rows))
+      let rowHeight = max(0, (area.height - 16) / CGFloat(rows))
+      let diameter = min(22, cellWidth - 4, rowHeight - 14)
+      guard diameter > 0 else { return [] }
       return order.enumerated().map { position, index in
         (
           index,
           NSRect(
-            x: area.minX + CGFloat(position % columns) * cellWidth + (cellWidth - 12) / 2,
+            x: area.minX + CGFloat(position % columns) * cellWidth + (cellWidth - diameter) / 2,
             y: area.minY + CGFloat(position / columns) * rowHeight,
-            width: 12, height: max(10, rowHeight - 18))
+            width: diameter, height: diameter)
         )
       }
     }
@@ -618,20 +619,27 @@ extension SummaryDashboardView {
       let order = Self.displayedCoreIndices(cpu)
       let columns = min(12, max(1, order.count))
       let cellWidth = area.width / CGFloat(columns)
-      for (index, bar) in Self.coreCells(cpu, area: area, capsules: true) {
+      for (index, pie) in Self.coreCells(cpu, area: area, popover: true) {
+        let color = SystemStyle.core(cpu.kind(at: index))
         NSColor.quaternaryLabelColor.setFill()
-        NSBezierPath(roundedRect: bar, xRadius: 6, yRadius: 6).fill()
+        NSBezierPath(ovalIn: pie).fill()
         if let value = UtilizationMeterCell.normalized(cpu.cores[index]), value > 0 {
-          let height = bar.height * value / 100
-          SystemStyle.core(cpu.kind(at: index)).setFill()
-          NSBezierPath(
-            roundedRect: .init(x: bar.minX, y: bar.maxY - height, width: bar.width, height: height),
-            xRadius: min(6, height / 2), yRadius: min(6, height / 2)
-          ).fill()
+          color.setFill()
+          if value >= 100 {
+            NSBezierPath(ovalIn: pie).fill()
+          } else {
+            let path = NSBezierPath()
+            path.move(to: .init(x: pie.midX, y: pie.midY))
+            path.appendArc(
+              withCenter: .init(x: pie.midX, y: pie.midY), radius: pie.width / 2,
+              startAngle: -90, endAngle: -90 + 360 * value / 100)
+            path.close()
+            path.fill()
+          }
         }
         text(
-          cpu.cores[index].map { String(format: "%.0f%%", $0) } ?? "—",
-          rect: .init(x: bar.midX - cellWidth / 2, y: bar.maxY + 2, width: cellWidth, height: 12),
+          Display.percent(UtilizationMeterCell.normalized(cpu.cores[index])),
+          rect: .init(x: pie.midX - cellWidth / 2, y: pie.maxY + 2, width: cellWidth, height: 12),
           color: .secondaryLabelColor, size: 9, alignment: .center)
       }
       let kinds = CPUCoreKind.allCases.filter { kind in
