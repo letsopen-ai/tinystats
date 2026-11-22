@@ -1554,7 +1554,7 @@ import TinyStatsCore
       return nil
     case .cores(let cpu):
       guard
-        let cell = Self.coreCells(cpu, area: area, capsules: usesPopoverLayout).first(where: {
+        let cell = Self.coreCells(cpu, area: area, popover: usesPopoverLayout).first(where: {
           $0.1.contains(point)
         })
       else {

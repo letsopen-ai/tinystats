@@ -2,6 +2,10 @@
 
 All notable changes to TinyStats. Versions marked "preview" were development builds and were not published as binaries.
 
+## 0.37.8 — 2026-11-22
+
+- Replaced per-core bars in the CPU dropdown with utilization pies. Version 0.37.8 (80).
+
 ## 0.37.7 — 2026-11-18
 
 - Updated menu-bar dropdown click routing to toggle the open module or switch modules in Separate and One layouts, including across app deactivation. Version 0.37.7 (79).

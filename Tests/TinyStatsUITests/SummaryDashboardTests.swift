@@ -369,3 +369,57 @@ import Testing
   view.update(snapshot, history: [], settings: settings, module: .network)
   #expect(view.cards.map(\.spoken).joined().contains("Configuration needed"))
 }
+
+@Test @MainActor func popoverCoreFixtureRendersAndSpeaksUnavailable() throws {
+  _ = NSApplication.shared
+  var snapshot = Snapshot()
+  snapshot.cpu = .init(
+    usage: 43, cores: [0, 12, 32, 56, 100, 75, nil, 25, 48, 64, 88, 37, 18, 72, 93, 41],
+    load: [],
+    coreKinds: Array(repeating: .efficiency, count: 4)
+      + Array(repeating: .performance, count: 12))
+  let view = SummaryDashboardView(frame: .init(x: 0, y: 0, width: 360, height: 900))
+  view.usesPopoverLayout = true
+  view.update(snapshot, history: [], settings: Settings(), module: .cpu)
+  view.layoutSubtreeIfNeeded()
+  let card = try #require(view.cards.first { $0.title == "LOGICAL CORES" })
+  #expect(card.spoken.contains("Logical core 1, Efficiency: 0%"))
+  #expect(card.spoken.contains("Logical core 7, Performance: —"))
+  let cells = SummaryDashboardView.coreCells(
+    try #require(snapshot.cpu), area: card.contentRect, popover: true)
+  #expect(cells.count == 16 && cells.allSatisfy { card.contentRect.contains($0.1) })
+  for name in [NSAppearance.Name.aqua, .darkAqua] {
+    view.appearance = NSAppearance(named: name)
+    let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+    view.cacheDisplay(in: view.bounds, to: bitmap)
+    if let directory = ProcessInfo.processInfo.environment["TINYSTATS_CORE_PIE_RENDER_PATH"] {
+      let image = try #require(bitmap.cgImage)
+      let scale = CGFloat(bitmap.pixelsWide) / view.bounds.width
+      let rect = CGRect(
+        x: card.frame.minX * scale, y: card.frame.minY * scale,
+        width: card.frame.width * scale, height: card.frame.height * scale)
+      let cropped = try #require(image.cropping(to: rect))
+      let composite = try #require(
+        NSBitmapImageRep(
+          bitmapDataPlanes: nil, pixelsWide: cropped.width, pixelsHigh: cropped.height,
+          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+          colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+      let context = try #require(NSGraphicsContext(bitmapImageRep: composite))
+      NSGraphicsContext.saveGraphicsState()
+      NSGraphicsContext.current = context
+      try #require(NSAppearance(named: name)).performAsCurrentDrawingAppearance {
+        NSColor.windowBackgroundColor.setFill()
+        NSRect(x: 0, y: 0, width: cropped.width, height: cropped.height).fill()
+        context.cgContext.draw(
+          cropped, in: CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height))
+      }
+      NSGraphicsContext.restoreGraphicsState()
+      let png = try #require(composite.representation(using: .png, properties: [:]))
+      let path = URL(fileURLWithPath: directory, isDirectory: true)
+      try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+      try png.write(
+        to: path.appendingPathComponent(
+          "logical-cores-16-core-fixture-\(name == .aqua ? "light" : "dark").png"))
+    }
+  }
+}

@@ -359,3 +359,55 @@ import Testing
     #expect(markerChanged && textUnchanged)
   }
 }
+
+@Test @MainActor func popoverCorePiesPreserveValuesColorsAndLayout() throws {
+  let view = SummaryDashboardView(frame: .zero)
+  view.usesPopoverLayout = true
+  let area = NSRect(x: 12, y: 12, width: 360, height: 74)
+  let cpu = CPUReading(
+    usage: 0, cores: [100, 0, nil, .nan, 100], load: [],
+    coreKinds: [.performance, .efficiency, .unknown, .efficiency, .efficiency])
+  let cells = SummaryDashboardView.coreCells(cpu, area: area, popover: true)
+  #expect(cells.map(\.0) == [1, 3, 4, 0, 2])
+  for count in [1, 8, 16, 24, 32] {
+    let fixture = CPUReading(usage: 0, cores: Array(repeating: 0, count: count), load: [])
+    let frames = SummaryDashboardView.coreCells(fixture, area: area, popover: true)
+    #expect(frames.count == min(count, 24))
+    #expect(frames.allSatisfy { area.contains($0.1) && $0.1.width == $0.1.height })
+    if count > 12 { #expect(Set(frames.map { $0.1.minY }).count == 2) }
+    for i in frames.indices {
+      for j in frames.indices where i < j { #expect(!frames[i].1.intersects(frames[j].1)) }
+    }
+  }
+  for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+    let bitmap = try legendBitmap(
+      appearance: appearance, scale: 1, size: .init(width: 384, height: 100), flipped: true
+    ) { view.drawCores(cpu, in: area) }
+    func center(_ index: Int) throws -> NSColor {
+      let rect = try #require(cells.first { $0.0 == index }?.1)
+      return try legendPixel(bitmap, at: .init(x: rect.midX, y: rect.midY))
+    }
+    func single(_ value: Double?) throws -> Data {
+      let fixture = CPUReading(usage: value, cores: [value], load: [], coreKinds: [.efficiency])
+      let image = try legendBitmap(
+        appearance: appearance, scale: 1, size: .init(width: 384, height: 100), flipped: true
+      ) { view.drawCores(fixture, in: area) }
+      return try #require(image.representation(using: .png, properties: [:]))
+    }
+    #expect(try single(0) != single(nil))
+    #expect(try single(0) != single(100))
+    let idle = try center(1)
+    let invalid = try center(3)
+    let missing = try center(2)
+    #expect(try legendColorDistance(idle, invalid) < 0.02)
+    #expect(try legendColorDistance(idle, missing) < 0.02)
+    #expect(try legendColorDistance(idle, center(4)) > 0.1)
+    #expect(try legendColorDistance(center(4), center(0)) > 0.1)
+    let background = try legendPixel(bitmap, at: .init(x: 0, y: 0))
+    for index in [0, 4] {
+      let rect = try #require(cells.first { $0.0 == index }?.1)
+      let edge = try legendPixel(bitmap, at: .init(x: rect.midX, y: rect.minY + 3))
+      #expect(try legendColorDistance(edge, background) > 0.1)
+    }
+  }
+}
