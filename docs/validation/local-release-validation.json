@@ -2,15 +2,15 @@
   "checks": [
     "complete-local-gate"
   ],
-  "completedAt": "2026-11-17T16:55:34.054034+00:00",
+  "completedAt": "2026-11-22T15:02:35.469200+00:00",
   "host": {
     "architecture": "arm64",
     "system": "Darwin"
   },
-  "inputsSHA256": "24fa55cef44229dff36e66121a18e55f0e2b81621d495496ecf501cd4d92b1b3",
+  "inputsSHA256": "71b2c6c37bbe6e5693b093bc2569dc403a89e3c16b8671865e471c9ec54b4f9b",
   "recipe": "tinystats-local-native-release-v1",
   "result": "passed",
   "schema": 1,
-  "testedCommit": "e44862e756fe294fd8e7ba668f8001235b429f6a",
-  "version": "0.37.7"
+  "testedCommit": "49e2c446770d74b5199f927110d55ee1c6347d0d",
+  "version": "0.37.8"
 }
