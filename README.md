@@ -200,7 +200,7 @@ build/TinyStats.app/Contents/MacOS/TinyStats --preview              # persistent
 
 The code is split into `Sources/TinyStatsCore` (models, collectors, settings, history), `Sources/CTinyStats` (system API wrappers) and `Sources/TinyStats` (AppKit UI and the sampling worker). Start with [Design](docs/DESIGN.md), [Performance](docs/PERFORMANCE.md) and [Compatibility](docs/COMPATIBILITY.md).
 
-Automatic push/PR [release source checks](docs/RELEASE_CI.md) run on GitHub-hosted Ubuntu and check source metadata and committed local release validation receipts. Native tests run locally; the GitHub-hosted macOS release workflow builds, signs and publishes releases. Keep using `verify-local.sh` for the complete required gate.
+Automatic push/PR [release source checks](docs/RELEASE_CI.md) run workflow policy checks on GitHub-hosted Ubuntu and the full `scripts/verify-local.sh` gate on secret-free, public GitHub-hosted macOS. Maintainers can also run the gate locally. Eligible production releases repeat it on the exact release SHA before accessing signing secrets. Future releases do not require a new committed local validation receipt; the existing receipt is historical evidence. A hosted pass does not establish native macOS 14/15 or Intel runtime validation, hardware qualification, or the interactive `scripts/benchmark-app.py` measurement.
 
 ## Contributing
 

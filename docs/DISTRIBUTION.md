@@ -17,13 +17,13 @@ Synthetic screenshot/QA fixtures must never ship in the production app. Before s
 
 For an app archived some other way, run `python3 scripts/check-release-chrome.py --sources Sources <Archive.app>/Contents/MacOS/TinyStats` from the exact source checkout used to build it. These checks cover known literal fixture labels; other synthetic UI still needs review.
 
-CPU/Memory/Network app grouping retains the existing bounded sampling and persisted choice. Its synthetic light/dark gallery and strict host tests do not complete release readiness: the maintainer’s final-tree `verify-local.sh`, real process-churn measurement and native macOS 14/15/Intel checks remain required. See [Performance](PERFORMANCE.md#process-app-grouping-cost-and-bounds).
+CPU/Memory/Network app grouping retains the existing bounded sampling and persisted choice. Its synthetic light/dark gallery and strict host tests do not complete release readiness: the final-tree full native gate, real process-churn measurement and native macOS 14/15/Intel checks remain required. See [Performance](PERFORMANCE.md#process-app-grouping-cost-and-bounds).
 
 ## Signed binary release checklist
 
 - [x] Developer ID signing completes unattended and notarization credentials are configured.
 - [x] Build with `TINYSTATS_SIGN_IDENTITY="Developer ID Application: …" scripts/build-app.sh --universal`, submit the ZIP with `xcrun notarytool submit build/TinyStats.zip --keychain-profile <profile> --wait`, staple the app (`xcrun stapler staple build/TinyStats.app`), repackage, and confirm with `spctl --assess --type execute -vv build/TinyStats.app`.
-- [x] `scripts/verify-local.sh` passes on the release native inputs on the MacBook; the committed receipt matches the release source.
+- [ ] The hosted `scripts/verify-local.sh` gate passes on the exact release SHA before signing; inspect the Actions run evidence.
 - [ ] Tests and the Release `--diagnose` run pass natively on macOS 14 (arm64), macOS 15 (arm64) and an Intel Mac for the release commit. A universal build compiled on one host is not runtime evidence for other OS versions or architectures; see [Compatibility](COMPATIBILITY.md).
 - [ ] Validate the System redesign in light/dark and purple/green/graphite accents, including Overview resize, toolbar actions, sidebar/History navigation, all inset Settings forms, picture styles, Separate/One layout with compact geometry, switches, Save/Apply/Cancel, authorization actions and unavailable hardware. Offscreen render fixtures are supplementary evidence.
 - [ ] Spot-check representative hardware: more than one Apple Silicon generation, a laptop with a battery, and a fan-equipped model.
@@ -51,32 +51,22 @@ complete the other hardware, older-OS, Intel runtime or UX checks above.
 
 ## Automatic production releases
 
-Branch pushes and PRs, including fork PRs once the repository is public and the
-run is approved, run `Release source checks` on `ubuntu-latest` for workflow
-policy, metadata and local validation receipts.
-A successful main-push `workflow_run` from `letsopen-ai/tinystats` may start
-`Production release` on the GitHub-hosted arm64 `xcode-27` image with Xcode 27.1
-build 27A9275 pinned. Both macOS workflows require a public repository and skip
-while private. Merge the migration only after publication. The release job uses
-the `production` environment, job-level concurrency and a 180-minute timeout.
-It verifies the triggering CI and current main against GitHub, then skips a
-version that already has a valid published tag/release. It checks out the exact
-source and verifies the committed local validation receipt before loading signing
-secrets. Metal is downloaded if missing and its selection is validated before
-credentials are materialized. See [Release CI](RELEASE_CI.md) for the hosted path.
+Branch pushes and PRs, including approved fork PRs, run `Release source checks`:
+Ubuntu checks workflow policy and a secret-free hosted macOS job runs the full
+native `scripts/verify-local.sh` gate. A successful same-repository main-push
+`workflow_run` may start `Production release` on GitHub-hosted arm64 `xcode-27`.
+The production job checks the exact triggering SHA and eligibility, skips already
+published versions, and repeats the full native gate before accessing signing
+secrets. Both jobs pin Xcode 27.1 build 27A9275, select Python 3.11 and require a
+public repository. The exact build pin fails closed if the image changes; use
+`Hosted release toolchain smoke` to investigate. See [Release CI](RELEASE_CI.md).
 
-The exact Xcode build check (27A9275) stops the release if GitHub ships a different 27.1 build; run `Hosted release toolchain smoke` first.
-
-After committing native release inputs, run `python3 scripts/local_release_validation.py record`
-on the maintainer's Mac. It runs the complete `scripts/verify-local.sh` gate and
-writes `docs/validation/local-release-validation.json`; commit that receipt. The
-workflow checks it against the version and native inputs before accessing signing
-credentials. A new version without a matching receipt will not be released.
-The hosted build does not replace the local native test gate. Fork PRs do not
-receive signing credentials.
-
-These workflow and script changes affect the receipt fingerprint: before the first
-hosted release, record and commit a fresh receipt on the final tree.
+Future releases do not require a new maintainer-local validation receipt; the
+existing receipt is historical evidence. Maintainers can still run
+`scripts/verify-local.sh` locally. Hosted results do not prove native macOS 14/15
+or Intel runtime behavior, representative hardware performance, or the separate
+interactive `scripts/benchmark-app.py` measurement. Fork PR jobs receive no
+signing credentials.
 
 After publication, create the five signing secrets in the `production`
 environment with their existing names, add required reviewers, and restrict
@@ -116,7 +106,7 @@ remain separate from this automation.
 
 ## Welcome redesign candidate — 0.37.0 (72)
 
-The five-step magnified-menu-bar tour was developed with owned, bounded example fixtures on an Apple M4 / macOS 27.2 host. Light/dark and solid fallback galleries supplement the layout and preference-path tests. This work deliberately does not refresh the historical release validation receipt: the coordinator must run the final-tree complete local gate before release. Native macOS 14/15, Intel, login approval and notification/location permission flows remain separate runtime checks. No app was installed and no permission was requested by the tour fixtures.
+The five-step magnified-menu-bar tour was developed with owned, bounded example fixtures on an Apple M4 / macOS 27.2 host. Light/dark and solid fallback galleries supplement the layout and preference-path tests. This work did not refresh the historical release validation receipt. Native macOS 14/15, Intel, login approval and notification/location permission flows remain separate runtime checks. No app was installed and no permission was requested by the tour fixtures.
 
 ## Menu bar click routing candidate — 0.37.1 (73)
 
@@ -132,7 +122,7 @@ Per-source Power visibility and the dropdown Energy Mode section were developed 
 
 ## Immediate dropdown candidate — 0.37.4 (76)
 
-Native popover animation is disabled for show and hide; Separate/One icon-to-icon switches reuse the visible presentation. Scoped validation covers strict Swift format lint, a warning-as-error build and full native Swift tests with owned light/dark evidence. The capture-enabled suite passed 774 Swift Testing and 57 XCTest tests with `--no-parallel`: concurrent galleries exceeded the existing ClockWorker tests’ one-minute limits. Stills establish layout only; configuration and synchronous lifecycle regressions check the animation policy. This candidate does not refresh the release receipt. The maintainer must run the final-tree `scripts/verify-local.sh`; packaging, real diagnostics, Release benchmarks and physical status-item/macOS 14/15/Intel checks remain separate.
+Native popover animation is disabled for show and hide; Separate/One icon-to-icon switches reuse the visible presentation. Scoped validation covers strict Swift format lint, a warning-as-error build and full native Swift tests with owned light/dark evidence. The capture-enabled suite passed 774 Swift Testing and 57 XCTest tests with `--no-parallel`: concurrent galleries exceeded the existing ClockWorker tests’ one-minute limits. Stills establish layout only; configuration and synchronous lifecycle regressions check the animation policy. This candidate does not refresh the release receipt. Packaging, real diagnostics, Release benchmarks and physical status-item/macOS 14/15/Intel checks were separate from that scoped validation.
 
 ## Native updater candidate — 0.37.5 (77)
 
@@ -149,8 +139,7 @@ No bare executable copy, quarantine removal or Gatekeeper bypass is implemented.
 current GitHub asset redirect chain; live verification was unavailable in the
 implementation sandbox. Offline fakes and owned-window stills do not establish
 those runtime claims or macOS 14/15/Intel compatibility. No release validation
-receipt is created for this candidate; the final-tree local gate result belongs
-in the implementation notes.
+receipt was created for this candidate.
 
 ## Regular menu-bar weight candidate — 0.37.6 (78)
 

@@ -73,17 +73,12 @@ class SignedReleaseTests(unittest.TestCase):
         with patch.object(release, 'api', return_value={'object': {'type': 'commit', 'sha': moved}}), self.assertRaisesRegex(RuntimeError, 'verified source'):
             release.verify_release_tag('0.36.4', original)
 
-    def test_direct_release_rechecks_source_and_committed_local_validation(self):
+    def test_direct_release_rechecks_source(self):
         result = type('Result', (), {'stdout': 'a'*40 + '\n'})()
-        with patch.object(release, 'run', return_value=result), \
-             patch('local_release_validation.verify') as verify:
+        with patch.object(release, 'run', return_value=result):
             release.verify_ci_validation('a'*40)
-            verify.assert_called_once_with(release.ROOT)
             with self.assertRaisesRegex(RuntimeError, 'checkout does not match'):
                 release.verify_ci_validation('b'*40)
-            verify.side_effect = RuntimeError('receipt changed')
-            with self.assertRaisesRegex(RuntimeError, 'receipt changed'):
-                release.verify_ci_validation('a'*40)
 
     def test_direct_actions_request_uses_fail_closed_guard(self):
         with patch('actions_release_guard.from_environment', return_value='a' * 40) as check:

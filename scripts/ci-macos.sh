@@ -27,7 +27,8 @@ test "${translated:-0}" = 0
 # Tests execute natively. A cross-compiled slice or a newer OS is not minimum-OS evidence.
 export MACOSX_DEPLOYMENT_TARGET=14.0
 python3 -m unittest discover -s scripts/tests -p 'test_*.py' 2>&1 | tee build/ci/benchmark-tests.txt
-swift test --build-system native -Xswiftc -warnings-as-errors -Xcc -Wall -Xcc -Wextra -Xcc -Werror 2>&1 | tee build/ci/tests.txt
+# Avoid starving clock-worker tests when UI fixtures compete for the main actor.
+swift test --build-system native --no-parallel -Xswiftc -warnings-as-errors -Xcc -Wall -Xcc -Wextra -Xcc -Werror 2>&1 | tee build/ci/tests.txt
 # A stopped main run loop can make an async Swift test host exit 0 prematurely.
 # Require the completed Swift Testing run, not just the process status.
 scripts/verify-swift-tests.sh build/ci/tests.txt

@@ -39,6 +39,11 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - name: Require supported Python
+        run: python3 -c 'import sys; assert sys.version_info >= (3, 11)'
       - name: Check release eligibility
         id: eligibility
         env:
@@ -50,10 +55,12 @@ jobs:
         timeout-minutes: 20
         working-directory: release-source/${{ github.run_id }}-${{ github.run_attempt }}
         run: python3 scripts/hosted_release_toolchain.py
-      - name: Check committed local validation before accessing signing credentials
+      - name: Run full native validation before accessing signing credentials
         if: steps.eligibility.outputs.release == 'true'
         working-directory: release-source/${{ github.run_id }}-${{ github.run_attempt }}
-        run: python3 scripts/local_release_validation.py check
+        run: |
+          scripts/verify-local.sh
+          echo "Full native validation passed for $(git rev-parse HEAD) on $(sw_vers -productVersion) $(uname -m) with $(xcodebuild -version | tr '\n' ' ')." >> "$GITHUB_STEP_SUMMARY"
       - name: Sign, notarize and publish verified artifacts
         if: steps.eligibility.outputs.release == 'true'
         working-directory: release-source/${{ github.run_id }}-${{ github.run_attempt }}
