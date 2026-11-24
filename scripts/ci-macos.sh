@@ -28,10 +28,32 @@ test "${translated:-0}" = 0
 export MACOSX_DEPLOYMENT_TARGET=14.0
 python3 -m unittest discover -s scripts/tests -p 'test_*.py' 2>&1 | tee build/ci/benchmark-tests.txt
 # Avoid starving clock-worker tests when UI fixtures compete for the main actor.
+if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+  rm -f build/ci/test-evidence.txt
+  : > build/ci/test-resources.txt
+  touch build/ci/test-start
+  scripts/hosted-test-evidence.sh sample &
+  sampler=$!
+fi
+# Capture the pipeline status without letting diagnostics turn a failure into success.
+set +e
 swift test --build-system native --no-parallel -Xswiftc -warnings-as-errors -Xcc -Wall -Xcc -Wextra -Xcc -Werror 2>&1 | tee build/ci/tests.txt
+test_status=$?
 # A stopped main run loop can make an async Swift test host exit 0 prematurely.
 # Require the completed Swift Testing run, not just the process status.
-scripts/verify-swift-tests.sh build/ci/tests.txt
+if [[ "$test_status" -eq 0 ]]; then
+  scripts/verify-swift-tests.sh build/ci/tests.txt
+  test_status=$?
+fi
+if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+  kill "$sampler" 2>/dev/null || true
+  wait "$sampler" 2>/dev/null || true
+  if [[ "$test_status" -ne 0 ]]; then
+    scripts/hosted-test-evidence.sh collect "$test_status" || true
+  fi
+fi
+set -e
+if [[ "$test_status" -ne 0 ]]; then exit "$test_status"; fi
 if [[ "$package" == universal ]]; then
   scripts/build-app.sh --universal 2>&1 | tee build/ci/build.txt
 else

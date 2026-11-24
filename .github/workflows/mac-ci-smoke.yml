@@ -48,3 +48,9 @@ jobs:
         run: |
           scripts/verify-local.sh
           echo "Full native validation passed for $(git rev-parse HEAD) on $(sw_vers -productVersion) $(uname -m) with $(xcodebuild -version | tr '\n' ' ')." >> "$GITHUB_STEP_SUMMARY"
+      - name: Collect interrupted Swift test evidence
+        if: failure()
+        run: |
+          if [ -f build/ci/test-start ] && [ ! -f build/ci/test-evidence.txt ]; then
+            scripts/hosted-test-evidence.sh collect interrupted || true
+          fi
