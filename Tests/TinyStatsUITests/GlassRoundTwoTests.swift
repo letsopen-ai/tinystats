@@ -73,7 +73,11 @@ import Testing
 
 @Test @MainActor func chipGlassStartsAtConvertedOldFrameWhenMovingBetweenAreas() async throws {
   guard #available(macOS 26, *) else { return }
-  let editor = MenuBarCustomization(frame: .init(x: 0, y: 0, width: 620, height: 280))
+  let editor = MenuBarCustomization(
+    frame: .init(x: 0, y: 0, width: 620, height: 280),
+    glassEnvironment: {
+      .init(supportsGlass: true, reduceTransparency: false, increaseContrast: false)
+    })
   editor.update(order: [.cpu, .memory, .network])
   editor.layoutSubtreeIfNeeded()
   let chip = try #require(editor.chips[.memory])

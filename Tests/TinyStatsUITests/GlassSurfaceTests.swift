@@ -108,9 +108,29 @@ import Testing
       > GlassSurface.washOpacity(role: .panel, dark: false))
 }
 
+@Test @MainActor func customizationChipAreasHonorInjectedAccessibilityEnvironment() {
+  var environment = GlassSurface.Environment(
+    supportsGlass: true, reduceTransparency: false, increaseContrast: false)
+  let editor = MenuBarCustomization(frame: .zero, glassEnvironment: { environment })
+  for option in 0..<2 {
+    environment.reduceTransparency = option == 0
+    environment.increaseContrast = option == 1
+    NSWorkspace.shared.notificationCenter.post(
+      name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+    for area in [editor.strip, editor.palette] {
+      #expect(area.glass.treatment == .solid)
+      #expect(area.glass.subviews.isEmpty)
+    }
+  }
+}
+
 @Test @MainActor func glassChipShapesShareOneContainerWithoutChangingControls() throws {
   guard #available(macOS 26, *) else { return }
-  let editor = MenuBarCustomization(frame: .init(x: 0, y: 0, width: 620, height: 280))
+  let editor = MenuBarCustomization(
+    frame: .init(x: 0, y: 0, width: 620, height: 280),
+    glassEnvironment: {
+      .init(supportsGlass: true, reduceTransparency: false, increaseContrast: false)
+    })
   editor.update(order: [.cpu, .memory, .network])
   editor.layoutSubtreeIfNeeded()
   for area in [editor.strip, editor.palette] {

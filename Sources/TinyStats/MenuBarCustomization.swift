@@ -6,8 +6,8 @@ import TinyStatsCore
   static let pasteboardType = NSPasteboard.PasteboardType("com.tinystats.private.readout")
   private let token = UUID().uuidString
   private lazy var contentHeight = heightAnchor.constraint(equalToConstant: 254)
-  let strip = MenuBarDropArea(inMenuBar: true)
-  let palette = MenuBarDropArea(inMenuBar: false)
+  let strip: MenuBarDropArea
+  let palette: MenuBarDropArea
   private(set) var chips: [Module: MenuBarChip] = [:]
   private(set) var order: [Module] = []
   var onSelection: ((Module) -> Void)?
@@ -34,7 +34,12 @@ import TinyStatsCore
   )
   private(set) var lastAnnouncement = ""
 
-  override init(frame: NSRect) {
+  override convenience init(frame: NSRect) {
+    self.init(frame: frame, glassEnvironment: { .current })
+  }
+  init(frame: NSRect, glassEnvironment: @escaping () -> GlassSurface.Environment) {
+    strip = MenuBarDropArea(inMenuBar: true, glassEnvironment: glassEnvironment)
+    palette = MenuBarDropArea(inMenuBar: false, glassEnvironment: glassEnvironment)
     super.init(frame: frame)
     contentHeight.isActive = true
     strip.owner = self
@@ -146,7 +151,7 @@ import TinyStatsCore
 
 @MainActor final class MenuBarDropArea: SystemStyledView {
   weak var owner: MenuBarCustomization?
-  let glass = GlassSurface(role: .chips)
+  let glass: GlassSurface
   let inMenuBar: Bool
   private(set) var chips: [MenuBarChip] = []
   private(set) var insertion: Int?
@@ -181,8 +186,9 @@ import TinyStatsCore
     return .init(x: last.maxX + 3, y: last.minY + 2, width: 2, height: 24)
   }
   override var isFlipped: Bool { true }
-  init(inMenuBar: Bool) {
+  init(inMenuBar: Bool, glassEnvironment: @escaping () -> GlassSurface.Environment = { .current }) {
     self.inMenuBar = inMenuBar
+    glass = GlassSurface(role: .chips, environment: glassEnvironment)
     super.init(frame: .zero)
     addSubview(glass)
     insertionOverlay.area = self

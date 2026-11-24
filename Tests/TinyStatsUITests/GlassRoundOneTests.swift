@@ -71,7 +71,11 @@ import Testing
 
 @Test @MainActor func chipGlassFollowsModuleIdentityThroughAnimatedReorder() async throws {
   guard #available(macOS 26, *) else { return }
-  let editor = MenuBarCustomization(frame: .init(x: 0, y: 0, width: 620, height: 280))
+  let editor = MenuBarCustomization(
+    frame: .init(x: 0, y: 0, width: 620, height: 280),
+    glassEnvironment: {
+      .init(supportsGlass: true, reduceTransparency: false, increaseContrast: false)
+    })
   editor.update(order: [.cpu, .memory, .network])
   editor.layoutSubtreeIfNeeded()
   let container = try #require(editor.strip.glass.subviews.first as? NSGlassEffectContainerView)
@@ -89,7 +93,11 @@ import Testing
 
 @Test @MainActor func chipInsertionMarkerDrawsAboveGlassInBothAppearances() throws {
   guard #available(macOS 26, *) else { return }
-  let editor = MenuBarCustomization(frame: .init(x: 0, y: 0, width: 620, height: 280))
+  let editor = MenuBarCustomization(
+    frame: .init(x: 0, y: 0, width: 620, height: 280),
+    glassEnvironment: {
+      .init(supportsGlass: true, reduceTransparency: false, increaseContrast: false)
+    })
   editor.update(order: [.cpu, .memory, .network])
   editor.layoutSubtreeIfNeeded()
   let area = editor.strip
