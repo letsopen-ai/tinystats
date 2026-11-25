@@ -45,8 +45,9 @@ let package = Package(
     .testTarget(
       name: "TinyStatsCoreTests",
       dependencies: ["TinyStatsCore", "CTinyStats", "TinyStatsTestSupport"]),
+    .target(name: "HostedTestEvidence", path: "Tests/HostedTestEvidence"),
     .testTarget(
       name: "TinyStatsUITests",
-      dependencies: ["TinyStats", "TinyStatsCore", "TinyStatsTestSupport"]),
+      dependencies: ["TinyStats", "TinyStatsCore", "TinyStatsTestSupport", "HostedTestEvidence"]),
   ]
 )

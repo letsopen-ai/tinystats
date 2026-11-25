@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import HostedTestEvidence
 import Testing
 import TinyStatsTestSupport
 
@@ -44,6 +45,7 @@ private func historyActionEvidence(_ message: String) {
   }
   historyActionEvidence("creating controller")
   let controller = HistoryController(module: .cpu, settings: Settings())
+  TinyStatsHostedTestEvidenceAppKit()
   defer { controller.window?.close() }
   historyActionEvidence("updating controller")
   controller.update(history.projection(.tenMinutes))

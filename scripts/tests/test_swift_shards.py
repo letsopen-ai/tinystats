@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 from pathlib import Path
 import re
 import tempfile
@@ -95,7 +97,9 @@ class SwiftShardsTests(unittest.TestCase):
                 logfile.write_text(log)
                 return 1 if index == 0 else code
 
-            with patch.object(shards, 'ROOT', root), patch.object(shards, 'SHARDS', 2), \
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), \
+                 patch.object(shards, 'ROOT', root), patch.object(shards, 'SHARDS', 2), \
                  patch.object(shards, 'partition', side_effect=lambda tests: self.parts), \
                  patch.object(shards, 'OPT_IN_TESTS', self.opt_in), \
                  patch.object(shards.subprocess, 'run', side_effect=discovery), \
@@ -105,6 +109,18 @@ class SwiftShardsTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             self.assertFalse((root / 'test-coverage.json').exists())
             self.assertIn('Shard 2/2', (root / 'tests.txt').read_text())
+            evidence = (root / 'tests-shard-1.failure.txt').read_text()
+            self.assertIn('last started-but-not-finished test:', evidence)
+            self.assertIn(evidence, output.getvalue())
+            self.assertLess(output.getvalue().index('=== End shard 1 failure evidence ==='),
+                            output.getvalue().index('Running shard 2/2'))
+
+    def test_discovery_accepts_only_exact_host_lifecycle_markers(self):
+        output = ("Test host evidence: process start\nUI.first()\n"
+                  "Test host evidence: atexit\n")
+        self.assertEqual(shards.discover(output), ["UI.first()"])
+        with self.assertRaises(ValueError):
+            shards.discover(output + "Test host evidence: unexpected\n")
 
     def test_empty_discovery(self):
         with self.assertRaises(ValueError): shards.discover('')

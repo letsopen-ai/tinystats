@@ -1,5 +1,6 @@
 import AppKit
 import CoreFoundation
+import HostedTestEvidence
 import Testing
 
 @testable import TinyStats
@@ -11,15 +12,24 @@ import Testing
 }
 
 @MainActor func runHistoryTerminationMode(until done: () -> Bool) {
+  TinyStatsHostedTestEvidenceAppKit()
   var timedOut = false
   let fallback = Timer(timeInterval: 3, repeats: false) { _ in
     MainActor.assumeIsolated {
+      FileHandle.standardError.write(
+        Data("Test host evidence: history fallback stopping main run loop\n".utf8))
       timedOut = true
       CFRunLoopStop(CFRunLoopGetMain())
     }
   }
   RunLoop.main.add(fallback, forMode: .modalPanel)
-  defer { fallback.invalidate() }
+  defer {
+    fallback.invalidate()
+    FileHandle.standardError.write(
+      Data(
+        "Test host evidence: history loop returned; fallback fired=\(timedOut), done=\(done())\n"
+          .utf8))
+  }
   // NSApplication.terminate enters this kind of nested event loop after terminateLater.
   let limit = Date().addingTimeInterval(3.5)
   while !done(), !timedOut, Date() < limit {

@@ -27,7 +27,9 @@ OPT_IN_TESTS = frozenset({
 
 
 def discover(output):
-    tests = output.splitlines()
+    # SwiftPM forwards these two test-host stderr markers during discovery.
+    evidence = {'Test host evidence: process start', 'Test host evidence: atexit'}
+    tests = [line for line in output.splitlines() if line not in evidence]
     if not tests or len(set(tests)) != len(tests):
         raise ValueError('empty or duplicate discovery')
     if any(not re.fullmatch(r'[\w.]+/[\w]+|[\w./]+\([^\n]*\)', t) for t in tests):
@@ -158,9 +160,13 @@ def main():
             check(shard, [shard], [(code, log)], OPT_IN_TESTS & set(shard), first_shard=i)
         except ValueError as exc:
             failures.append(f'shard {i}: {exc}')
-            print(f'Swift test gate: {failures[-1]}', file=sys.stderr, flush=True)
-            print(failure_evidence(code, log, logfile.with_suffix('.stderr.txt')),
-                  file=sys.stderr, flush=True)
+            evidence = (f'=== Shard {i} failure evidence ===\n'
+                        f'Swift test gate: {failures[-1]}\n'
+                        + failure_evidence(code, log, logfile.with_suffix('.stderr.txt'))
+                        + f'\n=== End shard {i} failure evidence ===\n')
+            (ROOT / f'tests-shard-{i}.failure.txt').write_text(evidence)
+            # All live shard output uses stdout, preventing cross-stream reordering.
+            print(evidence, end='', flush=True)
     if failures:
         raise ValueError('; '.join(failures))
     summary = check(tests, shards, results)
