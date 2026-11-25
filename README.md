@@ -190,7 +190,7 @@ scripts/build-app.sh --universal    # build build/TinyStats.app
 scripts/verify-local.sh             # full check before a pull request
 ```
 
-`verify-local.sh` runs the tests, strict format lint and warnings, universal packaging, signature checks and diagnostics, with logs in `build/ci`. Useful extras:
+`verify-local.sh` runs strict-built Swift tests in six serial shards and verifies their union against discovery, along with format lint, universal packaging, signature checks and diagnostics. This limits test-host memory on hosted runners; logs and coverage are in `build/ci`. See [Release CI](docs/RELEASE_CI.md). Useful extras:
 
 ```sh
 build/TinyStats.app/Contents/MacOS/TinyStats --diagnose             # local capability report, no upload

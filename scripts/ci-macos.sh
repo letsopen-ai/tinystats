@@ -37,14 +37,9 @@ if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
 fi
 # Capture the pipeline status without letting diagnostics turn a failure into success.
 set +e
-swift test --build-system native --no-parallel -Xswiftc -warnings-as-errors -Xcc -Wall -Xcc -Wextra -Xcc -Werror 2>&1 | tee build/ci/tests.txt
+rm -f build/ci/test-coverage.json
+python3 scripts/shard-swift-tests.py
 test_status=$?
-# A stopped main run loop can make an async Swift test host exit 0 prematurely.
-# Require the completed Swift Testing run, not just the process status.
-if [[ "$test_status" -eq 0 ]]; then
-  scripts/verify-swift-tests.sh build/ci/tests.txt
-  test_status=$?
-fi
 if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
   kill "$sampler" 2>/dev/null || true
   wait "$sampler" 2>/dev/null || true

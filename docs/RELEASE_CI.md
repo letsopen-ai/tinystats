@@ -10,9 +10,16 @@ workflow itself before trusting results from an untrusted PR.
 The gate includes Python and Swift tests, the completed Swift test-run check,
 strict format and compiler warnings, universal app and unbundled traffic-service
 builds, architecture, deployment target and signature checks, CLI diagnostics,
-and helper policy and refusal checks. Swift tests run without parallel test execution
-to avoid starving the clock-worker cases under fixture load; no cases or time
-limits are skipped. Python 3.11 is selected explicitly.
+and helper policy and refusal checks. The strict Swift test build discovers XCTest
+and Swift Testing definitions, then runs six serial shards using those same built
+products. Each shard must exit successfully and include its Swift Testing completion
+summary; passed cases and explicitly reported skips of the four documented opt-in
+probes must match its assigned discovery entries exactly, with no missing or duplicate
+entries across the union. Unknown skips and stale opt-in entries fail the gate. The combined and per-shard logs,
+discovery and JSON coverage summary are in `build/ci/`. Sharding limits the lifetime
+of test-host state and memory on the hosted 7 GB runner. The existing localhost ICMP and traffic probes and native status-item integration
+test retain their explicit opt-in conditions; the gate does not enable them. Python 3.11 is selected
+explicitly.
 
 Maintainers may still run `scripts/verify-local.sh` locally. The historical
 `docs/validation/local-release-validation.json` is a maintainer-recorded result,

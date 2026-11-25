@@ -50,7 +50,7 @@ Keep the source manifest and local logs under `build/ci` locally. In the PR, sum
 
 For collection/UI performance changes, run real diagnostics and measure the Release app with `scripts/benchmark-app.py`, following [Performance](docs/PERFORMANCE.md). Distinguish measured costs from targets, and real native UI/hardware checks from synthetic fixtures. A pass on one host is not native macOS 14/15 or Intel validation.
 
-Documentation-only changes need `git diff --check` and a factual/link review, without rebuilding an unchanged app. There is currently no dedicated repository-wide doc/link checker. Automatic push/PR [release source checks](docs/RELEASE_CI.md) check workflow policy and run the complete native gate on hosted macOS. Maintainers can also run the same `scripts/verify-local.sh` gate locally.
+Documentation-only changes need `git diff --check` and a factual/link review, without rebuilding an unchanged app. There is currently no dedicated repository-wide doc/link checker. Automatic push/PR [release source checks](docs/RELEASE_CI.md) check workflow policy and run the complete native gate on hosted macOS. Maintainers can also run the same `scripts/verify-local.sh` gate locally. Its Swift tests run in six serial shards, with their union checked against discovery to limit hosted test-host memory; see [Release CI](docs/RELEASE_CI.md).
 
 ## CI and hosted releases
 
