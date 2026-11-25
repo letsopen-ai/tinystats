@@ -1,7 +1,9 @@
 import importlib.util
 from pathlib import Path
 import re
+import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('shards', ROOT / 'scripts/shard-swift-tests.py')
@@ -54,6 +56,38 @@ class SwiftShardsTests(unittest.TestCase):
     def test_shard_failure(self):
         self.logs[0] = (1, self.logs[0][1])
         with self.assertRaises(ValueError): self.check()
+
+    def test_immediate_check_reports_actual_shard(self):
+        with self.assertRaisesRegex(ValueError, 'shard 2 failed'):
+            shards.check(self.parts[1], [self.parts[1]], [(1, '')], self.opt_in, first_shard=2)
+
+    def test_main_runs_remaining_shards_and_removes_stale_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'test-coverage.json').write_text('stale pass')
+            calls = []
+
+            def discovery(args, stdout, stderr):
+                stdout.write('Core.Suite/testOne\nUI.first()\nUI.second()\n')
+                return type('Result', (), {'returncode': 0})()
+
+            def run(args, logfile):
+                index = len(calls)
+                calls.append(logfile)
+                code, log = self.logs[index]
+                logfile.write_text(log)
+                return 1 if index == 0 else code
+
+            with patch.object(shards, 'ROOT', root), patch.object(shards, 'SHARDS', 2), \
+                 patch.object(shards, 'partition', side_effect=lambda tests: self.parts), \
+                 patch.object(shards, 'OPT_IN_TESTS', self.opt_in), \
+                 patch.object(shards.subprocess, 'run', side_effect=discovery), \
+                 patch.object(shards, 'command', side_effect=run):
+                with self.assertRaisesRegex(ValueError, 'shard 1'):
+                    shards.main()
+            self.assertEqual(len(calls), 2)
+            self.assertFalse((root / 'test-coverage.json').exists())
+            self.assertIn('Shard 2/2', (root / 'tests.txt').read_text())
 
     def test_empty_discovery(self):
         with self.assertRaises(ValueError): shards.discover('')

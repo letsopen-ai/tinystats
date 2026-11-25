@@ -47,7 +47,7 @@ def partition(tests, count=SHARDS):
     return shards
 
 
-def check(discovered, shards, results, opt_in=OPT_IN_TESTS):
+def check(discovered, shards, results, opt_in=OPT_IN_TESTS, first_shard=1):
     if not discovered or not opt_in <= set(discovered):
         raise ValueError(f'empty discovery or stale opt-in entries: {sorted(opt_in - set(discovered))}')
     if len(results) != len(shards):
@@ -57,7 +57,7 @@ def check(discovered, shards, results, opt_in=OPT_IN_TESTS):
     counts = []
     for i, (assigned, (code, log)) in enumerate(zip(shards, results)):
         if code or not SUMMARY.search(log):
-            raise ValueError(f'shard {i + 1} failed or lacks completion summary')
+            raise ValueError(f'shard {i + first_shard} failed or lacks completion summary')
         passed = [f'{suite}/{name}' for suite, name in XCTEST.findall(log)]
         skipped = []
         for names, target in ((SWIFT.findall(log), passed), (SKIPPED.findall(log), skipped)):
@@ -70,9 +70,9 @@ def check(discovered, shards, results, opt_in=OPT_IN_TESTS):
             raise ValueError(f'unexpected skipped tests: {sorted(unknown_skips)}')
         reported = passed + skipped
         if len(reported) != len(set(reported)) or set(reported) != set(assigned):
-            raise ValueError(f'shard {i + 1} coverage mismatch: missing={sorted(set(assigned)-set(reported))}, unexpected={sorted(set(reported)-set(assigned))}, duplicates={len(reported)-len(set(reported))}')
+            raise ValueError(f'shard {i + first_shard} coverage mismatch: missing={sorted(set(assigned)-set(reported))}, unexpected={sorted(set(reported)-set(assigned))}, duplicates={len(reported)-len(set(reported))}')
         seen.extend(reported)
-        counts.append({'number': i + 1, 'discovered': len(assigned),
+        counts.append({'number': i + first_shard, 'discovered': len(assigned),
                        'passed': len(passed), 'opt_in_skipped': len(skipped)})
     if len(seen) != len(set(seen)) or set(seen) != set(discovered):
         raise ValueError('overall coverage mismatch')
@@ -99,6 +99,7 @@ def command(args, logfile, env=None):
 
 def main():
     ROOT.mkdir(parents=True, exist_ok=True)
+    (ROOT / 'test-coverage.json').unlink(missing_ok=True)
     # Remove only artifacts from prior shard runs before collecting new evidence.
     (ROOT / 'tests.txt').write_text('')
     for old in ROOT.glob('tests-shard-*.txt'):
@@ -116,6 +117,7 @@ def main():
     combined = ROOT / 'tests.txt'
     combined.write_text('')
     results = []
+    failures = []
     for i, shard in enumerate(shards, 1):
         # SwiftPM matches the test identifier prefix; the verifier catches any overlap.
         pattern = '|'.join('^' + re.escape(t.split('(')[0]) for t in shard)
@@ -127,8 +129,13 @@ def main():
         with combined.open('a') as out:
             out.write(f'\n=== Shard {i}/{len(shards)} (exit {code}) ===\n{log}')
         results.append((code, log))
-        # Fail immediately; do not allow a later successful shard to hide this failure.
-        check(shard, [shard], [(code, log)], OPT_IN_TESTS & set(shard))
+        try:
+            check(shard, [shard], [(code, log)], OPT_IN_TESTS & set(shard), first_shard=i)
+        except ValueError as exc:
+            failures.append(f'shard {i}: {exc}')
+            print(f'Swift test gate: {failures[-1]}', file=sys.stderr, flush=True)
+    if failures:
+        raise ValueError('; '.join(failures))
     summary = check(tests, shards, results)
     (ROOT / 'test-coverage.json').write_text(json.dumps(summary, indent=2) + '\n')
     print(json.dumps(summary, indent=2))

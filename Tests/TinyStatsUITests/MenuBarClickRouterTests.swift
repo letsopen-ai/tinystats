@@ -251,6 +251,7 @@ struct MenuBarClickRouterTests {
     app.activateStatusButton(try fixture.target(.cpu).button, event: nil)
     let closing = try #require(app.popover)
     #expect(!closing.animates)
+    let dropdown = try #require(app.detail?.view.window)
     // Set up the probe at the close boundary; initial CPU selection would intentionally
     // interrupt a diagnostic probe configured for Network. No timer or real-time wait.
     var probe = PopoverCycleProbe(
@@ -263,6 +264,15 @@ struct MenuBarClickRouterTests {
     // Hold the notification boundary explicitly, independent of native animation/timing.
     app.popoverWillClose(.init(name: NSPopover.willCloseNotification, object: closing))
     let click = try fixture.event(.memory, source: 1)
+    // An overlapping dropdown owns the click even while closing. AppKit's natural
+    // placement varies by display, so exercise that case explicitly before routing.
+    let point = try fixture.screenPoint(.memory)
+    dropdown.setFrameOrigin(.init(x: point.x - 20, y: point.y - 20))
+    #expect(dropdown.frame.contains(point))
+    #expect(app.popoverInteraction.handle(click) === click)
+    dropdown.setFrameOrigin(.init(x: -100_000, y: -100_000))
+    #expect(!dropdown.frame.contains(point))
+    #expect(!dropdown.frame.contains(try fixture.screenPoint(.network)))
     NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
     #expect(app.popoverInteraction.handle(click) == nil)
     #expect(app.detail?.selected == .cpu)  // Do not switch into a closing presentation.
