@@ -50,17 +50,26 @@ Keep the source manifest and local logs under `build/ci` locally. In the PR, sum
 
 For collection/UI performance changes, run real diagnostics and measure the Release app with `scripts/benchmark-app.py`, following [Performance](docs/PERFORMANCE.md). Distinguish measured costs from targets, and real native UI/hardware checks from synthetic fixtures. A pass on one host is not native macOS 14/15 or Intel validation.
 
-Documentation-only changes need `git diff --check` and a factual/link review, without rebuilding an unchanged app. There is currently no dedicated repository-wide doc/link checker. Automatic push/PR [release source checks](docs/RELEASE_CI.md) check workflow policy, metadata and local release validation receipts; native tests run locally. The complete local check remains the required gate.
+Documentation-only changes need `git diff --check` and a factual/link review, without rebuilding an unchanged app. There is currently no dedicated repository-wide doc/link checker. Automatic push/PR [release source checks](docs/RELEASE_CI.md) check workflow policy and run the complete native gate on hosted macOS. Maintainers can also run the same `scripts/verify-local.sh` gate locally. Its Swift tests run in six serial shards, with their union checked against discovery to limit hosted test-host memory; see [Release CI](docs/RELEASE_CI.md).
 
 ## CI and hosted releases
 
-PR source checks run on GitHub-hosted `ubuntu-latest`; signed releases use
-GitHub-hosted `xcode-27` with Xcode 27.1 pinned and the `production` environment.
-Both hosted macOS jobs skip private repositories. After publication, maintainers
-must require approval for all external contributors' fork workflow runs and add
+Push and PR `Release source checks` run policy checks on GitHub-hosted
+`ubuntu-latest` and the full `scripts/verify-local.sh` gate on secret-free
+GitHub-hosted `xcode-27`. Eligible production releases use `xcode-27` with
+Xcode 27.1 pinned in the `production` environment, and repeat the gate on the
+exact release SHA before accessing signing secrets. Maintainers can also run the
+gate locally. Future releases do not require a new committed maintainer-local
+receipt; the existing receipt is historical evidence. A hosted pass does not
+establish native macOS 14/15 or Intel runtime validation, hardware qualification,
+or the interactive `scripts/benchmark-app.py` measurement.
+
+Hosted macOS jobs skip private repositories. Untrusted PR code must not receive
+signing secrets, and `pull_request_target` is forbidden. Maintainers should
+require approval for all external contributors' fork workflow runs and add
 production reviewers. Approved fork runs use the PR's own workflow files, so
 runner access and maintainer approval remain important controls. See
-[Release CI](docs/RELEASE_CI.md#public-repository-safety) for the publication
+[Release CI](docs/RELEASE_CI.md#public-repository-safety) for the safety
 checklist and temporary signing credentials.
 
 ## Pull request workflow

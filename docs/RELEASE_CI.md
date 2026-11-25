@@ -1,44 +1,46 @@
 # Local validation and hosted release CI
 
-`Release source checks` (`mac-ci-smoke.yml`, retained path) checks workflow policy,
-metadata and local validation receipts on `ubuntu-latest` for pushes and PRs.
-Native tests remain local on the maintainer Mac. All repository workflows use
-standard GitHub-hosted runners; no self-hosted runner is needed.
+`Release source checks` (`mac-ci-smoke.yml`) runs workflow policy tests on
+Ubuntu and the full `scripts/verify-local.sh` gate on secret-free, public
+GitHub-hosted macOS for pushes and pull requests. Both jobs must succeed for the
+workflow to succeed. Actions logs and the job summary identify the run and
+checked-out SHA; a PR run tests GitHub's checkout of its merge ref. Review the
+workflow itself before trusting results from an untrusted PR.
 
-## Prepare local release validation
+The gate includes Python and Swift tests, the completed Swift test-run check,
+strict format and compiler warnings, universal app and unbundled traffic-service
+builds, architecture, deployment target and signature checks, CLI diagnostics,
+and helper policy and refusal checks. The strict Swift test build discovers XCTest
+and Swift Testing definitions, then runs six serial shards using those same built
+products. Each shard must exit successfully and include its Swift Testing completion
+summary; passed cases and explicitly reported skips of the four documented opt-in
+probes must match its assigned discovery entries exactly, with no missing or duplicate
+entries across the union. Unknown skips and stale opt-in entries fail the gate. The combined and per-shard logs,
+discovery and JSON coverage summary are in `build/ci/`. Sharding limits the lifetime
+of test-host state and memory on the hosted 7 GB runner. The existing localhost ICMP and traffic probes and native status-item integration
+test retain their explicit opt-in conditions; the gate does not enable them. Python 3.11 is selected
+explicitly.
 
-Commit native source, tests, resources, packaging, workflows and scripts, then
-run on the maintainer Mac:
-
-```sh
-python3 scripts/local_release_validation.py record
-git add docs/validation/local-release-validation.json
-git commit -m 'ci(release): record local native validation'
-```
-
-The record command runs the complete `scripts/verify-local.sh` gate. Logs stay
-in ignored `build/local-release-validation`. Never fabricate or manually edit a
-passing receipt. The receipt binds the version and recipe to tracked native
-input tree entries, including workflows and scripts. Changed inputs require a
-new local run. Documentation-only and receipt commits do not change that
-fingerprint. This proves the recorded host and recipe, not other hardware or OS
-runtime support.
-
-An already-tagged version may pass source metadata checks without a new receipt;
-production independently verifies its published assets and skips it. A new
-version needs a matching committed receipt before signing credentials are loaded.
-PR/manual source checks never authorize publication.
-
-These workflow/script changes affect the local validation receipt fingerprint: before the first hosted release, the maintainer must run `python3 scripts/local_release_validation.py record` on the final tree and commit the fresh receipt; otherwise the release stops safely at the receipt check before signing secrets are touched.
+Maintainers may still run `scripts/verify-local.sh` locally. The historical
+`docs/validation/local-release-validation.json` is a maintainer-recorded result,
+not a remote attestation; a fresh receipt is not required for future releases.
+A hosted pass covers its own Apple Silicon host and OS only. It is not native
+macOS 14/15 or Intel runtime evidence, hardware qualification, or the interactive
+`scripts/benchmark-app.py` measurement, which is not part of the recorded recipe.
 
 ## Hosted production flow
 
-A successful main-push `workflow_run` from `letsopen-ai/tinystats` can start
-`Production release` in the `production` environment. Its job-level concurrency
-serializes releases without cancellation. The job checks out the exact successful
-SHA with full history and no persisted credentials, verifies eligibility against
-GitHub's current main and run metadata, and checks the local validation receipt.
-The same request/source checks run again before signing and publication.
+A successful same-repository main-push `workflow_run` from
+`letsopen-ai/tinystats` can start `Production release` in the `production`
+environment. Job-level concurrency serializes releases without cancellation.
+The job checks out the exact successful SHA with full history and no persisted
+credentials and verifies eligibility against GitHub's current main and run
+metadata. For an unpublished version it verifies the pinned toolchain and runs
+`verify-local.sh` again on that exact checkout before the signing step references
+any secrets. Both the source workflow and this independent pre-sign gate must
+succeed. Already-published versions are checked and skipped. PR and manual
+source checks cannot authorize publication. The request and source checks run
+again before signing and publication.
 
 The runner is the standard arm64 `xcode-27` image: a 3-core M1 with 7 GB RAM and
 14 GB SSD. `DEVELOPER_DIR` pins `/Applications/Xcode_27.1.app/Contents/Developer`;
@@ -81,17 +83,17 @@ crash-report workflow has been removed.
 
 ## Public repository safety
 
-Merge this migration only after the repository is public. Both macOS jobs also
-require `github.event.repository.private == false`, so merging early skips them
-without allocating paid macOS minutes. Standard hosted runners are free and
+All hosted macOS jobs require `github.event.repository.private == false`, so they
+skip private repositories without allocating paid macOS minutes. Standard hosted runners are free and
 unlimited for public repositories. A private repository would bill about $0.062
 per minute for standard macOS, roughly $1–2 per release; the public-only guard
 prevents that cost. Larger runners remain paid even for public repositories.
 
-After publication, require approval for all outside contributors' fork workflow
+Require approval for all outside contributors' fork workflow
 runs, including first-time contributors. Approved fork runs use the PR's own
 workflow files, so review them carefully. Keep organization runner groups
-private-only so this public repository cannot reach persistent runners.
+private-only so this public repository cannot reach persistent runners. Untrusted PR
+code must not receive signing secrets, and `pull_request_target` is forbidden.
 
 ### Production secrets and approval
 

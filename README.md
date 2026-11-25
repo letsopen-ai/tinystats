@@ -190,7 +190,7 @@ scripts/build-app.sh --universal    # build build/TinyStats.app
 scripts/verify-local.sh             # full check before a pull request
 ```
 
-`verify-local.sh` runs the tests, strict format lint and warnings, universal packaging, signature checks and diagnostics, with logs in `build/ci`. Useful extras:
+`verify-local.sh` runs strict-built Swift tests in six serial shards and verifies their union against discovery, along with format lint, universal packaging, signature checks and diagnostics. This limits test-host memory on hosted runners; logs and coverage are in `build/ci`. See [Release CI](docs/RELEASE_CI.md). Useful extras:
 
 ```sh
 build/TinyStats.app/Contents/MacOS/TinyStats --diagnose             # local capability report, no upload
@@ -200,7 +200,7 @@ build/TinyStats.app/Contents/MacOS/TinyStats --preview              # persistent
 
 The code is split into `Sources/TinyStatsCore` (models, collectors, settings, history), `Sources/CTinyStats` (system API wrappers) and `Sources/TinyStats` (AppKit UI and the sampling worker). Start with [Design](docs/DESIGN.md), [Performance](docs/PERFORMANCE.md) and [Compatibility](docs/COMPATIBILITY.md).
 
-Automatic push/PR [release source checks](docs/RELEASE_CI.md) run on GitHub-hosted Ubuntu and check source metadata and committed local release validation receipts. Native tests run locally; the GitHub-hosted macOS release workflow builds, signs and publishes releases. Keep using `verify-local.sh` for the complete required gate.
+Automatic push/PR [release source checks](docs/RELEASE_CI.md) run workflow policy checks on GitHub-hosted Ubuntu and the full `scripts/verify-local.sh` gate on secret-free, public GitHub-hosted macOS. Maintainers can also run the gate locally. Eligible production releases repeat it on the exact release SHA before accessing signing secrets. Future releases do not require a new committed local validation receipt; the existing receipt is historical evidence. A hosted pass does not establish native macOS 14/15 or Intel runtime validation, hardware qualification, or the interactive `scripts/benchmark-app.py` measurement.
 
 ## Contributing
 

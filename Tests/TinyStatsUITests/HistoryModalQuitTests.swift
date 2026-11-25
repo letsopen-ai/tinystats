@@ -1,11 +1,9 @@
 import AppKit
-import CoreFoundation
 import Testing
 
 @testable import TinyStats
 
 @MainActor private final class HistoryModalTestState {
-  var inside = true
   var replies = 0
   var delivered = false
 }
@@ -15,7 +13,6 @@ import Testing
   let fallback = Timer(timeInterval: 3, repeats: false) { _ in
     MainActor.assumeIsolated {
       timedOut = true
-      CFRunLoopStop(CFRunLoopGetMain())
     }
   }
   RunLoop.main.add(fallback, forMode: .modalPanel)
@@ -32,11 +29,9 @@ import Testing
   let state = HistoryModalTestState()
   let quit = HistoryQuitCoordinator {
     state.replies += 1
-    if state.inside { CFRunLoopStop(CFRunLoopGetMain()) }
   }
   quit.begin { _ in }
   runHistoryTerminationMode { quit.replied }
-  state.inside = false
   #expect(quit.replied && state.replies == 1)
 }
 
@@ -46,9 +41,7 @@ import Testing
   let worker = MonitorWorker(receive: { _, _, _ in })
   worker.finishHistory {
     state.delivered = true
-    if state.inside { CFRunLoopStop(CFRunLoopGetMain()) }
   }
   runHistoryTerminationMode { state.delivered }
-  state.inside = false
   #expect(state.delivered)
 }

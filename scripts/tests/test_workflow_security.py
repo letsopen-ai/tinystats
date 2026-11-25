@@ -148,7 +148,24 @@ def workflow_security_errors(source):
             environment_fields = mapping_fields(environment_body, environment_body[0][0])
             environment = field_text(environment_fields.get('name', ('', [])))
         production = environment.strip("\"'") == 'production'
-        trusted_job = any(label.startswith('xcode-') for label in labels) or 'workflow_run' in triggers or production
+        native_untrusted = (macos_job and bool(triggers & {'push', 'pull_request'})
+                            and triggers <= {'push', 'pull_request', 'workflow_dispatch'})
+        trusted_job = ((any(label.startswith('xcode-') for label in labels) and not native_untrusted)
+                       or 'workflow_run' in triggers or production)
+        if native_untrusted:
+            if 'environment' in fields:
+                errors.append(f'{job}: untrusted native job must not use an environment')
+            for permission in (top.get('permissions'), fields.get('permissions')):
+                if permission is None:
+                    continue
+                value, permission_body = permission
+                entries = mapping_fields(permission_body, permission_body[0][0]) if permission_body else {}
+                if value or {key: field_text(item) for key, item in entries.items()} != {'contents': 'read'}:
+                    errors.append(f'{job}: untrusted native job requires contents: read only')
+            inherited_env = top.get('env', ('', []))
+            secret_scope = ' '.join(text for _, text in body + inherited_env[1]) + inherited_env[0]
+            if re.search(r'\bsecrets\s*(?:\.|\[)', secret_scope, re.I):
+                errors.append(f'{job}: untrusted native job must not reference secrets')
         if trusted_job and not triggers <= TRUSTED_TRIGGERS:
             errors.append(f'{job}: untrusted release trigger')
         guard = re.sub(r'\s*==\s*', ' == ', field_text(fields.get('if', ('', []))))
@@ -240,7 +257,13 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertEqual(field_text(cleanup[0]['if']), 'always()')
         for forbidden in ('/Users/', 'release-runner', 'Library/Caches/MacCIReleaseSecrets', 'mac-mini', 'letsopen-org'):
             self.assertNotIn(forbidden, source)
-        self.assertLess(source.index('scripts/local_release_validation.py check'), source.index('secrets.MACOS_CERTIFICATE'))
+        self.assertLess(source.index('scripts/hosted_release_toolchain.py'), source.index('scripts/verify-local.sh'))
+        self.assertLess(source.index('scripts/verify-local.sh'), source.index('secrets.MACOS_CERTIFICATE'))
+        gate = next(step for step in steps if 'scripts/verify-local.sh' in field_text(step.get('run', ('', []))))
+        self.assertEqual(field_text(gate['if']), "steps.eligibility.outputs.release == 'true'")
+        self.assertNotIn('continue-on-error', gate)
+        self.assertNotIn('continue-on-error', fields)
+        self.assertNotIn('local_release_validation.py check', source)
         self.assertIn('DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer', source)
         checkout = next(step for step in steps if 'uses' in step)
         inputs = checkout['with'][1]
@@ -449,7 +472,7 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertTrue(workflow_security_errors(source))
 
     def test_untrusted_trigger_forms(self):
-        for trigger in ('pull_request', 'pull_request_target', 'issue_comment',
+        for trigger in ('pull_request_target', 'issue_comment',
                         'pull_request_review', 'pull_request_review_comment', 'issues',
                         'discussion', 'discussion_comment', 'fork', 'watch', 'schedule'):
             for on in (f'on: {trigger}', f'"on": [push, {trigger}]', f"on:\n  {trigger}:"):
@@ -460,6 +483,30 @@ class WorkflowSecurityTests(unittest.TestCase):
         source = self.trusted_dispatch().replace('workflow_dispatch:', 'pull_request_target:')
         source = source.replace('- xcode-27', '- ubuntu-latest')
         self.assertIn('pull_request_target trigger is forbidden', workflow_security_errors(source))
+
+    def test_source_native_gate_is_secret_free_and_required(self):
+        source = (ROOT / '.github/workflows/mac-ci-smoke.yml').read_text()
+        self.assertEqual(workflow_security_errors(source), [])
+        self.assertIn('name: Release source checks', source)
+        top = mapping_fields(workflow_lines(source), 0)
+        jobs = mapping_fields(top['jobs'][1], top['jobs'][1][0][0])
+        body = jobs['native-validation'][1]
+        fields = mapping_fields(body, body[0][0])
+        self.assertEqual(field_text(fields['runs-on']), 'xcode-27')
+        steps = list(step_mappings(fields['steps'][1]))
+        gate = next(step for step in steps if 'scripts/verify-local.sh' in field_text(step.get('run', ('', []))))
+        self.assertNotIn('if', gate)
+        self.assertNotIn('continue-on-error', gate)
+        self.assertNotIn('continue-on-error', fields)
+        self.assertIn('scripts/hosted_release_toolchain.py', source)
+        self.assertIn("python-version: '3.11'", source)
+        self.assertNotIn('local_release_validation.py check', source)
+        for addition, error in (('    environment: production\n', 'environment'),
+                                ('    env:\n      KEY: ${{ secrets.KEY }}\n', 'secrets'),
+                                ('    permissions:\n      contents: write\n', 'contents: read only')):
+            broken = source.replace('    runs-on: xcode-27\n', addition + '    runs-on: xcode-27\n')
+            self.assertTrue(any(error in item for item in workflow_security_errors(broken)))
+        self.assertTrue(workflow_security_errors(source.replace(PUBLIC_GUARD, 'true')))
 
     def trusted_release(self):
         source = self.trusted_dispatch().replace('workflow_dispatch:', 'workflow_run:')

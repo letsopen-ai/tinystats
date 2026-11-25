@@ -47,11 +47,9 @@ def source_commit():
 
 
 def verify_ci_validation(sha):
-    """Verify the committed MacBook validation receipt before production signing."""
-    from local_release_validation import verify
+    """Keep the checked-out source bound to the authorized release SHA."""
     if run(['git', 'rev-parse', 'HEAD'], True).stdout.strip() != sha:
-        raise RuntimeError('Local validation checkout does not match the release source')
-    verify(ROOT)
+        raise RuntimeError('Validation checkout does not match the release source')
 
 
 
@@ -140,7 +138,7 @@ def main():
         raise RuntimeError('Configured Developer ID identity is unavailable')
     identity = matches[0][0]
     verify_certificate_team(os.environ, identity, team)
-    # The direct Actions path checks the committed local gate before importing credentials.
+    # The direct Actions path is gated by the preceding hosted validation step.
     os.environ.pop('TINYSTATS_SIGN_IDENTITY', None)
     if args.actions_direct:
         verify_ci_validation(sha)
@@ -177,9 +175,10 @@ def main():
     sums = ROOT / 'build/SHA256SUMS.txt'
     sums.write_text(digest + '  ' + archive.name + '\n')
     notes = ROOT / 'build/release-notes.md'
+    validation_host = 'GitHub-hosted macOS' if args.actions_direct else 'the release host'
     notes.write_text('Universal Mac production build of `' + sha + '`.\n\n'
         'Developer ID signed, Apple notarized and stapled. Extract TinyStats.app and move it to Applications.\n\n'
-        'The full local validation gate passed on the maintainer Mac for these release inputs; the release runner built and signed this package. Native macOS 14/15 and Intel runtime, '
+        'The full native validation gate passed on ' + validation_host + ' for this release source; the release runner built and signed this package. Native macOS 14/15 and Intel runtime, '
         'hardware and UI qualification remain separate; see docs/DISTRIBUTION.md.\n')
     # Last checks immediately before any tag/release mutation.
     if args.actions_direct:
