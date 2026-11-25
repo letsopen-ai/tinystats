@@ -53,7 +53,20 @@ import TinyStatsCore
         mouseLocation: { [unowned self] in self.cursor },
         scheduleDismissal: { [unowned self] in self.dismissals.append($0) }),
       settings: settings, clickTrace: MenuBarClickTrace(environment: [:]),
-      presentationReporter: { [unowned self] in self.presentations.append($0) },
+      presentationReporter: { [unowned self] shown in
+        self.presentations.append(shown)
+        if shown {
+          // AppKit chooses a display-dependent position which may cover a status target.
+          let dropdown = self.app.detail?.view.window
+          #expect(dropdown != nil)
+          dropdown?.setFrameOrigin(.init(x: -100_000, y: -100_000))
+          for target in self.items.targets {
+            if let rect = PopoverInteraction.screenRect(of: target.button), let dropdown {
+              #expect(!dropdown.frame.intersects(rect))
+            }
+          }
+        }
+      },
       cycleReporter: { [unowned self] in self.cycles.append($0) }, energyModes: energyModes)
   }
 

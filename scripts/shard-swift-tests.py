@@ -14,6 +14,9 @@ SUMMARY = re.compile(r'Test run with [1-9][0-9]* tests?(?: in [0-9]+ suites?)? p
 XCTEST = re.compile(r"^Test Case '-\[([^ ]+) ([^]]+)\]' passed ", re.M)
 SWIFT = re.compile(r'^✔ Test (.+?\)) (?:with \d+ test cases )?passed ', re.M)
 SKIPPED = re.compile(r'^➜ Test (.+?\)) skipped(?:[ .]|$)', re.M)
+STARTED = re.compile(r'^◇ Test (.+?\)) started\.', re.M)
+FINISHED = re.compile(r'^[✔✘➜] Test (.+?\)) (?:with \d+ test cases )?(?:passed|failed|skipped)(?:[ .]|$)', re.M)
+XCTEST_EVENT = re.compile(r"^Test Case '-\[([^ ]+) ([^]]+)\]' (started|passed|failed|skipped)(?:[ .]|$)", re.M)
 # Existing host integration probes, disabled unless their owners explicitly opt in.
 OPT_IN_TESTS = frozenset({
     'TinyStatsCoreTests.ICMPLoopbackTests/nativeIPv4AndIPv6Echo()',
@@ -97,6 +100,28 @@ def command(args, logfile, env=None):
     return code
 
 
+def failure_evidence(code, log, errorfile):
+    # A serial run may still report nested/parameterized test activity. Keep all
+    # starts in order and remove completed names instead of assuming the last line.
+    events = sorted([(m.start(), True, m.group(1)) for m in STARTED.finditer(log)] +
+                    [(m.start(), False, m.group(1)) for m in FINISHED.finditer(log)] +
+                    [(m.start(), m.group(3) == 'started', f'{m.group(1)}/{m.group(2)}')
+                     for m in XCTEST_EVENT.finditer(log)])
+    pending = []
+    for _, started, name in events:
+        if started:
+            pending.append(name)
+        elif name in pending:
+            pending.remove(name)
+    stderr = errorfile.read_text(errors='replace') if errorfile.exists() else ''
+    tail = ''.join(stderr.splitlines(keepends=True)[-60:])
+    if not tail:
+        tail = '(empty)\n'
+    return (f'exit code: {code}\nlast started-but-not-finished test: '
+            f'{pending[-1] if pending else "none detected"}\n'
+            f'stderr tail (up to 60 lines):\n{tail}')
+
+
 def main():
     ROOT.mkdir(parents=True, exist_ok=True)
     (ROOT / 'test-coverage.json').unlink(missing_ok=True)
@@ -134,6 +159,8 @@ def main():
         except ValueError as exc:
             failures.append(f'shard {i}: {exc}')
             print(f'Swift test gate: {failures[-1]}', file=sys.stderr, flush=True)
+            print(failure_evidence(code, log, logfile.with_suffix('.stderr.txt')),
+                  file=sys.stderr, flush=True)
     if failures:
         raise ValueError('; '.join(failures))
     summary = check(tests, shards, results)

@@ -6,6 +6,10 @@ import TinyStatsTestSupport
 @testable import TinyStats
 @testable import TinyStatsCore
 
+private func historyActionEvidence(_ message: String) {
+  FileHandle.standardError.write(Data("History native action: \(message)\n".utf8))
+}
+
 @MainActor private func statisticPickers(in view: NSView) -> [NSPopUpButton] {
   (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap { statisticPickers(in: $0) }
 }
@@ -23,6 +27,13 @@ import TinyStatsTestSupport
   return view.subviews.compactMap { statisticChart(in: $0) }.first
 }
 @Test @MainActor func historyStatisticNativeActionsChangeValuesAndPixelAggregation() throws {
+  // Test-host evidence only: locate AppKit termination relative to native window
+  // creation and action dispatch on hosted runners.
+  let terminationObserver = NotificationCenter.default.addObserver(
+    forName: NSApplication.willTerminateNotification, object: nil, queue: nil
+  ) { _ in historyActionEvidence("NSApplication will terminate") }
+  defer { NotificationCenter.default.removeObserver(terminationObserver) }
+  historyActionEvidence("begin")
   var history = SessionHistory()
   for (seconds, cpu) in [(0.0, 20.0), (1.0, 80.0), (3.0, 10.0)] {
     var p = Snapshot().historyPoint
@@ -31,13 +42,16 @@ import TinyStatsTestSupport
     p.cpu = cpu
     history.append(p, uptime: seconds + 1)
   }
+  historyActionEvidence("creating controller")
   let controller = HistoryController(module: .cpu, settings: Settings())
   defer { controller.window?.close() }
+  historyActionEvidence("updating controller")
   controller.update(history.projection(.tenMinutes))
   let root = try #require(controller.window?.contentView)
   let picker = try #require(
     statisticPickers(in: root).first { $0.itemTitles.contains("Sample average") })
   let chart = try #require(statisticChart(in: root))
+  historyActionEvidence("sending average action; explicit target=\(picker.target != nil)")
   picker.selectItem(at: 1)
   #expect(NSApp.sendAction(try #require(picker.action), to: picker.target, from: picker))
   #expect(
@@ -52,6 +66,7 @@ import TinyStatsTestSupport
   let tiny = HistoryBarLayout(plot: average, graphWidth: 1, scale: 1)
   #expect(tiny.columns.count == 1 && abs((tiny.columns.first?.first ?? 0) - 110.0 / 3) < 0.000001)
   picker.selectItem(at: 2)
+  historyActionEvidence("sending minimum action; explicit target=\(picker.target != nil)")
   #expect(NSApp.sendAction(try #require(picker.action), to: picker.target, from: picker))
   guard case .plot(let minimum) = chart.cards.first?.content else {
     Issue.record("Missing minimum plot")
@@ -62,6 +77,7 @@ import TinyStatsTestSupport
   #expect(
     chart.cards.first?.spoken.contains("recorded minima") == true
       || chart.cards.first?.spoken.contains("RECORDED MINIMA") == true)
+  historyActionEvidence("assertions complete")
 }
 
 @Test @MainActor func historyStatisticLegacyCoverageIsUnknownAndZeroStaysVisible() throws {

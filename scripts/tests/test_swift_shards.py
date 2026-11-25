@@ -61,6 +61,23 @@ class SwiftShardsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'shard 2 failed'):
             shards.check(self.parts[1], [self.parts[1]], [(1, '')], self.opt_in, first_shard=2)
 
+    def test_failure_evidence_reports_unfinished_and_stderr_tail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stderr = Path(directory) / 'shard.stderr.txt'
+            stderr.write_text(''.join(f'line {i}\n' for i in range(70)))
+            log = ('◇ Test first() started.\n◇ Test second() started.\n'
+                   '✔ Test first() passed after 0.1 seconds.\n')
+            evidence = shards.failure_evidence(17, log, stderr)
+            self.assertIn('exit code: 17', evidence)
+            self.assertIn('last started-but-not-finished test: second()', evidence)
+            self.assertNotIn('line 9\n', evidence)
+            self.assertIn('line 10\n', evidence)
+            self.assertIn('line 69\n', evidence)
+            self.assertIn('none detected', shards.failure_evidence(1, log +
+                '✘ Test second() failed after 1 second.\n', stderr))
+            self.assertIn('Suite/testLast', shards.failure_evidence(1,
+                "Test Case '-[Suite testLast]' started.\n", stderr))
+
     def test_main_runs_remaining_shards_and_removes_stale_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
