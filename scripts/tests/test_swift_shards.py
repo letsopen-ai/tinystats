@@ -115,13 +115,6 @@ class SwiftShardsTests(unittest.TestCase):
             self.assertLess(output.getvalue().index('=== End shard 1 failure evidence ==='),
                             output.getvalue().index('Running shard 2/2'))
 
-    def test_discovery_accepts_only_exact_host_lifecycle_markers(self):
-        output = ("Test host evidence: process start\nUI.first()\n"
-                  "Test host evidence: atexit\n")
-        self.assertEqual(shards.discover(output), ["UI.first()"])
-        with self.assertRaises(ValueError):
-            shards.discover(output + "Test host evidence: unexpected\n")
-
     def test_empty_discovery(self):
         with self.assertRaises(ValueError): shards.discover('')
 

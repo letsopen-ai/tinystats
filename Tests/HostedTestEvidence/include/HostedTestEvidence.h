@@ -1,1 +1,0 @@
-void TinyStatsHostedTestEvidenceAppKit(void);

@@ -27,9 +27,7 @@ OPT_IN_TESTS = frozenset({
 
 
 def discover(output):
-    # SwiftPM forwards these two test-host stderr markers during discovery.
-    evidence = {'Test host evidence: process start', 'Test host evidence: atexit'}
-    tests = [line for line in output.splitlines() if line not in evidence]
+    tests = output.splitlines()
     if not tests or len(set(tests)) != len(tests):
         raise ValueError('empty or duplicate discovery')
     if any(not re.fullmatch(r'[\w.]+/[\w]+|[\w./]+\([^\n]*\)', t) for t in tests):

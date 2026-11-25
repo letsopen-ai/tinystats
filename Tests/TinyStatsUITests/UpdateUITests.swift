@@ -1,5 +1,4 @@
 import AppKit
-import CoreFoundation
 import Security
 import Testing
 
@@ -368,7 +367,6 @@ private final class RecordingUpdateInstaller: UpdateInstalling, @unchecked Senda
   controller.prepareToQuit { shouldQuit in
     #expect(shouldQuit)
     state.replies += 1
-    CFRunLoopStop(CFRunLoopGetMain())
   }
   runHistoryTerminationMode { state.replies > 0 }
   #expect(state.replies == 1 && installer.relaunches == [false])
